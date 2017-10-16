@@ -69,11 +69,12 @@ init([]) ->
             _Driver -> [?CHILD(lasp_bench_measurement, worker)]
         end,
 
-    {ok, {{one_for_one, 5, 10},
-        [?CHILD(lasp_bench_stats, worker)] ++
-        Workers ++
-        MeasurementDriver
-    }}.
+    Children = lists:flatten([Workers,
+                              MeasurementDriver,
+                              ?CHILD(lasp_bench_stats, worker)]),
+
+
+    {ok, {{one_for_one, 5, 10}, Children}}.
 
 %% ===================================================================
 %% Internal functions
