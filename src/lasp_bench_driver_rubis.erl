@@ -31,50 +31,17 @@ run(home, _, _, State) ->
 run(register, _, _, State) ->
     build_request(get, "/register", State);
 
-run(registeruser, _, _, State) ->
+run(registeruser, KeyGen, _, State) ->
     %% TODO
-    build_request(post, {"/register", jsx:encode([])}, State);
+    Key = KeyGen(),
 
-run(browse, _, _, State) ->
-    build_request(get, "/browse", State);
+    BinaryRawId = integer_to_binary(Key),
+    BinaryRegionId = integer_to_binary((Key rem 5) + 1),
 
-run(browsecategories, _, _, State) ->
-    %% TODO?
-    build_request(get, "/browseCategories", State);
-
-run(searchitemsincategory, KeyGen, _, State) ->
-    %% TODO?
-    Path = io_lib:format("/searchItemsInCategory/~p", [KeyGen()]),
-    build_request(get, Path, State);
-
-run(browseregions, _, _, State) ->
-    %% TODO?
-    build_request(get, "/browseRegions", State);
-
-run(browsecategoriesinregion, KeyGen, _, State) ->
-    %% TODO?
-    Path = io_lib:format("/browseCategoriesInRegion/~p", [KeyGen()]),
-    build_request(get, Path, State);
-
-run(searchitemsinregion, KeyGen, _, State) ->
-    %% TODO?
-    Path = io_lib:format("/searchItemsInRegion/~p", [KeyGen()]),
-    build_request(get, Path, State);
-
-run(viewitem, KeyGen, _, State) ->
-    %% TODO?
-    Path = io_lib:format("/item/~p", [KeyGen()]),
-    build_request(get, Path, State);
-
-run(viewuserinfo, KeyGen, _, State) ->
-    %% TODO?
-    Path = io_lib:format("/item/~p", [KeyGen()]),
-    build_request(get, Path, State);
-
-run(viewbidhistory, KeyGen, _, State) ->
-    %% TODO?
-    Path = io_lib:format("/bidHistory/~p", [KeyGen()]),
-    build_request(get, Path, State);
+    Region = <<"REGION_", BinaryRegionId/binary>>,
+    UserName = <<"randomUsernameNumber", BinaryRawId/binary>>,
+    User = [{name, UserName}, {password, <<"This is a password">>}, {region, Region}],
+    build_request(post, {"/register", jsx:encode(User)}, State);
 
 run(_, _, _, State) ->
     timer:sleep(1000),
