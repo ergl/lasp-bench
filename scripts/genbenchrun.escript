@@ -258,6 +258,9 @@ parse_line(Line, State) ->
     {continue, append_row(Splitted, State)}.
 
 -spec append_row(list(binary()), transition_table()) -> transition_table().
+append_row([], State) ->
+    State;
+
 append_row([<<"RUBiS Transition Table">> | _]=Row, State) ->
     State#state{table_name=lists:nth(2, Row)};
 
