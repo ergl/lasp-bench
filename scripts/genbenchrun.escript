@@ -11,6 +11,20 @@
 -define(RUBIS_IP, "127.0.0.1").
 -define(RUBIS_PORT, 5000).
 
+%% Remove the states that call no transactions, don't care about them
+-define(SHOULD_DISCARD, [
+    home,
+    register,
+    browse,
+    buynowauth,
+    sell,
+    selectcategorytosellitem,
+    putbid,
+    putcomment,
+    sellitemform,
+    aboutme_auth
+]).
+
 -define(OP_PROBS(N), (case N > 100 of true -> 1; _ -> 100 div N end)).
 
 -type probability() :: integer() | float().
@@ -50,10 +64,20 @@
 main([TableFile]) ->
     MatrixState = new(TableFile),
     StateList = generate_state_seq(MatrixState),
-    WaitingTimes = lists:map(fun(#state{waiting_times=W}) -> W end, StateList),
-    write_config_file(StateList, WaitingTimes).
+    ValidStateNames = discard_no_tx(StateList),
+    WaitingTimes = (hd(StateList))#state.waiting_times,
+    write_config_file(ValidStateNames, WaitingTimes).
 
-write_config_file(StateList, [WaitingTime | _]) ->
+discard_no_tx(StateList) ->
+    lists:filtermap(fun(State) ->
+        Name = state_name(State),
+        case lists:member(Name, ?SHOULD_DISCARD) of
+            true -> false;
+            _ -> {true, Name}
+        end
+    end, StateList).
+
+write_config_file(StateNames, WaitingTimes) ->
     io:fwrite(?CONFIG_HEADER({concurrent, 8}), []),
     io:fwrite("{driver, lasp_bench_driver_rubis}.~n"),
     io:fwrite("{key_generator, {partitioned_sequential_int, 5000000}}.~n"),
@@ -62,14 +86,14 @@ write_config_file(StateList, [WaitingTime | _]) ->
     io:fwrite("{rubis_ip, ~p}.~n", [?RUBIS_IP]),
     io:fwrite("{rubis_port, ~p}.~n", [?RUBIS_PORT]),
     io:fwrite("{operations, [~n"),
-    Prob = ?OP_PROBS(length(StateList)),
-    [FirstOp | RestOperations] = lists:map(fun(M) -> {state_name(M), Prob} end, StateList),
+    Prob = ?OP_PROBS(length(StateNames)),
+    [FirstOp | RestOperations] = lists:map(fun(Name) -> {Name, Prob} end, StateNames),
     io:fwrite("\t~p~n", [FirstOp]),
     ok = lists:foreach(fun(Op) ->
         io:fwrite("\t,~p~n", [Op])
     end, RestOperations),
     io:fwrite("]}.~n"),
-    io:fwrite("{waiting_times, ~n~p}.~n", [dict:to_list(WaitingTime)]),
+    io:fwrite("{waiting_times, ~n~p}.~n", [dict:to_list(WaitingTimes)]),
     ok.
 
 -spec new(string()) -> transition_table().

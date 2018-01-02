@@ -25,12 +25,6 @@ new(_Id) ->
         http_connection = ConnRef
     }}.
 
-run(home, _, _, State) ->
-    build_request(get, "/home", State);
-
-run(register, _, _, State) ->
-    build_request(get, "/register", State);
-
 run(registeruser, KeyGen, _, State) ->
     %% TODO
     Key = KeyGen(),
