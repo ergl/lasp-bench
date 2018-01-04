@@ -136,7 +136,7 @@ random_user(State = #rubis_state{own_user_ids_start_at = N, generated_usernames 
     case ChosendId < N of
         true ->
             IdStr = integer_to_binary(ChosendId),
-            {{username, <<"user_", IdStr/binary>>}, {password, {<<"password_", IdStr/binary>>}}};
+            {{username, <<"user_", IdStr/binary>>}, {password, <<"password_", IdStr/binary>>}};
         false ->
             Username = lists:nth((ChosendId - N), Usernames),
             {{username, Username}, {password, Username}}
