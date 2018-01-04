@@ -3,7 +3,7 @@
 -define(CONFIG_HEADER,
     fun(({concurrent, Conc})) ->
         io_lib:fwrite(
-            "{mode,max}.~n{duration,1}.~n{report_interval,1}.~n{concurrent, ~p}.~n",
+            "{mode,max}.~n{duration,1}.~n{report_interval,10}.~n{concurrent, ~p}.~n",
             [Conc]
         )
     end).
