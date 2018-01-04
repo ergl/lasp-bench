@@ -75,8 +75,7 @@
     own_user_ids_start_at :: non_neg_integer() | not_set,
     generated_usernames :: list(username()),
 
-    max_seen_item_id :: non_neg_integer() | not_set,
-    own_item_ids_start_at :: non_neg_integer() | not_set
+    max_seen_item_id :: non_neg_integer() | not_set
 }).
 
 -type rubis_state() :: #rubis_state{}.
@@ -89,7 +88,8 @@
          random_region/0,
          random_item_id/1,
          random_region_id/0,
-         random_category_id/0]).
+         random_category_id/0,
+         gen_item_store/1]).
 
 -spec new_rubis_state() -> rubis_state().
 new_rubis_state() ->
@@ -98,13 +98,12 @@ new_rubis_state() ->
         own_user_ids_start_at = not_set,
         generated_usernames = [],
 
-        max_seen_item_id = not_set,
-        own_item_ids_start_at = not_set
+        max_seen_item_id = not_set
     }.
 
 -spec update_state({atom(), non_neg_integer()}, rubis_state()) -> rubis_state().
 update_state({user_id, N}, State = #rubis_state{max_seen_user_id = not_set, own_user_ids_start_at = not_set}) ->
-    State#rubis_state{max_seen_user_id=N,own_user_ids_start_at=N};
+    State#rubis_state{max_seen_user_id = N, own_user_ids_start_at = N};
 
 update_state({user_id, N}, State = #rubis_state{max_seen_user_id = Max, own_user_ids_start_at = Start}) ->
     NewMax = case N > Max of
@@ -115,7 +114,17 @@ update_state({user_id, N}, State = #rubis_state{max_seen_user_id = Max, own_user
         true -> N;
         false -> Start
     end,
-    State#rubis_state{max_seen_user_id = NewMax, own_user_ids_start_at = NewStart}.
+    State#rubis_state{max_seen_user_id = NewMax, own_user_ids_start_at = NewStart};
+
+update_state({item_id, N}, State = #rubis_state{max_seen_item_id = not_set}) ->
+    State#rubis_state{max_seen_item_id = N};
+
+update_state({item_id, N}, State = #rubis_state{max_seen_item_id = Max}) ->
+    NewMax = case N > Max of
+        true -> N;
+        false -> Max
+    end,
+    State#rubis_state{max_seen_item_id = NewMax}.
 
 -spec gen_new_user(rubis_state()) -> {user(), rubis_state()}.
 gen_new_user(State = #rubis_state{generated_usernames = Usernames}) ->
@@ -153,6 +162,17 @@ random_region() ->
 -spec random_category_id() -> non_neg_integer().
 random_category_id() ->
     crypto:rand_uniform(1, ?RUBIS_CATEGORIES + 1).
+
+-spec gen_item_store(rubis_state()) -> list().
+gen_item_store(State) ->
+    {Username, Password} = random_user(State),
+    Auth = {auth, [Username, Password]},
+    Item = {item, [{name, random_string(10)},
+     {description, random_string(100)},
+     {quantity, crypto:rand_uniform(1, 100)},
+     {category, random_category_id()}
+    ]},
+    [Auth, Item].
 
 -spec random_item_id(rubis_state()) -> non_neg_integer().
 random_item_id(#rubis_state{max_seen_item_id = not_set}) ->
