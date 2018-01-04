@@ -57,7 +57,7 @@ run(searchitemsinregion, _, _, State) ->
     build_request(post, {"/searchByRegion", Payload}, State);
 
 run(viewitem, _, _, State) ->
-    ItemId = ?RUBIS_CORE:random_item_id(),
+    ItemId = ?RUBIS_CORE:random_item_id(State#state.rubis_state),
     URL = "/items/" ++ integer_to_list(ItemId),
     build_request(get, URL, State);
 
@@ -70,6 +70,16 @@ run(viewbidhistory, _, _, State) ->
     ItemId = ?RUBIS_CORE:random_item_id(),
     URL = "/items/" ++ integer_to_list(ItemId) ++ "/bids",
     build_request(get, URL, State);
+
+run(registeritem, _, _, State) ->
+    ItemPayload = ?RUBIS_CORE:gen_item_store(State#state.rubis_state),
+    Payload = jsx:encode(ItemPayload),
+    build_request(
+        post,
+        {"/items", Payload},
+        fun create_item_handler/2,
+        State
+    );
 
 run(_, _, _, State) ->
     {ok, State}.
@@ -124,7 +134,14 @@ simple_resp_handler(_Body, State) ->
 
 create_user_handler(Body, State = #state{rubis_state=RubisState}) ->
     #{ result :=
-        #{generatedKeyValue :=
+        #{ generatedKeyValue :=
             #{ pkValue := NewId } } } = jsx:decode(Body, [{labels, atom}, return_maps]),
     NewRubisState = ?RUBIS_CORE:update_state({user_id, NewId}, RubisState),
+    {ok, State#state{rubis_state=NewRubisState}}.
+
+create_item_handler(Body, State = #state{rubis_state=RubisState}) ->
+    #{ result :=
+        #{ generatedKeyValue :=
+            #{ pkValue := NewId } } } = jsx:decode(Body, [{labels, atom}, return_maps]),
+    NewRubisState = ?RUBIS_CORE:update_state({item_id, NewId}, RubisState),
     {ok, State#state{rubis_state=NewRubisState}}.
