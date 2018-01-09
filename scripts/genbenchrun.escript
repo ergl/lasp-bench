@@ -84,7 +84,7 @@ discard_no_tx(StateList) ->
     end, StateList).
 
 write_config_file(StateNames, WaitingTimes) ->
-    io:fwrite(?CONFIG_HEADER({concurrent, 8}), []),
+    io:fwrite(?CONFIG_HEADER({concurrent, 2}), []),
     io:fwrite("{driver, lasp_bench_driver_rubis}.~n"),
     io:fwrite("{key_generator, {partitioned_sequential_int, 5000000}}.~n"),
     io:fwrite("{disable_sequential_int_progress_report, true}.~n"),

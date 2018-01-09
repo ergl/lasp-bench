@@ -26,6 +26,9 @@ results:
 
 ops_sec-results: results
 
+tx-results:
+	Rscript --vanilla priv/summary.r --ylabel1stgraph tx/sec -i tests/current
+
 byte_sec-results:
 	Rscript --vanilla priv/summary.r --ylabel1stgraph byte/sec -i tests/current
 
