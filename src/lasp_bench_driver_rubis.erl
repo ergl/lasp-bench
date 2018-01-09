@@ -52,7 +52,7 @@ run(browseregions, _, _, State) ->
     build_request(get, "/regions", State);
 
 run(browsecategoriesinregion, _, _, _State) ->
-    %% TODO
+    %% TODO(borja)
     not_implemented;
 
 run(searchitemsinregion, _, _, State) ->
@@ -79,23 +79,36 @@ run(viewbidhistory, _, _, State) ->
 run(buynowauth, _, _, State) ->
     perform_auth(State);
 
-run(storebuynow, _, _, _State) ->
-    %% TODO
-    not_implemented;
+run(storebuynow, _, _, State) ->
+    ItemId = ?RUBIS_CORE:random_item_id(),
+    URL = "/items/" ++ integer_to_list(ItemId) ++ "/buy",
+
+    UserId = ?RUBIS_CORE:get_logged_in(State#state.rubis_state),
+    Quantity = crypto:rand_uniform(1, 101),
+    Payload = jsx:encode([{userId, UserId}, {quantity, Quantity}]),
+    build_request(post, {URL, Payload}, State);
 
 run(putbidauth, _, _, State) ->
     perform_auth(State);
 
-run(storebid, _, _, _State) ->
-    %% TODO
-    not_implemented;
+run(storebid, _, _, State) ->
+    ItemId = ?RUBIS_CORE:random_item_id(),
+    URL = "/items/" ++ integer_to_list(ItemId) ++ "/bids",
+
+    UserId = ?RUBIS_CORE:get_logged_in(State#state.rubis_state),
+    BidPrice = crypto:rand_uniform(1, 2001),
+    Payload = jsx:encode([{userId, UserId}, {bidPrice, BidPrice}]),
+    build_request(post, {URL, Payload}, State);
 
 run(putcommentauth, _, _, State) ->
     perform_auth(State);
 
-run(storecomment, _, _, _State) ->
-    %% TODO
-    not_implemented;
+run(storecomment, _, _, State) ->
+    ItemId = ?RUBIS_CORE:random_item_id(),
+    URL = "/items/" ++ integer_to_list(ItemId) ++ "/comments",
+
+    CommentPayload = ?RUBIS_CORE:gen_comment_store(State#state.rubis_state),
+    build_request(post, {URL, CommentPayload}, State);
 
 run(registeritem, _, _, State) ->
     ItemPayload = ?RUBIS_CORE:gen_item_store(State#state.rubis_state),
@@ -110,9 +123,10 @@ run(registeritem, _, _, State) ->
 run(aboutme_auth, _, _, State) ->
     perform_auth(State);
 
-run(aboutme, _, _, _State) ->
-    %% TODO
-    not_implemented.
+run(aboutme, _, _, State) ->
+    Id = ?RUBIS_CORE:get_logged_in(State#state.rubis_state),
+    Payload = jsx:encode([{userId, Id}]),
+    build_request(post, {"/aboutMe", Payload}, State).
 
 %% Networking Utils
 

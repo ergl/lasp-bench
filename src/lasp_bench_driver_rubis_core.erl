@@ -84,6 +84,7 @@
 
 -export([new_rubis_state/0,
          set_logged_in/2,
+         get_logged_in/1,
          update_state/2,
          gen_new_user/1,
          random_user/1,
@@ -92,7 +93,8 @@
          random_item_id/1,
          random_region_id/0,
          random_category_id/0,
-         gen_item_store/1]).
+         gen_item_store/1,
+         gen_comment_store/1]).
 
 -spec new_rubis_state() -> rubis_state().
 new_rubis_state() ->
@@ -109,6 +111,12 @@ new_rubis_state() ->
 -spec set_logged_in(non_neg_integer(), rubis_state()) -> rubis_state().
 set_logged_in(Id, State) ->
     State#rubis_state{logged_in_as=Id}.
+
+get_logged_in(State = #rubis_state{logged_in_as=not_set}) ->
+    random_user_id(State);
+
+get_logged_in(#rubis_state{logged_in_as=Id}) ->
+    Id.
 
 -spec update_state({atom(), non_neg_integer()}, rubis_state()) -> rubis_state().
 update_state({user_id, N}, State = #rubis_state{max_seen_user_id = not_set, own_user_ids_start_at = not_set}) ->
@@ -186,6 +194,30 @@ gen_item_store(State = #rubis_state{logged_in_as = As}) ->
         {category, random_category_id()}
     ]},
     [Auth, Item].
+
+-spec gen_comment_store(rubis_state()) -> list().
+gen_comment_store(State = #rubis_state{logged_in_as = As}) ->
+    UserId = case As of
+        not_set -> random_user_id(State);
+        Id -> Id
+    end,
+    ToUserId = generate_non_matching_user_id(UserId, State),
+    Auth = {userId, UserId},
+    Comment = {comment, [
+        {to, ToUserId},
+        {vote, crypto:rand_uniform(-5, 5)},
+        {body, random_string(100)}
+    ]},
+    [Auth, Comment].
+
+generate_non_matching_user_id(Id, State) ->
+    generate_non_matching_user_id(Id, random_user_id(State), State).
+
+generate_non_matching_user_id(Id1, Id2, State) when Id1 =:= Id2 ->
+    generate_non_matching_user_id(Id1, random_user_id(State), State);
+
+generate_non_matching_user_id(Id1, Id2, _) when Id1 =:= Id2 ->
+    Id2.
 
 -spec random_item_id(rubis_state()) -> non_neg_integer().
 random_item_id(#rubis_state{max_seen_item_id = not_set}) ->
