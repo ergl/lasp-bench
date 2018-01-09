@@ -50,6 +50,10 @@ run(searchitemsincategory, _, _, State) ->
 run(browseregions, _, _, State) ->
     build_request(get, "/regions", State);
 
+run(browsecategoriesinregion, _, _, _State) ->
+    %% TODO
+    not_implemented;
+
 run(searchitemsinregion, _, _, State) ->
     RegionId = ?RUBIS_CORE:random_region_id(),
     CategoryId = ?RUBIS_CORE:random_category_id(),
@@ -74,11 +78,23 @@ run(viewbidhistory, _, _, State) ->
 run(buynowauth, _, _, State) ->
     perform_auth(State);
 
+run(storebuynow, _, _, _State) ->
+    %% TODO
+    not_implemented;
+
 run(putbidauth, _, _, State) ->
     perform_auth(State);
 
+run(storebid, _, _, _State) ->
+    %% TODO
+    not_implemented;
+
 run(putcommentauth, _, _, State) ->
     perform_auth(State);
+
+run(storecomment, _, _, _State) ->
+    %% TODO
+    not_implemented;
 
 run(registeritem, _, _, State) ->
     ItemPayload = ?RUBIS_CORE:gen_item_store(State#state.rubis_state),
@@ -91,7 +107,11 @@ run(registeritem, _, _, State) ->
     );
 
 run(aboutme_auth, _, _, State) ->
-    perform_auth(State).
+    perform_auth(State);
+
+run(aboutme, _, _, _State) ->
+    %% TODO
+    not_implemented.
 
 %% Networking Utils
 
