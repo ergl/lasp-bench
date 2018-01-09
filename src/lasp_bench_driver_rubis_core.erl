@@ -173,13 +173,17 @@ random_category_id() ->
     crypto:rand_uniform(1, ?RUBIS_CATEGORIES + 1).
 
 -spec gen_item_store(rubis_state()) -> list().
-gen_item_store(State) ->
-    {Username, Password} = random_user(State),
-    Auth = {auth, [Username, Password]},
-    Item = {item, [{name, random_string(10)},
-     {description, random_string(100)},
-     {quantity, crypto:rand_uniform(1, 100)},
-     {category, random_category_id()}
+gen_item_store(State = #rubis_state{logged_in_as = As}) ->
+    UserId = case As of
+        not_set -> random_user_id(State);
+        Id -> Id
+    end,
+    Auth = {userId, UserId},
+    Item = {item, [
+        {name, random_string(10)},
+        {description, random_string(100)},
+        {quantity, crypto:rand_uniform(1, 100)},
+        {category, random_category_id()}
     ]},
     [Auth, Item].
 
