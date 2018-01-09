@@ -13,16 +13,22 @@
 
 %% Remove the states that call no transactions, don't care about them
 -define(SHOULD_DISCARD, [
+    %% No tx, home page
     home,
+    %% No tx, register user page
     register,
+    %% No tx, just a search box
     browse,
-    buynowauth,
+    %% Using buynowauth, this is just a page
+    buynow,
+    %% Using putbidauth, this is just a page
+    putbid,
+    %% Using putcommentauth, this is just a page
+    putcomment,
+    %% No tx, just a series of pages for items
     sell,
     selectcategorytosellitem,
-    putbid,
-    putcomment,
-    sellitemform,
-    aboutme_auth
+    sellitemform
 ]).
 
 -define(OP_PROBS(N), (case N > 100 of true -> 1; _ -> 100 div N end)).
