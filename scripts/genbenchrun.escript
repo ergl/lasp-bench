@@ -3,7 +3,7 @@
 -define(CONFIG_HEADER,
     fun(({concurrent, Conc})) ->
         io_lib:fwrite(
-            "{mode,max}.~n{duration,1}.~n{report_interval,10}.~n{concurrent, ~p}.~n",
+            "{mode,max}.~n{duration,1}.~n{report_interval,10}.~n{concurrent,~p}.~n",
             [Conc]
         )
     end).
@@ -85,13 +85,10 @@ discard_no_tx(StateList) ->
 
 write_config_file(StateNames, WaitingTimes) ->
     io:fwrite(?CONFIG_HEADER({concurrent, 2}), []),
-    io:fwrite("{driver, lasp_bench_driver_rubis}.~n"),
-    io:fwrite("{key_generator, {partitioned_sequential_int, 5000000}}.~n"),
-    io:fwrite("{disable_sequential_int_progress_report, true}.~n"),
-    io:fwrite("{value_generator, {fixed_bin, 10248}}.~n"),
-    io:fwrite("{rubis_ip, ~p}.~n", [?RUBIS_IP]),
-    io:fwrite("{rubis_port, ~p}.~n", [?RUBIS_PORT]),
-    io:fwrite("{operations, [~n"),
+    io:fwrite("{driver,lasp_bench_driver_rubis}.~n"),
+    io:fwrite("{rubis_ip,~p}.~n", [?RUBIS_IP]),
+    io:fwrite("{rubis_port,~p}.~n", [?RUBIS_PORT]),
+    io:fwrite("{operations,[~n"),
     Prob = ?OP_PROBS(length(StateNames)),
     [FirstOp | RestOperations] = lists:map(fun(Name) -> {Name, Prob} end, StateNames),
     io:fwrite("\t~p~n", [FirstOp]),
