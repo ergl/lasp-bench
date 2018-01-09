@@ -3,12 +3,13 @@
 -define(CONFIG_MODE, max).
 -define(CONFIG_DURATION, 1).
 -define(CONFIG_INTERVAL_SECONDS, 10).
+-define(CONFIG_CLIENTS, 2).
 
 -define(CONFIG_HEADER,
-    fun(({concurrent, Conc})) ->
+    fun() ->
         io_lib:fwrite(
             "{mode,~p}.~n{duration,~p}.~n{report_interval,~p}.~n{concurrent,~p}.~n",
-            [?CONFIG_MODE, ?CONFIG_DURATION, ?CONFIG_INTERVAL_SECONDS, Conc]
+            [?CONFIG_MODE, ?CONFIG_DURATION, ?CONFIG_INTERVAL_SECONDS, ?CONFIG_CLIENTS]
         )
     end).
 
@@ -88,7 +89,7 @@ discard_no_tx(StateList) ->
     end, StateList).
 
 write_config_file(StateNames, WaitingTimes) ->
-    io:fwrite(?CONFIG_HEADER({concurrent, 2}), []),
+    io:fwrite(?CONFIG_HEADER(), []),
     io:fwrite("{driver,lasp_bench_driver_rubis}.~n"),
     io:fwrite("{rubis_ip,~p}.~n", [?RUBIS_IP]),
     io:fwrite("{rubis_port,~p}.~n", [?RUBIS_PORT]),
