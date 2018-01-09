@@ -5,7 +5,7 @@
 
 -include("lasp_bench.hrl").
 
--define(REQ_TIMEOUT, 10000).
+-define(REQ_TIMEOUT, infinity).
 -define(RUBIS_CORE, lasp_bench_driver_rubis_core).
 
 -record(state, {
@@ -162,7 +162,7 @@ generate_url(Address,Port,Path) ->
 
 perf_req(_Conn, Req, State, Handler) ->
     {Method, URL, Headers, Payload} = Req,
-    case hackney:request(Method, URL, Headers, Payload, [{recv_timeout, ?REQ_TIMEOUT}]) of
+    case hackney:request(Method, URL, Headers, Payload, [{connect_timeout, ?REQ_TIMEOUT}, {recv_timeout, ?REQ_TIMEOUT}]) of
         {ok, 200, _Headers, HttpConn} ->
             {ok, Body} = hackney:body(HttpConn),
             Handler(Body, State);
@@ -176,10 +176,15 @@ perf_req(_Conn, Req, State, Handler) ->
 simple_resp_handler(_Body, State) ->
     {ok, State}.
 
+print_resp_handler(Body, State) ->
+    Decoded = jsx:decode(Body, [{labels, atom}, return_maps]),
+    io:fwrite("Response: ~p~n", [Decoded]),
+    {ok, State}.
+
 %% Util functions
 
 perform_auth(State) ->
-    {Username, Password} = lasp_bench_driver_rubis_core:random_user(State#state.rubis_state),
+    {Username, Password} = ?RUBIS_CORE:random_user(State#state.rubis_state),
     Payload = jsx:encode([{auth, [Username, Password]}]),
     build_request(post, {"/auth", Payload}, fun auth_handler/2, State).
 
