@@ -42,13 +42,13 @@ run(registeruser, _, _, State) ->
 run(browsecategories, _, _, State) ->
     build_request(get, "/categories", State);
 
-run(browseregions, _, _, State) ->
-    build_request(get, "/regions", State);
-
 run(searchitemsincategory, _, _, State) ->
     RegionId = ?RUBIS_CORE:random_region_id(),
     URL = "/searchByCategory/" ++ integer_to_list(RegionId),
     build_request(get, URL, State);
+
+run(browseregions, _, _, State) ->
+    build_request(get, "/regions", State);
 
 run(searchitemsinregion, _, _, State) ->
     RegionId = ?RUBIS_CORE:random_region_id(),
@@ -71,6 +71,15 @@ run(viewbidhistory, _, _, State) ->
     URL = "/items/" ++ integer_to_list(ItemId) ++ "/bids",
     build_request(get, URL, State);
 
+run(buynowauth, _, _, State) ->
+    perform_auth(State);
+
+run(putbidauth, _, _, State) ->
+    perform_auth(State);
+
+run(putcommentauth, _, _, State) ->
+    perform_auth(State);
+
 run(registeritem, _, _, State) ->
     ItemPayload = ?RUBIS_CORE:gen_item_store(State#state.rubis_state),
     Payload = jsx:encode(ItemPayload),
@@ -81,8 +90,8 @@ run(registeritem, _, _, State) ->
         State
     );
 
-run(_, _, _, State) ->
-    {ok, State}.
+run(aboutme_auth, _, _, State) ->
+    perform_auth(State).
 
 %% Networking Utils
 
@@ -131,6 +140,19 @@ perf_req(_Conn, Req, State, Handler) ->
 
 simple_resp_handler(_Body, State) ->
     {ok, State}.
+
+%% Util functions
+
+perform_auth(State) ->
+    {Username, Password} = lasp_bench_driver_rubis_core:random_user(State#state.rubis_state),
+    Payload = jsx:encode([{auth, [Username, Password]}]),
+    build_request(post, {"/auth", Payload}, fun auth_handler/2, State).
+
+auth_handler(Body, State = #state{rubis_state=RubisState}) ->
+    #{ result :=
+        #{ userId := AuthorizedAs }} = jsx:decode(Body, [{labels, atom}, return_maps]),
+    NewRubisState = ?RUBIS_CORE:set_logged_in(AuthorizedAs, RubisState),
+    {ok, State#state{rubis_state=NewRubisState}}.
 
 create_user_handler(Body, State = #state{rubis_state=RubisState}) ->
     #{ result :=
