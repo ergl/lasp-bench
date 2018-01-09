@@ -1,10 +1,14 @@
 #!/usr/bin/env escript
 
+-define(CONFIG_MODE, max).
+-define(CONFIG_DURATION, 1).
+-define(CONFIG_INTERVAL_SECONDS, 10).
+
 -define(CONFIG_HEADER,
     fun(({concurrent, Conc})) ->
         io_lib:fwrite(
-            "{mode,max}.~n{duration,1}.~n{report_interval,10}.~n{concurrent,~p}.~n",
-            [Conc]
+            "{mode,~p}.~n{duration,~p}.~n{report_interval,~p}.~n{concurrent,~p}.~n",
+            [?CONFIG_MODE, ?CONFIG_DURATION, ?CONFIG_INTERVAL_SECONDS, Conc]
         )
     end).
 
