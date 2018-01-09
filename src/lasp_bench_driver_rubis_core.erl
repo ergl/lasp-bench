@@ -75,12 +75,15 @@
     own_user_ids_start_at :: non_neg_integer() | not_set,
     generated_usernames :: list(username()),
 
-    max_seen_item_id :: non_neg_integer() | not_set
+    max_seen_item_id :: non_neg_integer() | not_set,
+
+    logged_in_as :: non_neg_integer() | not_set
 }).
 
 -type rubis_state() :: #rubis_state{}.
 
 -export([new_rubis_state/0,
+         set_logged_in/2,
          update_state/2,
          gen_new_user/1,
          random_user/1,
@@ -98,8 +101,14 @@ new_rubis_state() ->
         own_user_ids_start_at = not_set,
         generated_usernames = [],
 
-        max_seen_item_id = not_set
+        max_seen_item_id = not_set,
+
+        logged_in_as = not_set
     }.
+
+-spec set_logged_in(non_neg_integer(), rubis_state()) -> rubis_state().
+set_logged_in(Id, State) ->
+    State#rubis_state{logged_in_as=Id}.
 
 -spec update_state({atom(), non_neg_integer()}, rubis_state()) -> rubis_state().
 update_state({user_id, N}, State = #rubis_state{max_seen_user_id = not_set, own_user_ids_start_at = not_set}) ->
