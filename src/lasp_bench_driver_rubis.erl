@@ -51,10 +51,6 @@ run(searchitemsincategory, _, _, State) ->
 run(browseregions, _, _, State) ->
     build_request(get, "/regions", State);
 
-run(browsecategoriesinregion, _, _, _State) ->
-    %% TODO(borja)
-    not_implemented;
-
 run(searchitemsinregion, _, _, State) ->
     RegionId = ?RUBIS_CORE:random_region_id(),
     CategoryId = ?RUBIS_CORE:random_category_id(),

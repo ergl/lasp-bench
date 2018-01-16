@@ -24,6 +24,8 @@
     register,
     %% No tx, just a search box
     browse,
+    %% Not sure what this does
+    browsecategoriesinregion,
     %% Using buynowauth, this is just a page
     buynow,
     %% Using putbidauth, this is just a page
