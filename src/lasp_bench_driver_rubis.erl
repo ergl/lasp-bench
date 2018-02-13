@@ -5,7 +5,6 @@
 
 -include("lasp_bench.hrl").
 
--define(REQ_TIMEOUT, infinity).
 -define(RUBIS_CORE, lasp_bench_driver_rubis_core).
 
 -record(state, {
@@ -158,7 +157,7 @@ generate_url(Address,Port,Path) ->
 
 perf_req(_Conn, Req, State, Handler) ->
     {Method, URL, Headers, Payload} = Req,
-    case hackney:request(Method, URL, Headers, Payload, [{connect_timeout, ?REQ_TIMEOUT}, {recv_timeout, ?REQ_TIMEOUT}]) of
+    case hackney:request(Method, URL, Headers, Payload, []) of
         {ok, 200, _Headers, HttpConn} ->
             {ok, Body} = hackney:body(HttpConn),
             Handler(Body, State);
