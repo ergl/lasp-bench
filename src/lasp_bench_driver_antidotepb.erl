@@ -21,7 +21,8 @@
     commit_time,
 
     read_only_num :: non_neg_integer(),
-    read_write_num :: {non_neg_integer(), non_neg_integer()},
+    rw_reads :: non_neg_integer(),
+    rw_writes :: non_neg_integer(),
 
     batch_reads :: boolean(),
     batch_writes :: boolean()
@@ -32,7 +33,7 @@ new(Id) ->
     Ports = lasp_bench_config:get(antidote_ports),
 
     ReadOnlyNum = lasp_bench_config:get(read_only_num),
-    ReadWriteNum = lasp_bench_config:get(read_write_num),
+    {RWReads, RWWrites} = lasp_bench_config:get(read_write_num),
 
     BatchReads = lasp_bench_config:get(batch_reads),
     BatchWrites = lasp_bench_config:get(batch_writes),
@@ -49,7 +50,8 @@ new(Id) ->
                 commit_time=ignore,
 
                 read_only_num=ReadOnlyNum,
-                read_write_num=ReadWriteNum,
+                rw_reads=RWReads,
+                rw_writes=RWWrites,
 
                 batch_reads=BatchReads,
                 batch_writes=BatchWrites}}.
@@ -80,7 +82,8 @@ run(read_write, KeyGen, ValueGen, State = #state{
     commit_time=CT,
     batch_reads=BatchReads,
     batch_writes=BatchWrites,
-    read_write_num={Reads,Writes},
+    rw_reads=Reads,
+    rw_writes=Writes,
     client_id=ClientId
 }) ->
     Result = run_transaction(ClientId,
@@ -103,7 +106,7 @@ run(read_only, KeyGen, _, State = #state{
     connection_pid=Pid,
     commit_time=CT,
     batch_reads=BatchReads,
-    read_write_num=Reads,
+    read_only_num=Reads,
     client_id=ClientId
 }) ->
     Result = run_transaction(ClientId,
