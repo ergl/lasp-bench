@@ -28,6 +28,11 @@
     batch_writes :: boolean()
 }).
 
+-record(resp_error, {
+    worker_id,
+    reason
+}).
+
 new(Id) ->
     Ips = lasp_bench_config:get(antidote_ips),
     Ports = lasp_bench_config:get(antidote_ports),
@@ -127,8 +132,9 @@ run(read_only, KeyGen, _, State = #state{
 
 run_transaction(Id, Pid, LastCT, KeyGen, ValueGen, ReadConfig, WriteConfig) ->
     case start_transaction(Pid, LastCT) of
-        {error, Reason} ->
-            {error, {Id, Reason}};
+        {error, _}=StartErr ->
+            convert_error(Id, StartErr);
+
         {ok, TxId} ->
             ReadResult = do_reads(Pid, TxId, KeyGen, ReadConfig),
             WriteResult = case ReadResult of
@@ -157,11 +163,11 @@ run_transaction(Id, Pid, LastCT, KeyGen, ValueGen, ReadConfig, WriteConfig) ->
     end.
 
 %% Associate worker id to error message
-convert_error(Id, {error, {Id, _Reason}}=Err) ->
+convert_error(Id, {error, #resp_error{worker_id = Id}} = Err) ->
     Err;
 
 convert_error(Id, {error, Reason}) ->
-    {error, {Id, Reason}}.
+    {error, #resp_error{worker_id = Id, reason = Reason}}.
 
 %% Execute N reads, return the keys that were generated
 do_reads(_Pid, _TxId, _KeyGen, {0, _}) ->
