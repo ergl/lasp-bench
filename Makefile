@@ -32,6 +32,9 @@ load: compile
 generate:
 	./rubis-generate.sh $(RUBIS_IP) $(RUBIS_PORT) $(RUBIS_TABLE_FILE) $(RUBIS_TABLE_CONFIG)
 
+bench:
+	./_build/default/bin/lasp_bench $(RUBIS_TABLE_CONFIG)
+
 results:
 	Rscript --vanilla priv/summary.r -i tests/current
 
