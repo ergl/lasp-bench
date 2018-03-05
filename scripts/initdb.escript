@@ -13,6 +13,7 @@ main([Host, Port, ConfigFile, Outfile]) ->
     end;
 
 main(_) ->
+    io:fwrite("initdb.escript <host> <port> <config-file> <output-file>~n"),
     halt(1).
 
 load_config(ConfigFile) ->

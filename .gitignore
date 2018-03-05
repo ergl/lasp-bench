@@ -8,3 +8,4 @@ rebar.lock
 .DS_Store
 .rebar3/
 ebin/
+scripts/output.json
