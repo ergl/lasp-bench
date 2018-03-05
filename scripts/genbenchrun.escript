@@ -14,7 +14,7 @@
         )
     end).
 
--define(CONFIG_DRIVER, "{driver,lasp_bench_driver_rubis}.~n").
+-define(CONFIG_DRIVER, "{driver,lasp_bench_driver_rubis_tcp}.~n").
 
 %% Remove the states that call no transactions, don't care about them
 -define(SHOULD_DISCARD, [
