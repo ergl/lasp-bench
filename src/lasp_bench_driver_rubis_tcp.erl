@@ -44,33 +44,102 @@ run(registeruser, _, _, State = #state{socket=Sock, rubis_state=RState}) ->
              {error, Reason, State#state{rubis_state=FinalState}}
     end;
 
-run(browsecategories, _, _, State) ->
-    %% TODO(borja)
-    {ok, State};
+run(browsecategories, _, _, State = #state{socket=Sock}) ->
+    Msg = rubis_proto:browse_categories(),
+    ok = gen_tcp:send(Sock, Msg),
+    {ok, BinReply} = gen_tcp:recv(Sock, 0),
+    Resp = rubis_proto:decode_reply('BrowseCategories', BinReply),
+    case Resp of
+        ok ->
+            {ok, State};
 
-run(searchitemsincategory, _, _, State) ->
-    %% TODO(borja)
-    {ok, State};
+        {error, Reason} ->
+            {error, Reason, State}
+    end;
 
-run(browseregions, _, _, State) ->
-    %% TODO(borja)
-    {ok, State};
+run(searchitemsincategory, _, _, State = #state{socket=Sock, rubis_state=RState}) ->
+    CategoryId = ?core:random_category_id(RState),
+    Msg = rubis_proto:search_items_by_category(CategoryId),
+    ok = gen_tcp:send(Sock, Msg),
+    {ok, BinReply} = gen_tcp:recv(Sock, 0),
+    Resp = rubis_proto:decode_reply('SearchByCategory', BinReply),
+    case Resp of
+        ok ->
+            {ok, State};
 
-run(searchitemsinregion, _, _, State) ->
-    %% TODO(borja)
-    {ok, State};
+        {error, Reason} ->
+            {error, Reason, State}
+    end;
 
-run(viewitem, _, _, State) ->
-    %% TODO(borja)
-    {ok, State};
+run(browseregions, _, _, State = #state{socket=Sock}) ->
+    Msg = rubis_proto:browse_regions(),
+    ok = gen_tcp:send(Sock, Msg),
+    {ok, BinReply} = gen_tcp:recv(Sock, 0),
+    Resp = rubis_proto:decode_reply('BrowseRegions', BinReply),
+    case Resp of
+        ok ->
+            {ok, State};
 
-run(viewuserinfo, _, _, State) ->
-    %% TODO(borja)
-    {ok, State};
+        {error, Reason} ->
+            {error, Reason, State}
+    end;
 
-run(viewbidhistory, _, _, State) ->
-    %% TODO(borja)
-    {ok, State};
+run(searchitemsinregion, _, _, State = #state{socket=Sock, rubis_state=RState}) ->
+    RegionId = ?core:random_region_id(RState),
+    CategoryId = ?core:random_category_id(RState),
+    Msg = rubis_proto:search_items_by_region(CategoryId, RegionId),
+    ok = gen_tcp:send(Sock, Msg),
+    {ok, BinReply} = gen_tcp:recv(Sock, 0),
+    Resp = rubis_proto:decode_reply('SearchByRegion', BinReply),
+    case Resp of
+        ok ->
+            {ok, State};
+
+        {error, Reason} ->
+            {error, Reason, State}
+    end;
+
+run(viewitem, _, _, State = #state{socket=Sock, rubis_state=RState}) ->
+    ItemId = lasp_bench_driver_rubis_core:random_item_id(RState),
+    Msg = rubis_proto:view_item(ItemId),
+    ok = gen_tcp:send(Sock, Msg),
+    {ok, BinReply} = gen_tcp:recv(Sock, 0),
+    Resp = rubis_proto:decode_reply('ViewItem', BinReply),
+    case Resp of
+        ok ->
+            {ok, State};
+
+        {error, Reason} ->
+            {error, Reason, State}
+    end;
+
+run(viewuserinfo, _, _, State = #state{socket=Sock, rubis_state=RState}) ->
+    UserId = lasp_bench_driver_rubis_core:random_user_id(RState),
+    Msg = rubis_proto:view_user(UserId),
+    ok = gen_tcp:send(Sock, Msg),
+    {ok, BinReply} = gen_tcp:recv(Sock, 0),
+    Resp = rubis_proto:decode_reply('ViewUser', BinReply),
+    case Resp of
+        ok ->
+            {ok, State};
+
+        {error, Reason} ->
+            {error, Reason, State}
+    end;
+
+run(viewbidhistory, _, _, State = #state{socket=Sock, rubis_state=RState}) ->
+    ItemId = lasp_bench_driver_rubis_core:random_item_id(RState),
+    Msg = rubis_proto:view_bid_history(ItemId),
+    ok = gen_tcp:send(Sock, Msg),
+    {ok, BinReply} = gen_tcp:recv(Sock, 0),
+    Resp = rubis_proto:decode_reply('ViewItemBidHist', BinReply),
+    case Resp of
+        ok ->
+            {ok, State};
+
+        {error, Reason} ->
+            {error, Reason, State}
+    end;
 
 run(buynowauth, _, _, State) ->
     perform_auth(State);
@@ -141,9 +210,19 @@ run(registeritem, _, _, State = #state{socket=Sock, rubis_state=RState}) ->
 run(aboutme_auth, _, _, State) ->
     perform_auth(State);
 
-run(aboutme, _, _, State) ->
-    %% TODO(borja)
-    {ok, State}.
+run(aboutme, _, _, State = #state{socket=Sock, rubis_state=RState}) ->
+    UserId = lasp_bench_driver_rubis_core:random_user_id(RState),
+    Msg = rubis_proto:about_me(UserId),
+    ok = gen_tcp:send(Sock, Msg),
+    {ok, BinReply} = gen_tcp:recv(Sock, 0),
+    Resp = rubis_proto:decode_reply('AboutMe', BinReply),
+    case Resp of
+        ok ->
+            {ok, State};
+
+        {error, Reason} ->
+            {error, Reason, State}
+    end.
 
 
 %% Util functions
