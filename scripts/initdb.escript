@@ -51,7 +51,7 @@ do_load(Socket, Config) ->
     Categories = lists:map(fun(#{name := Name}) -> Name end, CategoryMapping),
     CategoryIds = load_categories(Socket, Categories),
     #{users := UserNum} = Config,
-    UserIds = load_users(Socket, UserNum, RegionIds),
+    {UserNameSet, UserIds} = load_users(Socket, UserNum, RegionIds),
     #{items_description_length := ItemLen} = Config,
     ItemIds = load_items(Socket, ItemLen, UserIds, CategoryIds, CategoryMapping),
     #{bids := BidNum} = Config,
@@ -62,6 +62,7 @@ do_load(Socket, Config) ->
         <<"region_ids">> => RegionIds,
         <<"category_ids">> => CategoryIds,
         <<"user_ids">> => UserIds,
+        <<"user_names">> => lists:map(fun erlang:list_to_binary/1, sets:to_list(UserNameSet)),
         <<"item_ids">> => ItemIds,
         <<"bid_ids">> => BidIds,
         <<"comment_ids">> => CommentIds
@@ -89,9 +90,9 @@ load_users(Socket, UserNum, RegionIds) ->
     UserSet = sets:new(),
     RegionLen = length(RegionIds),
 
-    element(2, lists:foldl(fun(_, {Set, Ids}) ->
+    lists:foldl(fun(_, {Set, Ids}) ->
         {Username, NewSet} = unique_string(10, Set),
-        Password = random_string(10),
+        Password = Username,
         N = rand:uniform(RegionLen),
         RandomId = lists:nth(N, RegionIds),
         Msg = rubis_proto:register_user(Username, Password, RandomId),
@@ -99,7 +100,7 @@ load_users(Socket, UserNum, RegionIds) ->
         {ok, BinReply} = gen_tcp:recv(Socket, 0),
         {ok, Id} = rubis_proto:decode_reply('RegisterUser', BinReply),
         {NewSet, [Id | Ids]}
-    end, {UserSet, []}, lists:seq(0, UserNum))).
+    end, {UserSet, []}, lists:seq(0, UserNum)).
 
 load_items(Socket, ItemDescLen, UserIds, CategoryIds, CategoryMapping) ->
     CategoryMap = element(2, lists:foldl(fun(#{items := ItemNum}, Acc) ->
