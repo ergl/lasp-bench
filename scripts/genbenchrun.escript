@@ -2,9 +2,9 @@
 %%! -pa ../_build/default/lib/jsx/ebin -Wall
 
 -define(CONFIG_MODE, max).
--define(CONFIG_DURATION, 1).
--define(CONFIG_INTERVAL_SECONDS, 10).
--define(CONFIG_CLIENTS, 2).
+-define(CONFIG_DURATION, 5).
+-define(CONFIG_INTERVAL_SECONDS, 5).
+-define(CONFIG_CLIENTS, 10).
 
 -define(CONFIG_HEADER,
     fun() ->

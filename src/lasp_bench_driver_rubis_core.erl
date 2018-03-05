@@ -208,6 +208,7 @@ gen_distinct_id(Id1, Id2, _) when Id1 =/= Id2 ->
 
 random_string(N) ->
     Chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz1234567890",
-    lists:foldl(fun(_, Acc) ->
+    String = lists:foldl(fun(_, Acc) ->
         [lists:nth(rand:uniform(length(Chars)), Chars)] ++ Acc
-    end, [], lists:seq(1, N)).
+    end, [], lists:seq(1, N)),
+    list_to_binary(String).
