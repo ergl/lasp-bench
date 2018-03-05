@@ -14,8 +14,7 @@
         )
     end).
 
--define(RUBIS_IP, "127.0.0.1").
--define(RUBIS_PORT, 5000).
+-define(CONFIG_DRIVER, "{driver,lasp_bench_driver_rubis}.~n").
 
 %% Remove the states that call no transactions, don't care about them
 -define(SHOULD_DISCARD, [
@@ -75,16 +74,16 @@
 
 -type transition_table() :: #state{}.
 
-main([TableFile, LoadOutput]) ->
+main([Host, Port, TableFile, LoadOutput]) ->
     MatrixState = new(TableFile),
     StateList = generate_state_seq(MatrixState),
     ValidStateNames = discard_no_tx(StateList),
     WaitingTimes = (hd(StateList))#state.waiting_times,
     {ok, LoadInfo} = load_info(LoadOutput),
-    write_config_file(ValidStateNames, WaitingTimes, LoadInfo);
+    write_config_file(Host, Port, ValidStateNames, WaitingTimes, LoadInfo);
 
 main(_) ->
-    io:fwrite("genbenchrun.escript <tablefile> <load-file>~n"),
+    io:fwrite("genbenchrun.escript <rubis-ip> <rubis-port> <tablefile> <load-file>~n"),
     halt(1).
 
 load_info(LoadOutput) ->
@@ -111,11 +110,11 @@ discard_no_tx(StateList) ->
         end
     end, StateList).
 
-write_config_file(StateNames, WaitingTimes, LoadInfo) ->
+write_config_file(Host, Port, StateNames, WaitingTimes, LoadInfo) ->
     io:fwrite(?CONFIG_HEADER(), []),
-    io:fwrite("{driver,lasp_bench_driver_rubis}.~n"),
-    io:fwrite("{rubis_ip,~p}.~n", [?RUBIS_IP]),
-    io:fwrite("{rubis_port,~p}.~n", [?RUBIS_PORT]),
+    io:fwrite(?CONFIG_DRIVER),
+    io:fwrite("{rubis_ip,~p}.~n", [list_to_atom(Host)]),
+    io:fwrite("{rubis_port,~p}.~n", [list_to_integer(Port)]),
     io:fwrite("{operations,[~n"),
     Prob = ?OP_PROBS(length(StateNames)),
     [FirstOp | RestOperations] = lists:map(fun(Name) -> {Name, Prob} end, StateNames),

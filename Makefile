@@ -29,8 +29,8 @@ clean:
 load: compile
 	./rubis-load.sh $(RUBIS_IP) $(RUBIS_PORT)
 
-generate: load
-	./rubis-generate.sh $(RUBIS_TABLE_FILE) $(RUBIS_TABLE_CONFIG)
+generate:
+	./rubis-generate.sh $(RUBIS_IP) $(RUBIS_PORT) $(RUBIS_TABLE_FILE) $(RUBIS_TABLE_CONFIG)
 
 results:
 	Rscript --vanilla priv/summary.r -i tests/current
