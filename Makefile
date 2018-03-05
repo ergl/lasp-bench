@@ -9,6 +9,8 @@ ERLANG_BIN       = $(shell dirname $(shell which erl))
 REBAR           ?= $(BASE_DIR)/rebar3
 OVERLAY_VARS    ?=
 
+RUBIS_IP ?= "127.0.0.1"
+RUBIS_PORT ?= "7878"
 
 REBAR := ./rebar3
 
@@ -20,6 +22,9 @@ compile:
 
 clean:
 	${REBAR} clean
+
+load: compile
+	./rubis-load.sh $(RUBIS_IP) $(RUBIS_PORT)
 
 results:
 	Rscript --vanilla priv/summary.r -i tests/current

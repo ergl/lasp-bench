@@ -6,3 +6,4 @@ tags
 _build/
 rebar.lock
 .DS_Store
+scripts/output.json
