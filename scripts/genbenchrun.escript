@@ -1,4 +1,5 @@
 #!/usr/bin/env escript
+%%! -pa ../_build/default/lib/jsx/ebin -Wall
 
 -define(CONFIG_MODE, max).
 -define(CONFIG_DURATION, 1).
@@ -74,12 +75,32 @@
 
 -type transition_table() :: #state{}.
 
-main([TableFile]) ->
+main([TableFile, LoadOutput]) ->
     MatrixState = new(TableFile),
     StateList = generate_state_seq(MatrixState),
     ValidStateNames = discard_no_tx(StateList),
     WaitingTimes = (hd(StateList))#state.waiting_times,
-    write_config_file(ValidStateNames, WaitingTimes).
+    {ok, LoadInfo} = load_info(LoadOutput),
+    write_config_file(ValidStateNames, WaitingTimes, LoadInfo);
+
+main(_) ->
+    io:fwrite("genbenchrun.escript <tablefile> <load-file>~n"),
+    halt(1).
+
+load_info(LoadOutput) ->
+    case file:read_file(LoadOutput) of
+        {error, Reason} ->
+            {error, Reason};
+
+        {ok, Contents} ->
+            case jsx:is_json(Contents) of
+                false ->
+                    {error, no_json};
+                true ->
+                    Json = jsx:decode(Contents, [{labels, atom}, return_maps]),
+                    {ok, Json}
+            end
+    end.
 
 discard_no_tx(StateList) ->
     lists:filtermap(fun(State) ->
@@ -90,7 +111,7 @@ discard_no_tx(StateList) ->
         end
     end, StateList).
 
-write_config_file(StateNames, WaitingTimes) ->
+write_config_file(StateNames, WaitingTimes, LoadInfo) ->
     io:fwrite(?CONFIG_HEADER(), []),
     io:fwrite("{driver,lasp_bench_driver_rubis}.~n"),
     io:fwrite("{rubis_ip,~p}.~n", [?RUBIS_IP]),
@@ -104,6 +125,11 @@ write_config_file(StateNames, WaitingTimes) ->
     end, RestOperations),
     io:fwrite("]}.~n"),
     io:fwrite("{waiting_times, ~n~p}.~n", [dict:to_list(WaitingTimes)]),
+    io:fwrite("{region_ids, ~n~p}.~n",[maps:get(region_ids, LoadInfo)]),
+    io:fwrite("{category_ids, ~n~p}.~n",[maps:get(category_ids, LoadInfo)]),
+    io:fwrite("{user_ids, ~n~p}.~n",[maps:get(user_ids, LoadInfo)]),
+    io:fwrite("{user_names, ~n~p}.~n",[maps:get(user_names, LoadInfo)]),
+    io:fwrite("{item_ids, ~n~p}.~n",[maps:get(item_ids, LoadInfo)]),
     ok.
 
 -spec new(string()) -> transition_table().
