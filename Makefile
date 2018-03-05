@@ -12,6 +12,9 @@ OVERLAY_VARS    ?=
 RUBIS_IP ?= "127.0.0.1"
 RUBIS_PORT ?= "7878"
 
+RUBIS_TABLE_FILE ?= "default_transitions.txt"
+RUBIS_TABLE_CONFIG ?= "examples/rubis_default.config"
+
 REBAR := ./rebar3
 
 all: compile
@@ -25,6 +28,9 @@ clean:
 
 load: compile
 	./rubis-load.sh $(RUBIS_IP) $(RUBIS_PORT)
+
+generate: load
+	./rubis-generate.sh $(RUBIS_TABLE_FILE) $(RUBIS_TABLE_CONFIG)
 
 results:
 	Rscript --vanilla priv/summary.r -i tests/current
