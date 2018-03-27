@@ -75,19 +75,31 @@
 -type transition_table() :: #state{}.
 
 main([Host, Port, TableFile, LoadOutput]) ->
+    main([Host, Port, TableFile, LoadOutput, ops_from_file]);
+
+main([Host, Port, TableFile, LoadOutput, DefaultOps]) ->
     MatrixState = new(TableFile),
     StateList = generate_state_seq(MatrixState),
-    ValidStateNames = discard_no_tx(StateList),
+    ValidStateNames = case DefaultOps of
+        ops_from_file ->
+            discard_no_tx(StateList);
+        _ ->
+            {ok, LoadedOps} = load_default_ops(DefaultOps),
+            LoadedOps
+    end,
     WaitingTimes = (hd(StateList))#state.waiting_times,
-    {ok, LoadInfo} = load_info(LoadOutput),
+    {ok, LoadInfo} = load_from_json(LoadOutput),
     write_config_file(Host, Port, ValidStateNames, WaitingTimes, LoadInfo);
 
 main(_) ->
-    io:fwrite("genbenchrun.escript <rubis-ip> <rubis-port> <tablefile> <load-file>~n"),
+    io:fwrite("genbenchrun.escript <rubis-ip> <rubis-port> <tablefile> <load-file> [<ops-file>]~n"),
     halt(1).
 
-load_info(LoadOutput) ->
-    case file:read_file(LoadOutput) of
+load_from_json(JsonFile) ->
+    load_from_json(JsonFile, [{labels, atom}, return_maps]).
+
+load_from_json(JsonFile, Opts) ->
+    case file:read_file(JsonFile) of
         {error, Reason} ->
             {error, Reason};
 
@@ -96,9 +108,17 @@ load_info(LoadOutput) ->
                 false ->
                     {error, no_json};
                 true ->
-                    Json = jsx:decode(Contents, [{labels, atom}, return_maps]),
+                    Json = jsx:decode(Contents, Opts),
                     {ok, Json}
             end
+    end.
+
+load_default_ops(DefaultOps) ->
+    case load_from_json(DefaultOps) of
+        {error, Reason} ->
+            {error, Reason};
+        {ok, DecodedOps} ->
+            {ok, lists:map(fun(OpName) -> binary_to_atom(OpName, utf8) end, DecodedOps)}
     end.
 
 discard_no_tx(StateList) ->
