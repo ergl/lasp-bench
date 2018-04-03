@@ -137,7 +137,8 @@ write_config_file(Host, Port, StateNames, WaitingTimes, LoadInfo) ->
     io:fwrite("{rubis_port,~p}.~n", [list_to_integer(Port)]),
     io:fwrite("{operations,[~n"),
     Prob = ?OP_PROBS(length(StateNames)),
-    [FirstOp | RestOperations] = lists:map(fun(Name) -> {Name, Prob} end, StateNames),
+    WithProbs = lists:map(fun(Name) -> {Name, Prob} end, StateNames),
+    [FirstOp | RestOperations] = dedup_steps(WithProbs),
     io:fwrite("\t~p~n", [FirstOp]),
     ok = lists:foreach(fun(Op) ->
         io:fwrite("\t,~p~n", [Op])
@@ -150,6 +151,18 @@ write_config_file(Host, Port, StateNames, WaitingTimes, LoadInfo) ->
     io:fwrite("{user_names, ~n~p}.~n",[maps:get(user_names, LoadInfo)]),
     io:fwrite("{item_ids, ~n~p}.~n",[maps:get(item_ids, LoadInfo)]),
     ok.
+
+%% @doc Merge all duplicate steps together and add probabilities
+-spec dedup_steps([{atom(), non_neg_integer()}]) -> [{atom(), non_neg_integer()}].
+dedup_steps(Steps) ->
+    lists:reverse(lists:foldl(fun(Cur={CurName,CurProb}, Acc) ->
+        case lists:keyfind(CurName, 1, Acc) of
+            false ->
+                [Cur | Acc];
+            {CurName, OldProb} ->
+                lists:keyreplace(CurName, 1, Acc, {CurName, CurProb + OldProb})
+        end
+    end, [], Steps)).
 
 -spec new(string()) -> transition_table().
 new(FilePath) ->
