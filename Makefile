@@ -12,7 +12,6 @@ OVERLAY_VARS    ?=
 RUBIS_IP ?= "127.0.0.1"
 RUBIS_PORT ?= "7878"
 
-RUBIS_TABLE_FILE ?= "default_transitions.txt"
 RUBIS_TABLE_CONFIG ?= "examples/rubis_default.config"
 
 REBAR := ./rebar3
@@ -30,7 +29,7 @@ load: compile
 	./rubis-load.sh $(RUBIS_IP) $(RUBIS_PORT)
 
 generate:
-	./rubis-generate.sh $(RUBIS_IP) $(RUBIS_PORT) $(RUBIS_TABLE_FILE) $(RUBIS_TABLE_CONFIG)
+	./rubis-generate.sh $(RUBIS_IP) $(RUBIS_PORT) $(RUBIS_TABLE_CONFIG)
 
 bench:
 	./_build/default/bin/lasp_bench $(RUBIS_TABLE_CONFIG)
