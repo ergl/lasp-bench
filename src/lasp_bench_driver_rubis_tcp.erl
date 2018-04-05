@@ -27,7 +27,11 @@ new(Id) ->
                 worker_id=Id,
                 rubis_state=RubisState}}.
 
-run(registeruser, _, _, State = #state{socket=Sock, rubis_state=RState}) ->
+run(Operation, _, _, State) ->
+    Resp = run_op(Operation, State),
+    sleep_then_return(Operation, Resp).
+
+run_op(registeruser, State = #state{socket=Sock, rubis_state=RState}) ->
     RegionId = ?core:random_region_id(RState),
     {{Username, Password}, NewState} = ?core:gen_new_user(RState),
     Msg = rubis_proto:register_user(Username, Password, RegionId),
@@ -44,7 +48,7 @@ run(registeruser, _, _, State = #state{socket=Sock, rubis_state=RState}) ->
              {error, Reason, State#state{rubis_state=FinalState}}
     end;
 
-run(browsecategories, _, _, State = #state{socket=Sock}) ->
+run_op(browsecategories, State = #state{socket=Sock}) ->
     Msg = rubis_proto:browse_categories(),
     ok = gen_tcp:send(Sock, Msg),
     {ok, BinReply} = gen_tcp:recv(Sock, 0),
@@ -57,7 +61,7 @@ run(browsecategories, _, _, State = #state{socket=Sock}) ->
             {error, Reason, State}
     end;
 
-run(searchitemsincategory, _, _, State = #state{socket=Sock, rubis_state=RState}) ->
+run_op(searchitemsincategory, State = #state{socket=Sock, rubis_state=RState}) ->
     CategoryId = ?core:random_category_id(RState),
     Msg = rubis_proto:search_items_by_category(CategoryId),
     ok = gen_tcp:send(Sock, Msg),
@@ -71,7 +75,7 @@ run(searchitemsincategory, _, _, State = #state{socket=Sock, rubis_state=RState}
             {error, Reason, State}
     end;
 
-run(browseregions, _, _, State = #state{socket=Sock}) ->
+run_op(browseregions, State = #state{socket=Sock}) ->
     Msg = rubis_proto:browse_regions(),
     ok = gen_tcp:send(Sock, Msg),
     {ok, BinReply} = gen_tcp:recv(Sock, 0),
@@ -84,7 +88,7 @@ run(browseregions, _, _, State = #state{socket=Sock}) ->
             {error, Reason, State}
     end;
 
-run(searchitemsinregion, _, _, State = #state{socket=Sock, rubis_state=RState}) ->
+run_op(searchitemsinregion, State = #state{socket=Sock, rubis_state=RState}) ->
     RegionId = ?core:random_region_id(RState),
     CategoryId = ?core:random_category_id(RState),
     Msg = rubis_proto:search_items_by_region(CategoryId, RegionId),
@@ -99,7 +103,7 @@ run(searchitemsinregion, _, _, State = #state{socket=Sock, rubis_state=RState}) 
             {error, Reason, State}
     end;
 
-run(viewitem, _, _, State = #state{socket=Sock, rubis_state=RState}) ->
+run_op(viewitem, State = #state{socket=Sock, rubis_state=RState}) ->
     ItemId = lasp_bench_driver_rubis_core:random_item_id(RState),
     Msg = rubis_proto:view_item(ItemId),
     ok = gen_tcp:send(Sock, Msg),
@@ -113,7 +117,7 @@ run(viewitem, _, _, State = #state{socket=Sock, rubis_state=RState}) ->
             {error, Reason, State}
     end;
 
-run(viewuserinfo, _, _, State = #state{socket=Sock, rubis_state=RState}) ->
+run_op(viewuserinfo, State = #state{socket=Sock, rubis_state=RState}) ->
     UserId = lasp_bench_driver_rubis_core:random_user_id(RState),
     Msg = rubis_proto:view_user(UserId),
     ok = gen_tcp:send(Sock, Msg),
@@ -127,7 +131,7 @@ run(viewuserinfo, _, _, State = #state{socket=Sock, rubis_state=RState}) ->
             {error, Reason, State}
     end;
 
-run(viewbidhistory, _, _, State = #state{socket=Sock, rubis_state=RState}) ->
+run_op(viewbidhistory, State = #state{socket=Sock, rubis_state=RState}) ->
     ItemId = lasp_bench_driver_rubis_core:random_item_id(RState),
     Msg = rubis_proto:view_bid_history(ItemId),
     ok = gen_tcp:send(Sock, Msg),
@@ -141,10 +145,10 @@ run(viewbidhistory, _, _, State = #state{socket=Sock, rubis_state=RState}) ->
             {error, Reason, State}
     end;
 
-run(buynowauth, _, _, State) ->
+run_op(buynowauth, State) ->
     perform_auth(State);
 
-run(storebuynow, _, _, State = #state{socket=Sock,rubis_state=RState}) ->
+run_op(storebuynow, State = #state{socket=Sock,rubis_state=RState}) ->
     {ItemId, UserId, Q} = ?core:gen_buy_now(RState),
     Msg = rubis_proto:store_buy_now(ItemId, UserId, Q),
     ok = gen_tcp:send(Sock, Msg),
@@ -158,10 +162,10 @@ run(storebuynow, _, _, State = #state{socket=Sock,rubis_state=RState}) ->
             {error, Reason, State}
     end;
 
-run(putbidauth, _, _, State) ->
+run_op(putbidauth, State) ->
     perform_auth(State);
 
-run(storebid, _, _, State = #state{socket=Sock,rubis_state=RState}) ->
+run_op(storebid, State = #state{socket=Sock,rubis_state=RState}) ->
     {ItemId, UserId, Price} = ?core:gen_bid(RState),
     Msg = rubis_proto:store_bid(ItemId, UserId, Price),
     ok = gen_tcp:send(Sock, Msg),
@@ -175,10 +179,10 @@ run(storebid, _, _, State = #state{socket=Sock,rubis_state=RState}) ->
             {error, Reason, State}
     end;
 
-run(putcommentauth, _, _, State) ->
+run_op(putcommentauth, State) ->
     perform_auth(State);
 
-run(storecomment, _, _, State = #state{socket=Sock,rubis_state=RState}) ->
+run_op(storecomment, State = #state{socket=Sock,rubis_state=RState}) ->
     {ItemId, FromId, ToId, Rating, Body} = ?core:gen_comment(RState),
     Msg = rubis_proto:store_comment(ItemId, FromId, ToId, Rating, Body),
     ok = gen_tcp:send(Sock, Msg),
@@ -192,7 +196,7 @@ run(storecomment, _, _, State = #state{socket=Sock,rubis_state=RState}) ->
             {error, Reason, State}
     end;
 
-run(registeritem, _, _, State = #state{socket=Sock, rubis_state=RState}) ->
+run_op(registeritem, State = #state{socket=Sock, rubis_state=RState}) ->
     {ItemName, Description, Quantity, CategoryId, SellerId} = ?core:gen_item(RState),
     Msg = rubis_proto:store_item(ItemName, Description, Quantity, CategoryId, SellerId),
     ok = gen_tcp:send(Sock, Msg),
@@ -207,10 +211,10 @@ run(registeritem, _, _, State = #state{socket=Sock, rubis_state=RState}) ->
             {error, Reason, State}
     end;
 
-run(aboutme_auth, _, _, State) ->
+run_op(aboutme_auth, State) ->
     perform_auth(State);
 
-run(aboutme, _, _, State = #state{socket=Sock, rubis_state=RState}) ->
+run_op(aboutme, State = #state{socket=Sock, rubis_state=RState}) ->
     UserId = lasp_bench_driver_rubis_core:random_user_id(RState),
     Msg = rubis_proto:about_me(UserId),
     ok = gen_tcp:send(Sock, Msg),
@@ -226,6 +230,18 @@ run(aboutme, _, _, State = #state{socket=Sock, rubis_state=RState}) ->
 
 
 %% Util functions
+
+-spec sleep_then_return(atom(), Resp) -> Resp.
+sleep_then_return(Operation, Resp) ->
+    Rstate = get_state(Resp),
+    ok = ?core:wait_time(Operation, Rstate),
+    Resp.
+
+get_state({ok, #state{rubis_state=RState}}) ->
+    RState;
+
+get_state({error, _, #state{rubis_state=RState}}) ->
+    RState.
 
 perform_auth(State = #state{socket=Sock, rubis_state=RState}) ->
     {Username, Pass} = ?core:random_user(RState),

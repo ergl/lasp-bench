@@ -22,7 +22,9 @@
     usernames :: list(username()),
     usernames_len :: non_neg_integer(),
 
-    non_confirmed_usernames :: sets:set(username())
+    non_confirmed_usernames :: sets:set(username()),
+
+    waiting_times :: list({atom(), non_neg_integer()})
 }).
 
 -type rubis_state() :: #rubis_state{}.
@@ -44,6 +46,8 @@
          set_logged_in/2,
          get_logged_in/1,
 
+         wait_time/2,
+
          update_state/2]).
 
 -spec new_rubis_state() -> rubis_state().
@@ -53,6 +57,7 @@ new_rubis_state() ->
     CategoryIds = lasp_bench_config:get(category_ids),
     ItemIds = lasp_bench_config:get(item_ids),
     Usernames = lasp_bench_config:get(user_names),
+    WaitingTimes = lasp_bench_config:get(waiting_times),
     #rubis_state{
         logged_in_as=not_set,
 
@@ -70,7 +75,9 @@ new_rubis_state() ->
 
         usernames=Usernames,
         usernames_len=length(Usernames),
-        non_confirmed_usernames=sets:new()
+        non_confirmed_usernames=sets:new(),
+
+        waiting_times=WaitingTimes
     }.
 
 -spec random_region_id(rubis_state()) -> non_neg_integer().
@@ -160,6 +167,16 @@ get_logged_in(State = #rubis_state{logged_in_as=not_set}) ->
 
 get_logged_in(#rubis_state{logged_in_as=Id}) ->
     Id.
+
+-spec wait_time(atom(), rubis_state()) -> ok.
+wait_time(_Operation, #rubis_state{waiting_times=_WaitingTimes}) ->
+%%    case lists:keyfind(Operation, 1, WaitingTimes) of
+%%        false ->
+%%            ok;
+%%        {Operation, N} ->
+%%            timer:sleep(N)
+%%    end.
+    ok.
 
 %% Update state actions
 
