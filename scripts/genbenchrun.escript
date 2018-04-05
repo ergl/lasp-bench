@@ -14,6 +14,12 @@
         )
     end).
 
+-define(TRANSITION_TABLE,
+    fun() ->
+        {ok, Path} = file:get_cwd(),
+        Path ++ "/tables/default_transitions.txt"
+    end).
+
 -define(CONFIG_DRIVER, "{driver,lasp_bench_driver_rubis_tcp}.~n").
 
 %% Remove the states that call no transactions, don't care about them
@@ -74,11 +80,12 @@
 
 -type transition_table() :: #state{}.
 
-main([Host, Port, TableFile, LoadOutput]) ->
-    main([Host, Port, TableFile, LoadOutput, ops_from_file]);
+main([Host, Port, LoadOutput]) ->
+    main([Host, Port, LoadOutput, ops_from_file]);
 
-main([Host, Port, TableFile, LoadOutput, DefaultOps]) ->
-    MatrixState = new(TableFile),
+main([Host, Port, LoadOutput, DefaultOps]) ->
+    TablePath = ?TRANSITION_TABLE(),
+    MatrixState = new(TablePath),
     StateList = generate_state_seq(MatrixState),
     ValidStateNames = case DefaultOps of
         ops_from_file ->
@@ -89,7 +96,7 @@ main([Host, Port, TableFile, LoadOutput, DefaultOps]) ->
     end,
     WaitingTimes = (hd(StateList))#state.waiting_times,
     {ok, LoadInfo} = load_from_json(LoadOutput),
-    write_config_file(Host, Port, ValidStateNames, WaitingTimes, LoadInfo);
+    write_config_file(TablePath, Host, Port, ValidStateNames, WaitingTimes, LoadInfo);
 
 main(_) ->
     io:fwrite("genbenchrun.escript <rubis-ip> <rubis-port> <tablefile> <load-file> [<ops-file>]~n"),
@@ -130,9 +137,10 @@ discard_no_tx(StateList) ->
         end
     end, StateList).
 
-write_config_file(Host, Port, StateNames, WaitingTimes, LoadInfo) ->
+write_config_file(TablePath, Host, Port, StateNames, WaitingTimes, LoadInfo) ->
     io:fwrite(?CONFIG_HEADER(), []),
     io:fwrite(?CONFIG_DRIVER),
+    io:fwrite("{transition_table,~p}.~n",[TablePath]),
     io:fwrite("{rubis_ip,~p}.~n", [list_to_atom(Host)]),
     io:fwrite("{rubis_port,~p}.~n", [list_to_integer(Port)]),
     io:fwrite("{operations,[~n"),
