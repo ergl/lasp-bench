@@ -27,8 +27,10 @@ new(Id) ->
                 worker_id=Id,
                 rubis_state=RubisState}}.
 
-run(Operation, _, _, State) ->
-    Resp = run_op(Operation, State),
+run(perform_operation, _, _, State = #state{worker_id=Id,rubis_state=RState}) ->
+    {Operation, NewRState} = lasp_bench_driver_rubis_core:next_operation(RState),
+%%    io:format("{~p} Next operation is ~p~n", [Id, Operation]),
+    Resp = run_op(Operation, State#state{rubis_state=NewRState}),
     sleep_then_return(Operation, Resp).
 
 run_op(registeruser, State = #state{socket=Sock, rubis_state=RState}) ->

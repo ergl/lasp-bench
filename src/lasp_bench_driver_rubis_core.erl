@@ -5,6 +5,11 @@
 -type user() :: {{atom(), bitstring()}, {atom(), bitstring()}}.
 
 -record(rubis_state, {
+    transition_table :: lasp_bench_driver_rubis_table:transition_table(),
+    state_sequence :: [lasp_bench_driver_rubis_table:state_name()],
+    exhausted_states :: false | {true, non_neg_integer()},
+    seq_len :: non_neg_integer(),
+
     logged_in_as :: non_neg_integer() | not_set,
 
     region_ids :: list(binary()),
@@ -22,14 +27,14 @@
     usernames :: list(username()),
     usernames_len :: non_neg_integer(),
 
-    non_confirmed_usernames :: sets:set(username()),
-
-    waiting_times :: list({atom(), non_neg_integer()})
+    non_confirmed_usernames :: sets:set(username())
 }).
 
 -type rubis_state() :: #rubis_state{}.
 
 -export([new_rubis_state/0,
+         next_operation/1,
+
          random_region_id/1,
          random_category_id/1,
          random_user_id/1,
@@ -52,13 +57,20 @@
 
 -spec new_rubis_state() -> rubis_state().
 new_rubis_state() ->
+    TablePath = lasp_bench_config:get(transition_table),
+    TransitionTable = lasp_bench_driver_rubis_table:new(TablePath),
+
     UserIds = lasp_bench_config:get(user_ids),
     RegionIds = lasp_bench_config:get(region_ids),
     CategoryIds = lasp_bench_config:get(category_ids),
     ItemIds = lasp_bench_config:get(item_ids),
     Usernames = lasp_bench_config:get(user_names),
-    WaitingTimes = lasp_bench_config:get(waiting_times),
     #rubis_state{
+        transition_table=TransitionTable,
+        exhausted_states=false,
+        state_sequence=[],
+        seq_len=0,
+
         logged_in_as=not_set,
 
         user_ids=UserIds,
@@ -75,10 +87,27 @@ new_rubis_state() ->
 
         usernames=Usernames,
         usernames_len=length(Usernames),
-        non_confirmed_usernames=sets:new(),
-
-        waiting_times=WaitingTimes
+        non_confirmed_usernames=sets:new()
     }.
+
+-spec next_operation(rubis_state()) -> {lasp_bench_driver_rubis_table:state_name(), rubis_state()}.
+next_operation(State = #rubis_state{transition_table=Table, exhausted_states=false, state_sequence=Seq}) ->
+    case lasp_bench_driver_rubis_table:next_state(Table) of
+        {ok, OperationName, NextTable} ->
+            NewState = State#rubis_state{transition_table=NextTable,
+                                         state_sequence=[OperationName | Seq]},
+            {OperationName, NewState};
+
+        stop ->
+            SeqLen = length(Seq) - 1,
+            next_operation(State#rubis_state{seq_len=SeqLen, exhausted_states={true, SeqLen}})
+    end;
+
+next_operation(State = #rubis_state{exhausted_states={true, N}, state_sequence=Seq, seq_len=Len}) ->
+    NextOperation = lists:nth(N, Seq),
+    %% Move backwards through the past states
+    NextState = mod(N - 1, Len),
+    {NextOperation, State#rubis_state{exhausted_states={true, NextState}}}.
 
 -spec random_region_id(rubis_state()) -> non_neg_integer().
 random_region_id(#rubis_state{region_ids=Regions, region_ids_len=Len}) ->
@@ -169,7 +198,7 @@ get_logged_in(#rubis_state{logged_in_as=Id}) ->
     Id.
 
 -spec wait_time(atom(), rubis_state()) -> ok.
-wait_time(_Operation, #rubis_state{waiting_times=_WaitingTimes}) ->
+wait_time(_Operation, #rubis_state{transition_table=_Table}) ->
 %%    case lists:keyfind(Operation, 1, WaitingTimes) of
 %%        false ->
 %%            ok;
@@ -213,6 +242,10 @@ update_state({confirm_item, ItemId}, State = #rubis_state{
     State#rubis_state{item_ids=[ItemId | ItemIds], item_ids_len=Len + 1}.
 
 %% Utils
+
+%% https://stackoverflow.com/a/858649
+mod(X, Y) ->
+    ((X rem Y + Y) rem Y) + 1.
 
 gen_distinct_id(Id, State) ->
     gen_distinct_id(Id, random_user_id(State), State).
