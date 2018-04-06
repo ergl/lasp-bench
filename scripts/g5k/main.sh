@@ -197,7 +197,7 @@ provisionBench () {
   echo -e "\t[PROVISION_BENCH_NODES]: Starting..."
 
   for i in $(seq 1 ${BENCH_INSTANCES}); do
-    local bench_folder="basho_bench${i}"
+    local bench_folder="lasp_bench${i}"
     local command="\
       rm -rf ${bench_folder} && \
       git clone ${BENCH_URL} --branch ${BENCH_BRANCH} --single-branch ${bench_folder} && \
@@ -221,7 +221,7 @@ provisionAntidote () {
     rm -rf antidote && \
     git clone ${ANTIDOTE_URL} --branch ${ANTIDOTE_BRANCH} --single-branch antidote && \
     cd antidote && \
-    make relnocert
+    make rel
   "
   # We need antidote in all nodes even if we don't use it
   # basho_bench will need the sources to start
@@ -240,7 +240,7 @@ rebuildAntidote () {
     sed -i.bak 's/127.0.0.1/localhost/g' rel/vars/dev_vars.config.src rel/files/app.config; \
     sed -i.bak 's/127.0.0.1/localhost/g' config/vars.config; \
     rm -rf deps; mkdir deps; \
-    make clean; make relnocert
+    make clean; make relclean; make rel
   "
   # We use the IPs here so that we can change the default (127.0.0.1)
   doForNodesIn ${ANT_IPS} "${command}" \
@@ -256,7 +256,8 @@ cleanAntidote () {
     cd antidote; \
     pkill beam; \
     make clean; \
-    make relnocert
+    make relcleanl \
+    make rel
   "
   doForNodesIn ${ANT_IPS} "${command}" \
     >> ${LOGDIR}/clean-antidote-${GLOBAL_TIMESTART} 2>&1
