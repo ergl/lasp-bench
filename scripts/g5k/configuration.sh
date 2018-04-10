@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 
 # The private / public key pair used for this experiment
-PRKFILE=~/.ssh/a_exp
-PBKFILE=~/.ssh/a_exp.pub
+# Recommended to use password-less keys
+PRKFILE=~/.ssh/benchmark
+PBKFILE=~/.ssh/benchmark.pub
 
 # The url of the k3 env to deploy on the nodes
 K3_IMAGE=/home/$(whoami)/public/antidote-images/latest/antidote.env
@@ -16,33 +17,35 @@ RESERVE_SITES=true
 # Boot the machines and load the os image.
 DEPLOY_IMAGE=true
 
-# Provision the nodes with Antidote / basho_bench
+# Provision the nodes with Antidote / lasp_bench
 PROVISION_IMAGES=true
 
-# Download and compile antidote and basho bench from scratch
+# Download and compile antidote and lasp_bench from scratch
 CLEAN_RUN=true
 
-# Number of "data centers" per g5k site
-# For example, saying DCS_PER_SITE=2 and ANTIDOTE_NODES=1
-# will create 2 antidote nodes in total, one on each data center
-DCS_PER_SITE=1
-
-# Number of nodes running Antidote per DC
+# Number of nodes running Antidote per site
+# Saying SITES=( "nancy" "rennes" )
+# and ANTIDOTE_NODES=2 would create 4 nodes,
+# two in nancy, two in rennes
 ANTIDOTE_NODES=1
-# Number of nodes running Basho Bench per DC
+
+# Number of nodes running lasp_bench per site
 BENCH_NODES=1
-# Number of instances of basho_bench to run per node
+
+# Number of instances of lasp_bench to run per node
 BENCH_INSTANCES=1
 
 # git repository of the antidote code (useful to test forks)
 ANTIDOTE_URL="https://github.com/ergl/antidote.git"
+
 # git branch of antidote to run the experiment on
-ANTIDOTE_BRANCH="fix-join-scripts"
+ANTIDOTE_BRANCH="pvc-rubis-g5k"
 
 # git repository of the basho_bench code (useful to test forks)
-BENCH_URL="https://github.com/SyncFree/basho_bench.git"
+BENCH_URL="https://github.com/ergl/lasp_bench.git"
+
 # git branch of Basho Bench to use
-BENCH_BRANCH="antidote_pb-rebar3-erlang19"
+BENCH_BRANCH="antidote-rubis"
 
 # Name of the benchmark configuration file to use
-BENCH_FILE="antidote_pb.config"
+BENCH_FILE="rubis_default.config"

@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 
 run () {
-  local dc_size=$1
-  local total_dcs=$2
+  local total_nodes="${1}"
 
   echo "[STOP_ANTIDOTE]: Starting..."
   ./control-nodes.sh --stop
@@ -16,7 +15,7 @@ run () {
   sleep 30
 
   echo "[BUILD_CLUSTER]: Starting..."
-  ./join-clusters.sh ${dc_size} ${total_dcs}
+  ./join-clusters.sh "${total_nodes}"
   echo "[BUILD_CLUSTER]: Done"
 }
 

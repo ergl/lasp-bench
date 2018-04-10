@@ -2,8 +2,8 @@
 
 set -eo pipefail
 
-if [[ $# -ne 1 ]]; then
-  echo "Usage: ${0##*/} nodes-per-dc"
+if [[ $# -ne 2 ]]; then
+  echo "Usage: ${0##*/} nodes-per-dc node-file"
   exit 1
 fi
 
@@ -34,12 +34,13 @@ changePartition () {
       config/vars.config rel/vars/dev_vars.config.src
   "
 
-  ./execute-in-nodes.sh "$(cat ${ANT_NODES})" "${command}" "-debug"
+  ./execute-in-nodes.sh "$(cat "${2}")" "${command}" "-debug"
 }
 
 run () {
-  local ring_size=$(setRingSize $1)
-  changePartition "${ring_size}"
+  local ring_size=$(setRingSize "${1}")
+  local node_file="${2}"
+  changePartition "${ring_size}" "${node_file}"
 }
 
 run "$@"
