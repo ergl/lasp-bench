@@ -14,22 +14,16 @@ cd $(dirname "$SELF")
 source ./configuration.sh
 export GLOBAL_TIMESTART=$(date +"%Y-%m-%d-%s")
 sites=( "${SITES[@]}" )
+export sites_size=${#sites[*]}
 
-buildReservation () {
+reserveSites () {
   local reservation
-  local node_number=$((DCS_PER_SITE * (ANTIDOTE_NODES + BENCH_NODES)))
+  local node_number=$((sites_size * (ANTIDOTE_NODES + BENCH_NODES)))
   for site in "${sites[@]}"; do
     reservation+="${site}:rdef=/nodes=${node_number},"
   done
-
   # Trim the last (,) in the string
   reservation=${reservation%?}
-
-  echo "${reservation}"
-}
-
-reserveSites () {
-  local reservation="$(buildReservation)"
 
   # Outputs something similar to:
   # ...
@@ -74,7 +68,7 @@ else
 fi
 
 # Delete the reservation if script is killed
-trap 'cancelJob ${GRID_JOB_ID}' SIGINT SIGTERM
+trap 'promptJobCancel ${GRID_JOB_ID}' SIGINT SIGTERM
 
 SCRATCHFOLDER="/home/$(whoami)/grid-benchmark-${GRID_JOB_ID}"
 export LOGDIR=${SCRATCHFOLDER}/logs
@@ -116,12 +110,12 @@ getIPs () {
 
 
 # Get all nodes in reservation, split them into
-# antidote and basho bench nodes.
+# antidote and lasp bench nodes.
 gatherMachines () {
   echo "[GATHER_MACHINES]: Starting..."
 
-  local antidote_nodes_per_site=$((DCS_PER_SITE * ANTIDOTE_NODES))
-  local benchmark_nodes_per_site=$((DCS_PER_SITE * BENCH_NODES))
+  local antidote_nodes_per_site=$((sites_size * ANTIDOTE_NODES))
+  local benchmark_nodes_per_site=$((sites_size * BENCH_NODES))
 
   [[ -f ${ALL_NODES} ]] && rm ${ALL_NODES}
   [[ -f ${ANT_NODES} ]] && rm ${ANT_NODES}
@@ -150,30 +144,26 @@ gatherMachines () {
   echo "[GATHER_MACHINES]: Done"
 }
 
-
-# Calculates the number of datacenters in the benchmark
-getTotalDCCount () {
-  # FIX: Assumes that all sites have the same number of data centers
-  local sites_size=${#sites[*]}
-  local total_dcs=$(( sites_size * DCS_PER_SITE))
-  echo ${total_dcs}
-}
-
 # Use kadeploy to provision all the machines
 kadeployNodes () {
   for site in "${sites[@]}"; do
-    echo -e "\t[SYNC_IMAGE_${sites}]: Starting..."
+    echo -e "\t[SYNC_IMAGE_${site}]: Starting..."
 
     local image_dir="$(dirname "${K3_IMAGE}")"
+
+    # Place the K3 environment in every site
     # rsync can only create dirs up to two levels deep, so we create it just in case
     ssh -o StrictHostKeyChecking=no ${site} "mkdir -p ${image_dir}"
     rsync "${image_dir}"/* ${site}:"${image_dir}"
+
+    # Create the results folder in every site
     rsync -r "${SCRATCHFOLDER}"/* ${site}:"${SCRATCHFOLDER}"
 
     echo -e "\t[SYNC_IMAGE_${site}]: Done"
 
     echo -e "\t[DEPLOY_IMAGE_${site}]: Starting..."
 
+    # Deploy the environment in every node in this site
     local command="\
       oargridstat -w -l ${GRID_JOB_ID} \
         | sed '/^$/d' \
@@ -224,7 +214,7 @@ provisionAntidote () {
     make rel
   "
   # We need antidote in all nodes even if we don't use it
-  # basho_bench will need the sources to start
+  # lasp_bench will need the sources to start
   doForNodesIn ${ALL_NODES} "${command}" \
     >> "${LOGDIR}/antidote-compile-and-config-job-${GLOBAL_TIMESTART}" 2>&1
 
@@ -237,8 +227,6 @@ rebuildAntidote () {
   local command="\
     cd antidote; \
     pkill beam; \
-    sed -i.bak 's/127.0.0.1/localhost/g' rel/vars/dev_vars.config.src rel/files/app.config; \
-    sed -i.bak 's/127.0.0.1/localhost/g' config/vars.config; \
     rm -rf deps; mkdir deps; \
     make clean; make relclean; make rel
   "
@@ -272,71 +260,20 @@ provisionNodes () {
   provisionBench
 }
 
-
-# Creates unique erlang cookies for all basho_bench and antidote nodes.
-# All nodes of the same type inside the same datacenter hold the same cookie.
-createCookies () {
-  echo -e "\t[CREATE_COOKIES]: Starting..."
-
-  local total_dcs=$1
-
-  [[ -f ${ALL_COOKIES} ]] && rm ${ALL_COOKIES}
-  [[ -f ${ANT_COOKIES} ]] && rm ${ANT_COOKIES}
-  [[ -f ${BENCH_COOKIES} ]] && rm ${BENCH_COOKIES}
-
-  for n in $(seq 1 ${total_dcs}); do
-    # In each datacenter, all antidote nodes must have the same cookie
-    for _ in $(seq 1 ${ANTIDOTE_NODES}); do
-      echo "dccookie${n}" | tee -a ${ALL_COOKIES} >> ${ANT_COOKIES}
-    done
-
-    # In each datacenter, all basho_bench nodes must have the same cookie
-    for _ in $(seq 1 ${BENCH_NODES}); do
-      echo "dccookie${n}" | tee -a ${ALL_COOKIES} >> ${BENCH_COOKIES}
-    done
-
-  done
-
-  echo -e "\t[CREATE_COOKIES]: Done"
-}
-
-
-# TODO: Really necessary? How do we distribute them?
-# Send erlang cookies to the appropiate antidote nodes.
-distributeCookies () {
-  echo -e "\t[DISTRIBUTE_COOKIES]: Starting..."
-
-  local cookie_array=($(cat ${ALL_COOKIES}))
-  local cookie_dev_config="antidote/rel/vars/dev_vars.config.src"
-  local cookie_config="antidote/config/vars.config"
-
-  local c=0
-  while read node; do
-    local cookie=${cookie_array[$c]}
-    local command="sed -i.bak 's|^{cookie.*|{cookie, ${cookie}}.|g' ${cookie_config} ${cookie_dev_config}"
-    ssh -i ${EXPERIMENT_PRIVATE_KEY} -T \
-        -o ConnectTimeout=3 \
-        -o StrictHostKeyChecking=no root@${node} "${command}"
-    c=$((c + 1))
-  done < ${ANT_IPS}
-
-  echo -e "\t[DISTRIBUTE_COOKIES]: Done"
-}
-
 setupTests () {
   echo "[SETUP_TESTS]: Starting..."
 
-  local dc_size=${ANTIDOTE_NODES}
-  ./change-partition-size.sh ${dc_size}
+  local total_antidote_nodes=$((sites_size * ANTIDOTE_NODES))
+  local antidote_nodes="${ANT_NODES}"
+  ./change-partition-size.sh "${total_antidote_nodes}" "${antidote_nodes}"
 
   echo "[SETUP_TESTS]: Done"
 }
 
 runTests () {
-  local total_dcs=$(getTotalDCCount)
-
+  local total_nodes=$((sites_size * ANTIDOTE_NODES))
   echo "[RUNNING_TEST]: Starting..."
-  ./run-benchmark.sh ${total_dcs} >> ${LOGDIR}/basho-bench-execution-${GLOBAL_TIMESTART} 2>&1
+  ./run-benchmark.sh ${total_nodes} >> ${LOGDIR}/basho-bench-execution-${GLOBAL_TIMESTART} 2>&1
   echo "[RUNNING_TEST]: Done"
 }
 
@@ -394,8 +331,6 @@ setupCluster () {
 # basho_bench.
 # Also create and distribute the erlang cookies to all nodes.
 configCluster () {
-  local total_dcs=$(getTotalDCCount)
-
   if [[ "${PROVISION_IMAGES}" == "true" ]]; then
     echo "[PROVISION_NODES]: Starting..."
     provisionNodes
@@ -407,8 +342,6 @@ configCluster () {
   if [[ "${CLEAN_RUN}" == "true" ]]; then
     echo "[CLEAN_RUN]: Starting..."
     rebuildAntidote
-    createCookies ${total_dcs}
-    distributeCookies
     echo "[CLEAN_RUN]: Done"
   else
     cleanAntidote

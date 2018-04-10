@@ -3,7 +3,7 @@
 set -eo pipefail
 
 if [[ $# -ne 1 ]]; then
-  echo "Usage: ${0##/*} total-dcs"
+  echo "Usage: ${0##/*} total-nodes"
   exit 1
 fi
 
@@ -21,9 +21,10 @@ transferIPs () {
 }
 
 prepareTests () {
-  local total_dcs="$1"
-  local antidote_ip_file="$2"
-  ./prepare-clusters.sh ${ANTIDOTE_NODES} ${total_dcs}
+  local total_nodes="${1}"
+  local antidote_ip_file="${2}"
+  # Prepare and join the Antidote cluster
+  ./prepare-clusters.sh "${total_nodes}"
 
   local ant_offset=0
   local bench_offset=0
@@ -53,10 +54,10 @@ runRemoteBenchmark () {
 }
 
 run () {
-  local total_dcs="$1"
+  local total_nodes="${1}"
   local antidote_ip_file=".antidote_ip_file"
 
-  prepareTests ${total_dcs} "${antidote_ip_file}"
+  prepareTests "${total_nodes}" "${antidote_ip_file}"
 
   local bench_instances="${BENCH_INSTANCES}"
   local benchmark_configuration_file="${BENCH_FILE}"
