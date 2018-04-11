@@ -6,10 +6,10 @@ if [[ $# -ne 1 ]]; then
 fi
 
 startNodes () {
-  local antidote_nodes=( $(cat ${ANT_NODES}) )
-  for node in "${antidote_nodes[@]}"; do
-    scp -i ${EXPERIMENT_PRIVATE_KEY} ./control-nodes-remote.sh root@${node}:/root/
-  done
+  # Transfer the remote control script first
+  while read node; do
+    scp -i "${EXPERIMENT_PRIVATE_KEY}" ./control-nodes-remote.sh root@"${node}":/root/
+  done < "${ANT_NODES}"
 
   # Use ANT_IPS so localhost is replaced by the ip of the node
   ./execute-in-nodes.sh "$(cat ${ANT_IPS})" "./control-nodes-remote.sh start localhost" "-debug"

@@ -265,15 +265,22 @@ setupTests () {
 
   local total_antidote_nodes=$((sites_size * ANTIDOTE_NODES))
   local antidote_nodes="${ANT_NODES}"
+
+  # Change the ring size of riak depending on the number of nodes
   ./change-partition-size.sh "${total_antidote_nodes}" "${antidote_nodes}"
+
+  # Distribute Antidote IPs to benchmark nodes
+  ./distribute-ips.sh "${total_antidote_nodes}"
+
+  # Start Antidote and form a cluster
+  ./prepare-clusters.sh "${total_antidote_nodes}"
 
   echo "[SETUP_TESTS]: Done"
 }
 
 runTests () {
-  local total_nodes=$((sites_size * ANTIDOTE_NODES))
   echo "[RUNNING_TEST]: Starting..."
-  ./run-benchmark.sh ${total_nodes} >> ${LOGDIR}/basho-bench-execution-${GLOBAL_TIMESTART} 2>&1
+  ./run-benchmark.sh >> ${LOGDIR}/basho-bench-execution-${GLOBAL_TIMESTART} 2>&1
   echo "[RUNNING_TEST]: Done"
 }
 
