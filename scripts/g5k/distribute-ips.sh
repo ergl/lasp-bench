@@ -2,6 +2,8 @@
 
 set -eo pipefail
 
+source ./configuration.sh
+
 if [[ $# -ne 1 ]]; then
   exit 1
 fi
@@ -27,6 +29,7 @@ run() {
   local ant_offset=0
   local bench_offset=0
   for _ in $(seq 1 ${total_nodes}); do
+    # FIXME(borja): Change this if we allow more than one node per site
     # Each bench node will receive one Antidote node IP to talk to
     head -n $((ANTIDOTE_NODES + ant_offset)) "${ANT_IPS}" > "${antidote_ip_file}"
     head -n $((BENCH_NODES + bench_offset)) "${BENCH_NODEF}" > .lasp_bench_nodes

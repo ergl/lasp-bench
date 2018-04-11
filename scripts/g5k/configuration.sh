@@ -49,3 +49,7 @@ BENCH_BRANCH="antidote-rubis"
 
 # Name of the benchmark configuration file to use
 BENCH_FILE="rubis_default.config"
+
+# Size of the initial load information
+# Values can be "small" or "big"
+LOAD_SIZE="small"

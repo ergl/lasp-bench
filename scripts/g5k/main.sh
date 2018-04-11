@@ -73,6 +73,7 @@ trap 'promptJobCancel ${GRID_JOB_ID}' SIGINT SIGTERM
 SCRATCHFOLDER="/home/$(whoami)/grid-benchmark-${GRID_JOB_ID}"
 export LOGDIR=${SCRATCHFOLDER}/logs
 RESULTSDIR=${SCRATCHFOLDER}/results
+export BDLOADDIR=${SCRATCHFOLDER}/dbload
 
 export EXPERIMENT_PRIVATE_KEY=${SCRATCHFOLDER}/key
 EXPERIMENT_PUBLIC_KEY=${SCRATCHFOLDER}/exp_key.pub
@@ -84,11 +85,6 @@ export ANT_NODES=${SCRATCHFOLDER}/.antidote_nodes
 export ALL_IPS=${SCRATCHFOLDER}/.all_ips
 BENCH_IPS=${SCRATCHFOLDER}/.bench_ips
 export ANT_IPS=${SCRATCHFOLDER}/.antidote_ips
-
-export ALL_COOKIES=${SCRATCHFOLDER}/.all_cookies
-ANT_COOKIES=${SCRATCHFOLDER}/.antidote_cookies
-BENCH_COOKIES=${SCRATCHFOLDER}/.bench_cookies
-
 
 # For each node / ip in a file (one each line),
 # ssh into it and run the given command
@@ -275,6 +271,12 @@ setupTests () {
   # Start Antidote and form a cluster
   ./prepare-clusters.sh "${total_antidote_nodes}"
 
+  # Load the database with some initial data and
+  # distribute key information to all bench nodes
+  local antidote_head=$(head -n 1 "${ANT_IPS}")
+  local load_size="${LOAD_SIZE}"
+  ./bootstrap-load.sh "${antidote_head}" "${BENCH_NODEF}" "${load_size}"
+
   echo "[SETUP_TESTS]: Done"
 }
 
@@ -312,6 +314,7 @@ setupScript () {
 
   mkdir -p ${SCRATCHFOLDER}
   mkdir -p ${LOGDIR}
+  mkdir -p ${BDLOADDIR}
   cp ${PRKFILE} ${EXPERIMENT_PRIVATE_KEY}
   cp ${PBKFILE} ${EXPERIMENT_PUBLIC_KEY}
 
