@@ -2,42 +2,7 @@
 
 set -eo pipefail
 
-if [[ $# -ne 1 ]]; then
-  echo "Usage: ${0##/*} total-nodes"
-  exit 1
-fi
-
 source ./configuration.sh
-
-transferIPs () {
-  local bench_node_file="$1"
-  local antidote_ips_file="$2"
-  local antidote_ips_file_name=$(basename "${antidote_ips_file}")
-
-  local bench_dc_nodes=( $(< "${bench_node_file}") )
-  for node in "${bench_dc_nodes[@]}"; do
-    scp -i ${EXPERIMENT_PRIVATE_KEY} "${antidote_ips_file}" root@${node}:/root/${antidote_ips_file_name}
-  done
-}
-
-prepareTests () {
-  local total_nodes="${1}"
-  local antidote_ip_file="${2}"
-  # Prepare and join the Antidote cluster
-  ./prepare-clusters.sh "${total_nodes}"
-
-  local ant_offset=0
-  local bench_offset=0
-  for _ in $(seq 1 ${total_dcs}); do
-    head -$((ANTIDOTE_NODES + ant_offset)) "${ANT_IPS}" > "${antidote_ip_file}"
-    head -$((BENCH_NODES + bench_offset)) "${BENCH_NODEF}" > .dc_bench_nodes
-
-    transferIPs .dc_bench_nodes "${antidote_ip_file}"
-
-    ant_offset=$((ant_offset + ANTIDOTE_NODES))
-    bench_offset=$((bench_offset + BENCH_NODES))
-  done
-}
 
 runRemoteBenchmark () {
   local instances="$1"
@@ -54,14 +19,10 @@ runRemoteBenchmark () {
 }
 
 run () {
-  local total_nodes="${1}"
   local antidote_ip_file=".antidote_ip_file"
-
-  prepareTests "${total_nodes}" "${antidote_ip_file}"
-
   local bench_instances="${BENCH_INSTANCES}"
   local benchmark_configuration_file="${BENCH_FILE}"
   runRemoteBenchmark "${bench_instances}" "${benchmark_configuration_file}" "${antidote_ip_file}"
 }
 
-run "$@"
+run
