@@ -18,7 +18,7 @@ loadDatabase() {
 
   local command="\
       cd /root/lasp-bench/scripts; \
-      ./initdb.escript ${antidote_ip} 7878 ./${db_properties_file}./output.json
+      ./initdb.escript ${antidote_ip} 7878 ./${db_properties_file} ./output.json
   "
 
   # Perform the database load on only one node
