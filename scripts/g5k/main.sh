@@ -262,11 +262,17 @@ setupTests () {
   local total_antidote_nodes=$((sites_size * ANTIDOTE_NODES))
   local antidote_nodes="${ANT_NODES}"
 
+  echo "\t[CHANGE_RING_SIZE]: Starting..."
   # Change the ring size of riak depending on the number of nodes
   ./change-partition-size.sh "${total_antidote_nodes}" "${antidote_nodes}"
+  echo "\t[CHANGE_RING_SIZE]: Done"
 
   # Distribute Antidote IPs to benchmark nodes
+  echo "\t[DISTRIBUTE_IPS]: Starting..."
   ./distribute-ips.sh "${total_antidote_nodes}"
+  echo "\t[DISTRIBUTE_IPS]: Done"
+
+  echo "[SETUP_TESTS]: Done"
 
   # Start Antidote and form a cluster
   ./prepare-clusters.sh "${total_antidote_nodes}"
@@ -275,9 +281,9 @@ setupTests () {
   # distribute key information to all bench nodes
   local antidote_head=$(head -n 1 "${ANT_IPS}")
   local load_size="${LOAD_SIZE}"
+  echo "[LOAD_DATABASE]: Starting... (This may take a while)"
   ./bootstrap-load.sh "${antidote_head}" "${BENCH_NODEF}" "${load_size}"
-
-  echo "[SETUP_TESTS]: Done"
+  echo "[LOAD_DATABASE]: Done"
 }
 
 runTests () {
@@ -366,7 +372,7 @@ run () {
   configCluster
 
   setupTests
-  runTests
+  # runTests
 }
 
 run
