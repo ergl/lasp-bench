@@ -17,7 +17,7 @@ transferIPs () {
   local antidote_ips_file_name=$(basename "${antidote_ips_file}")
 
   while read node; do
-    scp -i "${EXPERIMENT_PRIVATE_KEY}" "${antidote_ips_file}" root@"${node}":/root/"${antidote_ips_file_name}"
+    scp -i "${EXPERIMENT_PRIVATE_KEY}" "${antidote_ips_file}" root@"${node}":/root/"${antidote_ips_file_name}" > /dev/null 2>&1
   done < "${bench_node_file}"
 }
 

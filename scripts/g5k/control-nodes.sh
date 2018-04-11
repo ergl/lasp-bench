@@ -8,7 +8,7 @@ fi
 startNodes () {
   # Transfer the remote control script first
   while read node; do
-    scp -i "${EXPERIMENT_PRIVATE_KEY}" ./control-nodes-remote.sh root@"${node}":/root/
+    scp -i "${EXPERIMENT_PRIVATE_KEY}" ./control-nodes-remote.sh root@"${node}":/root/ > /dev/null 2>&1
   done < "${ANT_NODES}"
 
   # Use ANT_IPS so localhost is replaced by the ip of the node
