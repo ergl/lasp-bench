@@ -187,7 +187,7 @@ provisionBench () {
   echo -e "\t[PROVISION_BENCH_NODES]: Starting..."
 
   for i in $(seq 1 ${BENCH_INSTANCES}); do
-    local bench_folder="lasp_bench${i}"
+    local bench_folder="lasp-bench${i}"
     local command="\
       rm -rf ${bench_folder} && \
       git clone ${BENCH_URL} --branch ${BENCH_BRANCH} --single-branch ${bench_folder} && \
@@ -196,7 +196,7 @@ provisionBench () {
     "
 
     doForNodesIn ${BENCH_NODEF} "${command}" \
-      >> "${LOGDIR}/basho-bench-compile-job-${GLOBAL_TIMESTART}" 2>&1
+      >> "${LOGDIR}/lasp-bench-compile-job-${GLOBAL_TIMESTART}" 2>&1
 
   done
 

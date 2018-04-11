@@ -42,7 +42,7 @@ ANTIDOTE_URL="https://github.com/ergl/antidote.git"
 ANTIDOTE_BRANCH="pvc-rubis-g5k"
 
 # git repository of the basho_bench code (useful to test forks)
-BENCH_URL="https://github.com/ergl/lasp_bench.git"
+BENCH_URL="https://github.com/ergl/lasp-bench.git"
 
 # git branch of Basho Bench to use
 BENCH_BRANCH="antidote-rubis"
