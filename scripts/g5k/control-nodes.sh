@@ -11,17 +11,18 @@ startNodes () {
     scp -i ${EXPERIMENT_PRIVATE_KEY} ./control-nodes-remote.sh root@${node}:/root/
   done
 
-  ./execute-in-nodes.sh "$(cat ${ANT_NODES})" "./control-nodes-remote.sh start" "-debug"
+  # Use ANT_IPS so localhost is replaced by the ip of the node
+  ./execute-in-nodes.sh "$(cat ${ANT_IPS})" "./control-nodes-remote.sh start localhost" "-debug"
 }
 
 stopNodes () {
   local command="\
-    [[ -f control-nodes-remote.sh ]] && ./control-nodes-remote.sh stop; \
+    [[ -f control-nodes-remote.sh ]] && ./control-nodes-remote.sh stop localhost; \
     pkill beam; \
     rm -rf antidote/_build/default/rel/antidote/data/*; \
     rm -rf antidote/_build/default/rel/antidote/log/*; \
   "
-  ./execute-in-nodes.sh "$(cat ${ANT_NODES})" "${command}" "-debug"
+  ./execute-in-nodes.sh "$(cat ${ANT_IPS})" "${command}" "-debug"
 }
 
 case "$1" in

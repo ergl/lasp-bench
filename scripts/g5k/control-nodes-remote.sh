@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
 
 run () {
-  local ip=$(hostname -I | head -1)
   local command="$1"
-  ip=${ip%?}
+  local ip="${2}"
 
-  INSTANCE_NAME=antidote PB_IP=${ip} IP=${ip} ./antidote/_build/default/rel/antidote/bin/env "${command}"
+  IP="${ip}" ./antidote/_build/default/rel/antidote/bin/env "${command}"
 }
 
 run "$@"
