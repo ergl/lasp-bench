@@ -182,19 +182,14 @@ kadeployNodes () {
 provisionBench () {
   echo -e "\t[PROVISION_BENCH_NODES]: Starting..."
 
-  for i in $(seq 1 ${BENCH_INSTANCES}); do
-    local bench_folder="lasp-bench${i}"
-    local command="\
-      rm -rf ${bench_folder} && \
-      git clone ${BENCH_URL} --branch ${BENCH_BRANCH} --single-branch ${bench_folder} && \
-      cd ${bench_folder} && \
+  local command="\
+      rm -rf lasp-bench && \
+      git clone ${BENCH_URL} --branch ${BENCH_BRANCH} --single-branch lasp-bench && \
+      cd lasp-bench && \
       make all
     "
 
-    doForNodesIn ${BENCH_NODEF} "${command}" \
-      >> "${LOGDIR}/lasp-bench-compile-job-${GLOBAL_TIMESTART}" 2>&1
-
-  done
+  doForNodesIn ${BENCH_NODEF} "${command}" >> "${LOGDIR}/lasp-bench-compile-job-${GLOBAL_TIMESTART}" 2>&1
 
   echo -e "\t[PROVISION_BENCH_NODES]: Done"
 }

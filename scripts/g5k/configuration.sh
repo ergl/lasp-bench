@@ -32,9 +32,6 @@ ANTIDOTE_NODES=1
 # Number of nodes running lasp_bench per site
 BENCH_NODES=1
 
-# Number of instances of lasp_bench to run per node
-BENCH_INSTANCES=1
-
 # git repository of the antidote code (useful to test forks)
 ANTIDOTE_URL="https://github.com/ergl/antidote.git"
 
