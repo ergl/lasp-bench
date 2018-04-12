@@ -36,7 +36,7 @@ BENCH_NODES=1
 ANTIDOTE_URL="https://github.com/ergl/antidote.git"
 
 # git branch of antidote to run the experiment on
-ANTIDOTE_BRANCH="pvc-rubis-g5k"
+ANTIDOTE_BRANCH="pvc-rubis"
 
 # git repository of the basho_bench code (useful to test forks)
 BENCH_URL="https://github.com/ergl/lasp-bench.git"
