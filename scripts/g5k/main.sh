@@ -202,7 +202,7 @@ provisionAntidote () {
     rm -rf antidote && \
     git clone ${ANTIDOTE_URL} --branch ${ANTIDOTE_BRANCH} --single-branch antidote && \
     cd antidote && \
-    make rel
+    make relgrid
   "
   # We need antidote in all nodes even if we don't use it
   # lasp_bench will need the sources to start
@@ -219,7 +219,7 @@ rebuildAntidote () {
     cd antidote; \
     pkill beam; \
     rm -rf deps; mkdir deps; \
-    make clean; make relclean; make rel
+    make clean; make relclean; make relgrid
   "
   # We use the IPs here so that we can change the default (127.0.0.1)
   doForNodesIn ${ANT_IPS} "${command}" \
@@ -236,7 +236,7 @@ cleanAntidote () {
     pkill beam; \
     make clean; \
     make relcleanl \
-    make rel
+    make relgrid
   "
   doForNodesIn ${ANT_IPS} "${command}" \
     >> ${LOGDIR}/clean-antidote-${GLOBAL_TIMESTART} 2>&1
