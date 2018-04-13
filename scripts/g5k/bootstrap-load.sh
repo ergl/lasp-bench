@@ -36,6 +36,8 @@ distributeLoadInfo() {
   # FIXME(borja): This might not be working correctly
   while read node; do
     # First, copy the load information
+    echo "Transfer output json to ${node}"
+
     scp -i ${EXPERIMENT_PRIVATE_KEY} \
         "${DBLOADDIR}"/output.json \
         root@"${node}":/root/lasp-bench/scripts/load_info.json
@@ -50,6 +52,7 @@ distributeLoadInfo() {
         -o ConnectTimeout=3 \
         -o StrictHostKeyChecking=no \
         root@"${node}" "${command}"
+
   done < "${BENCH_NODEF}"
 }
 
