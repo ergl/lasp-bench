@@ -8,22 +8,22 @@ if [[ $# -ne 1 ]]; then
 fi
 
 joinLocalDC () {
-  local antidote_nodes=( $(cat "${ANT_NODES}") )
+  local antidote_ips=( $(cat "${ANT_IPS}") )
   # We will execute the command only in one node
-  local head="${antidote_nodes[0]}"
+  local head="${antidote_ips[0]}"
 
   local nodes_str
-  for node in "${antidote_nodes[@]}"; do
-    nodes_str+="'antidote@${node}' "
+  for antidote_ip in "${antidote_ips[@]}"; do
+    nodes_str+="'antidote@${antidote_ip}' "
   done
 
+  # Remove last space
   nodes_str=${nodes_str%?}
 
-  local join_dc="\
-    ./antidote/bin/join_cluster_script.erl ${nodes_str}
-  "
-
-  ./execute-in-nodes.sh "${head}" "${join_dc}" "-debug"
+  ssh -i ${EXPERIMENT_PRIVATE_KEY} -T \
+          -o ConnectTimeout=3 \
+          -o StrictHostKeyChecking=no \
+          root@"${head}" "./antidote/bin/join_cluster_script.erl ${nodes_str}"
 }
 
 joinNodes () {
