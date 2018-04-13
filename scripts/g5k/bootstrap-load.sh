@@ -41,11 +41,16 @@ distributeLoadInfo() {
         "${BDLOADDIR}"/output.json \
         root@"${node}":/root/lasp-bench/scripts/load_info.json
 
+    local command="\
+      cd /root/lasp-bench/scripts/g5k/;
+      ./generate-benchmark-file.sh
+    "
+
     # Then, generate the benchmark file from that information
     ssh -i ${EXPERIMENT_PRIVATE_KEY} -T \
         -o ConnectTimeout=3 \
         -o StrictHostKeyChecking=no \
-        root@"${node}" "./root/lasp-bench/scripts/g5k/generate-benchmark-file.sh"
+        root@"${node}" "${command}"
   done < "${bench_nodes}"
 }
 
