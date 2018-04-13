@@ -277,7 +277,7 @@ setupTests () {
   local antidote_head=$(head -n 1 "${ANT_IPS}")
   local load_size="${LOAD_SIZE}"
   echo "[LOAD_DATABASE]: Starting... (This may take a while)"
-  ./bootstrap-load.sh "${antidote_head}" "${BENCH_NODEF}" "${load_size}"
+  ./bootstrap-load.sh "${antidote_head}" "${load_size}"
   echo "[LOAD_DATABASE]: Done"
 }
 
