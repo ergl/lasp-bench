@@ -33,8 +33,7 @@ loadDatabase() {
 }
 
 distributeLoadInfo() {
-  local bench_nodes="${1}"
-
+  # FIXME(borja): This might not be working correctly
   while read node; do
     # First, copy the load information
     scp -i ${EXPERIMENT_PRIVATE_KEY} \
@@ -51,20 +50,19 @@ distributeLoadInfo() {
         -o ConnectTimeout=3 \
         -o StrictHostKeyChecking=no \
         root@"${node}" "${command}"
-  done < "${bench_nodes}"
+  done < "${BENCH_NODEF}"
 }
 
 run() {
   local antidote_ip="${1}"
-  local all_bench_nodes="${2}"
-  local load_size="${3}"
+  local load_size="${2}"
 
   # Bootstrap the database with some sample data
-  local head_bench_node=$(head -n 1 "${all_bench_nodes}")
+  local head_bench_node=$(head -n 1 "${BENCH_NODEF}")
   loadDatabase "${antidote_ip}" "${head_bench_node}" "${load_size}"
 
   # Distribute load information to all benchmark nodes
-  distributeLoadInfo "${all_bench_nodes}"
+  distributeLoadInfo
 }
 
 

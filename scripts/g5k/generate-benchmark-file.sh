@@ -16,6 +16,8 @@ fi
 
 run() {
   # We already got this file before during the transferIP phase
+  # TODO(borja): This file is the same for all bench nodes, change it
+  # otherwise every benchmark node receives the same IP
   local assigned_ip=$(head -n 1 "/root/.antidote_ip_file")
   local out_file="/root/lasp-bench/examples/${BENCH_FILE}"
   pushd /root/lasp-bench/scripts/
