@@ -264,7 +264,7 @@ setupTests () {
 
   # Distribute Antidote IPs to benchmark nodes
   echo -e "\t[DISTRIBUTE_IPS]: Starting..."
-  ./distribute-ips.sh "${total_antidote_nodes}"
+  ./distribute-ips.sh "${BENCH_NODEF}"
   echo -e "\t[DISTRIBUTE_IPS]: Done"
 
   echo -e "[SETUP_TESTS]: Done"
