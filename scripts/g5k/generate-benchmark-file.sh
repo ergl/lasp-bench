@@ -17,7 +17,7 @@ fi
 run() {
   # We already got this file before during the transferIP phase
   local assigned_ip=$(head -n 1 "/root/.antidote_ip_file")
-  local out_file="${BENCH_FILE}"
+  local out_file="/root/lasp-bench/examples/${BENCH_FILE}"
   pushd /root/lasp-bench/scripts/
   ./genbenchrun.escript "${assigned_ip}" 7878 "${LOAD_INFO_FILE}" > "${out_file}"
   popd
