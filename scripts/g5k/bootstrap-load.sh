@@ -29,7 +29,7 @@ loadDatabase() {
 
   # Copy the file back
   scp -i ${EXPERIMENT_PRIVATE_KEY} \
-      root@"${bench_node}":/root/lasp-bench/scripts/output.json "${BDLOADDIR}"/output.json
+      root@"${bench_node}":/root/lasp-bench/scripts/output.json "${DBLOADDIR}"/output.json
 }
 
 distributeLoadInfo() {
@@ -37,7 +37,7 @@ distributeLoadInfo() {
   while read node; do
     # First, copy the load information
     scp -i ${EXPERIMENT_PRIVATE_KEY} \
-        "${BDLOADDIR}"/output.json \
+        "${DBLOADDIR}"/output.json \
         root@"${node}":/root/lasp-bench/scripts/load_info.json
 
     local command="\

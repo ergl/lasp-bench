@@ -73,7 +73,7 @@ trap 'promptJobCancel ${GRID_JOB_ID}' SIGINT SIGTERM
 SCRATCHFOLDER="/home/$(whoami)/grid-benchmark-${GRID_JOB_ID}"
 export LOGDIR=${SCRATCHFOLDER}/logs
 RESULTSDIR=${SCRATCHFOLDER}/results
-export BDLOADDIR=${SCRATCHFOLDER}/dbload
+export DBLOADDIR=${SCRATCHFOLDER}/dbload
 
 export EXPERIMENT_PRIVATE_KEY=${SCRATCHFOLDER}/key
 EXPERIMENT_PUBLIC_KEY=${SCRATCHFOLDER}/exp_key.pub
@@ -315,7 +315,7 @@ setupScript () {
 
   mkdir -p ${SCRATCHFOLDER}
   mkdir -p ${LOGDIR}
-  mkdir -p ${BDLOADDIR}
+  mkdir -p ${DBLOADDIR}
   cp ${PRKFILE} ${EXPERIMENT_PRIVATE_KEY}
   cp ${PBKFILE} ${EXPERIMENT_PUBLIC_KEY}
 
