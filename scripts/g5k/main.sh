@@ -18,7 +18,7 @@ export sites_size=${#sites[*]}
 
 reserveSites () {
   local reservation
-  local node_number=$((sites_size * (ANTIDOTE_NODES + BENCH_NODES)))
+  local node_number=$((ANTIDOTE_NODES + BENCH_NODES))
   for site in "${sites[@]}"; do
     reservation+="${site}:rdef=/nodes=${node_number},"
   done
@@ -110,8 +110,8 @@ getIPs () {
 gatherMachines () {
   echo "[GATHER_MACHINES]: Starting..."
 
-  local antidote_nodes_per_site=$((sites_size * ANTIDOTE_NODES))
-  local benchmark_nodes_per_site=$((sites_size * BENCH_NODES))
+  local antidote_nodes_per_site="${ANTIDOTE_NODES}"
+  local benchmark_nodes_per_site="${BENCH_NODES}"
 
   [[ -f ${ALL_NODES} ]] && rm ${ALL_NODES}
   [[ -f ${ANT_NODES} ]] && rm ${ANT_NODES}
@@ -127,9 +127,9 @@ gatherMachines () {
   # the configuration given.
   for site in "${sites[@]}"; do
     awk < ${ALL_NODES} "/${site}/ {print $1}" \
-      | tee >(head -${antidote_nodes_per_site} >> ${ANT_NODES}) \
+      | tee >(head -n "${antidote_nodes_per_site}" >> ${ANT_NODES}) \
       | sed "1,${antidote_nodes_per_site}d" \
-      | head -${benchmark_nodes_per_site} >> ${BENCH_NODEF}
+      | head -n "${benchmark_nodes_per_site}" >> ${BENCH_NODEF}
   done
 
   # Override the full node list, in case we didn't pick all the nodes
