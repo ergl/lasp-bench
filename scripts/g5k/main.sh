@@ -283,7 +283,7 @@ setupTests () {
 
 runTests () {
   echo "[RUNNING_TEST]: Starting..."
-  ./run-benchmark.sh >> ${LOGDIR}/basho-bench-execution-${GLOBAL_TIMESTART} 2>&1
+  ./run-benchmark.sh >> ${LOGDIR}/lasp-bench-execution-${GLOBAL_TIMESTART} 2>&1
   echo "[RUNNING_TEST]: Done"
 }
 
@@ -291,20 +291,19 @@ collectResults () {
   echo "[COLLECTING_RESULTS]: Starting..."
   [[ -d "${RESULTSDIR}" ]] && rm -r "${RESULTSDIR}"
   mkdir -p "${RESULTSDIR}"
-  local bench_nodes=( $(< ${BENCH_NODEF}) )
-  for node in "${bench_nodes[@]}"; do
-    scp -i ${EXPERIMENT_PRIVATE_KEY} root@${node}:/root/test* "${RESULTSDIR}"
-  done
+  while read bench_node; do
+    scp -i ${EXPERIMENT_PRIVATE_KEY} root@"${bench_node}:/root/*.tar" "${RESULTSDIR}"
+  done < "${BENCH_NODEF}"
   echo "[COLLECTING_RESULTS]: Done"
 
-  echo "[MERGING_RESULTS]: Starting..."
-  ./merge-results.sh "${RESULTSDIR}"
-  echo "[MERGING_RESULTS]: Done"
-
-  pushd "${RESULTSDIR}" > /dev/null 2>&1
-  local tar_name=$(basename "${RESULTSDIR}")
-  tar -czf ../"${tar_name}".tar .
-  popd > /dev/null 2>&1
+#  echo "[MERGING_RESULTS]: Starting..."
+#  ./merge-results.sh "${RESULTSDIR}"
+#  echo "[MERGING_RESULTS]: Done"
+#
+#  pushd "${RESULTSDIR}" > /dev/null 2>&1
+#  local tar_name=$(basename "${RESULTSDIR}")
+#  tar -czf ../"${tar_name}".tar .
+#  popd > /dev/null 2>&1
 }
 
 
@@ -367,7 +366,8 @@ run () {
   configCluster
 
   setupTests
-  # runTests
+  runTests
+  collectResults
 }
 
 run
