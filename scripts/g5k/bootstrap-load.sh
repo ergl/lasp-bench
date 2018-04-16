@@ -34,25 +34,21 @@ loadDatabase() {
 
 distributeLoadInfo() {
   # FIXME(borja): This might not be working correctly
-  while read node; do
-    # First, copy the load information
-    echo "Transfer output json to ${node}"
-
+  # First, copy the load information
+  while read bench_node; do
     scp -i ${EXPERIMENT_PRIVATE_KEY} \
         "${DBLOADDIR}"/output.json \
-        root@"${node}":/root/lasp-bench/scripts/load_info.json
+        root@"${bench_node}":/root/lasp-bench/scripts/load_info.json > /dev/null 2>&1
 
-    local command="\
-      cd /root/lasp-bench/scripts/g5k/;
-      ./generate-benchmark-file.sh
-    "
+  done < "${BENCH_NODEF}"
 
-    # Then, generate the benchmark file from that information
+  # Then, generate the benchmark file from that information
+  local command="cd /root/lasp-bench/scripts/g5k/; ./generate-benchmark-file.sh"
+  while read bench_node; do
     ssh -i ${EXPERIMENT_PRIVATE_KEY} -T \
         -o ConnectTimeout=3 \
         -o StrictHostKeyChecking=no \
-        root@"${node}" "${command}"
-
+        root@"${bench_node}" "${command}" > /dev/null 2>&1
   done < "${BENCH_NODEF}"
 }
 
