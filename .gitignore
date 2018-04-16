@@ -1,3 +1,4 @@
+examples/rubis_default.config
 tests/
 .rebar/
 *~
