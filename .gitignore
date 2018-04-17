@@ -1,6 +1,7 @@
 examples/rubis_default.config
 tests/
 .rebar/
+grid_tests/
 *~
 #*#
 tags
