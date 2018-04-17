@@ -23,9 +23,13 @@ run() {
   local antidote_ip_file=".antidote_ip_file"
 
   # This assumes that each bench node only talks to one Antidote node
+  # FIXME(borja): All nodes get the same IP
   local file_offset=1
   while read bench_node; do
+    echo "file_offset is now ${file_offset}"
     sed -n "${file_offset}{p;q;}" "${ANT_IPS}" > "${antidote_ip_file}"
+    local chosen_ip=$(sed -n "${file_offset}{p;q;}" "${ANT_IPS}")
+    echo "Chose ip ${chosen_ip}"
     transferIPs "${bench_node}" "${antidote_ip_file}"
     # If there are more clients than Antidote nodes, wrap around
     file_offset=$(( ((file_offset + 1) % total_antidote_nodes) + 1 ))
