@@ -291,7 +291,7 @@ collectResults () {
   [[ -d "${RESULTSDIR}" ]] && rm -r "${RESULTSDIR}"
   mkdir -p "${RESULTSDIR}"
   while read bench_node; do
-    scp -i ${EXPERIMENT_PRIVATE_KEY} root@"${bench_node}:/root/*.tar" "${RESULTSDIR}"
+    scp -i ${EXPERIMENT_PRIVATE_KEY} root@"${bench_node}":/root/*.tar "${RESULTSDIR}"
   done < "${BENCH_NODEF}"
   echo "[COLLECTING_RESULTS]: Done"
 
