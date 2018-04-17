@@ -25,11 +25,11 @@ loadDatabase() {
   ssh -i ${EXPERIMENT_PRIVATE_KEY} -T \
       -o ConnectTimeout=3 \
       -o StrictHostKeyChecking=no \
-      root@"${bench_node}" "${command}"
+      root@"${bench_node}" "${command}" > /dev/null 2>&1
 
   # Copy the file back
   scp -i ${EXPERIMENT_PRIVATE_KEY} \
-      root@"${bench_node}":/root/lasp-bench/scripts/output.json "${DBLOADDIR}"/output.json
+      root@"${bench_node}":/root/lasp-bench/scripts/output.json "${DBLOADDIR}"/output.json > /dev/null 2>&1
 }
 
 distributeLoadInfo() {
@@ -39,7 +39,6 @@ distributeLoadInfo() {
     scp -i ${EXPERIMENT_PRIVATE_KEY} \
         "${DBLOADDIR}"/output.json \
         root@"${bench_node}":/root/lasp-bench/scripts/load_info.json > /dev/null 2>&1
-
   done < "${BENCH_NODEF}"
 
   # Then, generate the benchmark file from that information
