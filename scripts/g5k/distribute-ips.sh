@@ -4,7 +4,7 @@ set -eo pipefail
 
 source ./configuration.sh
 
-if [[ $# -ne 1 ]]; then
+if [[ $# -ne 2 ]]; then
   exit 1
 fi
 
@@ -19,16 +19,16 @@ transferIPs () {
 
 run() {
   local bench_node_file="${1}"
+  local total_antidote_nodes="${2}"
   local antidote_ip_file=".antidote_ip_file"
 
   # This assumes that each bench node only talks to one Antidote node
   local file_offset=1
   while read bench_node; do
-    # FIXME(borja): Change this if we allow more than one node per site
-    # Each bench node will receive one Antidote node IP to talk to
     sed -n "${file_offset}{p;q;}" "${ANT_IPS}" > "${antidote_ip_file}"
     transferIPs "${bench_node}" "${antidote_ip_file}"
-    file_offset=$((file_offset + 1))
+    # If there are more clients than Antidote nodes, wrap around
+    file_offset=$(( ((file_offset + 1) % total_antidote_nodes) + 1 ))
   done < "${bench_node_file}"
 }
 
