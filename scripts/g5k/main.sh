@@ -204,9 +204,8 @@ provisionAntidote () {
     cd antidote && \
     make relgrid
   "
-  # We need antidote in all nodes even if we don't use it
-  # lasp_bench will need the sources to start
-  doForNodesIn ${ALL_NODES} "${command}" \
+
+  doForNodesIn ${ANT_NODES} "${command}" \
     >> "${LOGDIR}/antidote-compile-and-config-job-${GLOBAL_TIMESTART}" 2>&1
 
   echo -e "\t[PROVISION_ANTIDOTE_NODES]: Done"
