@@ -4,7 +4,7 @@
 -define(CONFIG_MODE, max).
 -define(CONFIG_DURATION, 5).
 -define(CONFIG_INTERVAL_SECONDS, 5).
--define(CONFIG_CLIENTS, 10).
+-define(CONFIG_CLIENTS, 50).
 
 -define(CONFIG_HEADER,
     fun() ->
