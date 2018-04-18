@@ -9,7 +9,7 @@ PBKFILE=~/.ssh/benchmark.pub
 K3_IMAGE=/home/$(whoami)/public/antidote-images/latest/antidote.env
 
 # Different g5k sites to run the benchmark
-SITES=( "nancy" "rennes" )
+SITES=( "nancy" )
 
 # Reserve sites and nodes through oargridsub
 RESERVE_SITES=true
@@ -27,10 +27,10 @@ CLEAN_RUN=true
 # Saying SITES=( "nancy" "rennes" )
 # and ANTIDOTE_NODES=2 would create 4 nodes,
 # two in nancy, two in rennes
-ANTIDOTE_NODES=1
+ANTIDOTE_NODES=2
 
 # Number of nodes running lasp_bench per site
-BENCH_NODES=1
+BENCH_NODES=2
 
 # git repository of the antidote code (useful to test forks)
 ANTIDOTE_URL="https://github.com/ergl/antidote.git"
