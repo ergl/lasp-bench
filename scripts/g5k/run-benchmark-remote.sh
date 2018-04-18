@@ -12,7 +12,7 @@ runBench () {
 
 collectBench () {
   local own_node_name="${HOSTNAME::-12}" # remove the .grid5000.fr part of the name
-  local result_name="results-${own_node_name}.tar"
+  local result_name="${own_node_name}.tar"
   pushd /root/lasp-bench/tests > /dev/null 2>&1
   tar -zhcf "${result_name}" current
   mv "${result_name}" /root
