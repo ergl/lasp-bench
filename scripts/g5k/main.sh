@@ -190,7 +190,14 @@ provisionBench () {
       make all
     "
 
-  doForNodesIn ${BENCH_NODEF} "${command}" >> "${LOGDIR}/lasp-bench-compile-job-${GLOBAL_TIMESTART}" 2>&1
+  while read node; do
+    $(
+      ssh -i ${EXPERIMENT_PRIVATE_KEY} -T -n -o ConnectTimeout=3 -o StrictHostKeyChecking=no \
+      root@"${node}" "${command}" >> "${LOGDIR}/lasp-bench-compile-job-${GLOBAL_TIMESTART}" 2>&1
+    ) &
+  done < "${BENCH_NODEF}"
+
+  wait
 
   echo -e "\t[PROVISION_BENCH_NODES]: Done"
 }
@@ -206,8 +213,14 @@ provisionAntidote () {
     make relgrid
   "
 
-  doForNodesIn ${ANT_NODES} "${command}" \
-    >> "${LOGDIR}/antidote-compile-and-config-job-${GLOBAL_TIMESTART}" 2>&1
+  while read node; do
+    $(
+      ssh -i ${EXPERIMENT_PRIVATE_KEY} -T -n -o ConnectTimeout=3 -o StrictHostKeyChecking=no \
+      root@"${node}" "${command}" >> "${LOGDIR}/antidote-compile-and-config-job-${GLOBAL_TIMESTART}" 2>&1
+    ) &
+  done < "${ANT_NODES}"
+
+  wait
 
   echo -e "\t[PROVISION_ANTIDOTE_NODES]: Done"
 }
