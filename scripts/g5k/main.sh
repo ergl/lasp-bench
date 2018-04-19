@@ -295,9 +295,9 @@ collectResults () {
   done < "${BENCH_NODEF}"
   echo "[COLLECTING_RESULTS]: Done"
 
-#  echo "[MERGING_RESULTS]: Starting..."
-#  ./merge-results.sh "${RESULTSDIR}"
-#  echo "[MERGING_RESULTS]: Done"
+  echo "[MERGING_RESULTS]: Starting..."
+  ./merge-results.sh "${RESULTSDIR}"
+  echo "[MERGING_RESULTS]: Done"
 #
 #  pushd "${RESULTSDIR}" > /dev/null 2>&1
 #  local tar_name=$(basename "${RESULTSDIR}")
