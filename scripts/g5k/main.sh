@@ -70,6 +70,7 @@ fi
 # Delete the reservation if script is killed
 trap 'promptJobCancel ${GRID_JOB_ID}' SIGINT SIGTERM
 
+export HOMEFOLDER="/home/$(whoami)"
 SCRATCHFOLDER="/home/$(whoami)/grid-benchmark-${GRID_JOB_ID}"
 export LOGDIR=${SCRATCHFOLDER}/logs
 RESULTSDIR=${SCRATCHFOLDER}/results
@@ -298,11 +299,13 @@ collectResults () {
   echo "[MERGING_RESULTS]: Starting..."
   ./merge-results.sh "${RESULTSDIR}"
   echo "[MERGING_RESULTS]: Done"
-#
-#  pushd "${RESULTSDIR}" > /dev/null 2>&1
-#  local tar_name=$(basename "${RESULTSDIR}")
-#  tar -czf ../"${tar_name}".tar .
-#  popd > /dev/null 2>&1
+
+  pushd "${RESULTSDIR}" > /dev/null 2>&1
+  local result_folder_name=$(basename "${RESULTSDIR}")
+  local tar_name="${result_folder_name}-${GRID_JOB_ID}.tar"
+  tar -zcf "${tar_name}" .
+  mv "${tar_name}" "${HOMEFOLDER}"
+  popd > /dev/null 2>&1
 }
 
 
