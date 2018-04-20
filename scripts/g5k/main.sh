@@ -313,10 +313,10 @@ collectResults () {
   ./merge-results.sh "${RESULTSDIR}"
   echo "[MERGING_RESULTS]: Done"
 
-  pushd "${RESULTSDIR}" > /dev/null 2>&1
+  pushd "${SCRATCHFOLDER}" > /dev/null 2>&1
   local result_folder_name=$(basename "${RESULTSDIR}")
   local tar_name="${result_folder_name}-${GRID_JOB_ID}.tar"
-  tar -zcf "${tar_name}" .
+  tar -zcf "${tar_name}" "${RESULTSDIR}"
   mv "${tar_name}" "${HOMEFOLDER}"
   popd > /dev/null 2>&1
 }
