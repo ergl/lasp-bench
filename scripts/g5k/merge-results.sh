@@ -23,15 +23,17 @@ run () {
 
   rm ./*.tar
 
-  local summary_str=""
-  local latency_str=""
+  local -a summary_arr
+  local -a latency_arr
+  local folder_index=0
   for folder_name in "${result_folders[@]}"; do
-    summary_str+="${folder_name}summary.csv "
-    latency_str+="${folder_name}perform-operation_latencies.csv "
+    summary_arr[${folder_index}]="${folder_name}/summary.csv"
+    latency_arr[${folder_index}]="${folder_name}/perform-operation_latencies.csv"
+    folder_index=$((folder_index + 1))
   done
 
-  ./mergeSummary.awk "${summary_str}" > summary.csv
-  ./mergeLatencies.awk "${latency_str}" > perform-operation_latencies.csv
+  ./mergeSummary.awk "${summary_arr[@]}" > summary.csv
+  ./mergeLatencies.awk "${latency_arr[@]}" > perform-operation_latencies.csv
 
   rm mergeSummary.awk
   rm mergeLatencies.awk
