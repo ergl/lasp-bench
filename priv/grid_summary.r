@@ -67,11 +67,17 @@ latency_base <- ggplot(b$latencies, aes(x = elapsed)) +
                    labs(x = "Elapsed Secs", y = "Latency (ms)")
 
 # Plot min and max latencies
-latency_plot <- latency_base + labs(title = "Minimum and Maximum Latency") +
+latency_plot <- latency_base + labs(title = "Minimum, Mean and Maximum Latency") +
+            geom_smooth(aes(y = min, color = "min"), size=0.5) +
+            geom_point(aes(y = min, color = "min"), size=2.0) +
+
             geom_smooth(aes(y = mean, color = "mean"), size=0.5) +
             geom_point(aes(y = mean, color = "mean"), size=2.0) +
 
-            scale_colour_manual("Values", values = c("#E90C19"))
+            geom_smooth(aes(y = max, color = "max"), size=0.5) +
+            geom_point(aes(y = max, color = "max"), size=2.0) +
+
+            scale_colour_manual("Values", values = c("#FF665F", "#009D91", "#FFA700"))
 
 grid.newpage()
 
