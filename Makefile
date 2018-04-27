@@ -35,12 +35,9 @@ bench:
 	./_build/default/bin/lasp_bench $(RUBIS_TABLE_CONFIG)
 
 results:
-	Rscript --vanilla priv/summary.r -i tests/current
+	Rscript --vanilla priv/summary.r --ylabel1stgraph tx/sec -i tests/current
 
 ops_sec-results: results
-
-tx-results:
-	Rscript --vanilla priv/summary.r --ylabel1stgraph tx/sec -i tests/current
 
 byte_sec-results:
 	Rscript --vanilla priv/summary.r --ylabel1stgraph byte/sec -i tests/current
