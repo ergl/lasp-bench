@@ -35,27 +35,8 @@ bench:
 	./_build/default/bin/lasp_bench $(RUBIS_TABLE_CONFIG)
 
 results:
-	Rscript --vanilla priv/summary.r --ylabel1stgraph tx/sec -i tests/current
+	Rscript --vanilla priv/summary.r -x 2600 -y 2000 -i tests/current
 
-ops_sec-results: results
-
-byte_sec-results:
-	Rscript --vanilla priv/summary.r --ylabel1stgraph byte/sec -i tests/current
-
-kb_sec-results:
-	Rscript --vanilla priv/summary.r --ylabel1stgraph KB/sec -i tests/current
-
-kib_sec-results:
-	Rscript --vanilla priv/summary.r --ylabel1stgraph KiB/sec -i tests/current
-
-mb_sec-results:
-	Rscript --vanilla priv/summary.r --ylabel1stgraph MB/sec -i tests/current
-
-mib_sec-results:
-	Rscript --vanilla priv/summary.r --ylabel1stgraph MiB/sec -i tests/current
-
-results-browser:
-	cp -R priv/results-browser/* tests/current && cd tests/current && python -c 'import os, json; print json.dumps(os.listdir("."))' > web/data.json && python ../../priv/results-browser.py
 
 TARGETS := $(shell ls tests/ | grep -v current)
 JOBS := $(addprefix job,${TARGETS})
