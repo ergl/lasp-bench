@@ -168,7 +168,8 @@ gen_comment(State = #rubis_state{logged_in_as = As}) ->
             LoggedInId
     end,
     ToId = gen_distinct_id(FromId, State),
-    Rating = crypto:rand_uniform(-5, 5),
+    %% Equivalent to depr crypto:rand_uniform(-5,5)
+    Rating = rand:uniform(11) - 5,
     Body = random_string(20),
     {ItemId, FromId, ToId, Rating, Body}.
 
