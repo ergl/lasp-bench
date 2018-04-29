@@ -25,7 +25,12 @@
 main([Host, Port, LoadOutput]) ->
     TablePath = ?TRANSITION_TABLE(),
     {ok, LoadInfo} = load_from_json(LoadOutput),
-    write_config_file(TablePath, Host, Port, LoadInfo);
+    write_config_file({table, TablePath}, Host, Port, LoadInfo);
+
+main([Host, Port, LoadOutput, DefaultOps]) ->
+    {ok, LoadInfo} = load_from_json(LoadOutput),
+    {ok, Ops} = load_ops(DefaultOps),
+    write_config_file({ops, Ops}, Host, Port, LoadInfo);
 
 main(_) ->
     io:fwrite("genbenchrun.escript <rubis-ip> <rubis-port> <load-file>~n"),
@@ -49,13 +54,27 @@ load_from_json(JsonFile, Opts) ->
             end
     end.
 
-write_config_file(TablePath, Host, Port, LoadInfo) ->
+load_ops(DefaultOps) ->
+    case load_from_json(DefaultOps) of
+        {error, Reason} ->
+            {error, Reason};
+
+        {ok, Ops} ->
+            {ok, lists:map(fun(T) -> binary_to_atom(T, utf8) end, Ops)}
+    end.
+
+write_config_file(Mode, Host, Port, LoadInfo) ->
     io:fwrite(?CONFIG_HEADER(), []),
     io:fwrite(?CONFIG_DRIVER),
-    io:fwrite("{transition_table,~p}.~n",[TablePath]),
+    case Mode of
+        {table, TablePath} ->
+            io:fwrite("{bench_mode,{table,~p}}.~n", [TablePath]);
+        {ops, Ops} ->
+            io:fwrite("{bench_mode,{transition,~p}}.~n", [Ops])
+    end,
+    io:fwrite("{operations,[{perform_operation, 1}]}.~n"),
     io:fwrite("{rubis_ip,~p}.~n", [list_to_atom(Host)]),
     io:fwrite("{rubis_port,~p}.~n", [list_to_integer(Port)]),
-    io:fwrite("{operations,[{perform_operation, 1}]}.~n"),
     io:fwrite("{region_ids, ~n~p}.~n",[maps:get(region_ids, LoadInfo)]),
     io:fwrite("{category_ids, ~n~p}.~n",[maps:get(category_ids, LoadInfo)]),
     io:fwrite("{user_ids, ~n~p}.~n",[maps:get(user_ids, LoadInfo)]),

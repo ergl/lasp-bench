@@ -27,9 +27,8 @@ new(Id) ->
                 worker_id=Id,
                 rubis_state=RubisState}}.
 
-run(perform_operation, _, _, State = #state{worker_id=Id,rubis_state=RState}) ->
+run(perform_operation, _, _, State = #state{rubis_state=RState}) ->
     {Operation, NewRState} = lasp_bench_driver_rubis_core:next_operation(RState),
-%%    io:format("{~p} Next operation is ~p~n", [Id, Operation]),
     Resp = run_op(Operation, State#state{rubis_state=NewRState}),
     sleep_then_return(Operation, Resp).
 
