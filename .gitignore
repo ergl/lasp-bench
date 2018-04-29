@@ -1,4 +1,5 @@
 examples/rubis_default.config
+scripts/default_ops.json
 tests/
 grid_tests/
 .rebar
