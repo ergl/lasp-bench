@@ -73,7 +73,7 @@ load_regions(Socket, Regions) ->
         Msg = rubis_proto:put_region(Region),
         gen_tcp:send(Socket, Msg),
         {ok, BinReply} = gen_tcp:recv(Socket, 0),
-        {ok, Id} = rubis_proto:decode_reply('PutRegion', BinReply),
+        {ok, Id} = rubis_proto:decode_reply(BinReply),
         [Id | Acc]
     end, [], Regions).
 
@@ -82,7 +82,7 @@ load_categories(Socket, Categories) ->
         Msg = rubis_proto:put_category(Category),
         gen_tcp:send(Socket, Msg),
         {ok, BinReply} = gen_tcp:recv(Socket, 0),
-        {ok, Id} = rubis_proto:decode_reply('PutCategory', BinReply),
+        {ok, Id} = rubis_proto:decode_reply(BinReply),
         [Id | Acc]
     end, [], Categories).
 
@@ -98,7 +98,7 @@ load_users(Socket, UserNum, RegionIds) ->
         Msg = rubis_proto:register_user(Username, Password, RandomId),
         gen_tcp:send(Socket, Msg),
         {ok, BinReply} = gen_tcp:recv(Socket, 0),
-        {ok, Id} = rubis_proto:decode_reply('RegisterUser', BinReply),
+        {ok, Id} = rubis_proto:decode_reply(BinReply),
         {NewSet, [Id | Ids]}
     end, {UserSet, []}, lists:seq(0, UserNum)).
 
@@ -133,7 +133,7 @@ load_items_from_category(Socket, Num, NameSet, ItemDescLen, UserIds, CategoryId)
         Msg = rubis_proto:store_item(ItemName, Description, Quantity, CategoryId, SellerId),
         gen_tcp:send(Socket, Msg),
         {ok, BinReply} = gen_tcp:recv(Socket, 0),
-        {ok, Id} = rubis_proto:decode_reply('StoreItem', BinReply),
+        {ok, Id} = rubis_proto:decode_reply(BinReply),
         {NewSet, [Id | Ids]}
     end, {NameSet, []}, lists:seq(0, Num)).
 
@@ -147,7 +147,7 @@ load_bids(Socket, Num, UserIds, ItemIds) ->
         Msg = rubis_proto:store_bid(RandomItem, RandomUser, Price),
         gen_tcp:send(Socket, Msg),
         {ok, BinReply} = gen_tcp:recv(Socket, 0),
-        {ok, Id} = rubis_proto:decode_reply('StoreBid', BinReply),
+        {ok, Id} = rubis_proto:decode_reply(BinReply),
         Id
     end, lists:seq(0, Num)).
 
@@ -166,7 +166,7 @@ load_comments(Socket, Num, CommentLen, ItemIds, UserIds) ->
         Msg = rubis_proto:store_comment(OnId, FromId, ToId, Rating, Body),
         gen_tcp:send(Socket, Msg),
         {ok, BinReply} = gen_tcp:recv(Socket, 0),
-        {ok, Id} = rubis_proto:decode_reply('StoreComment', BinReply),
+        {ok, Id} = rubis_proto:decode_reply(BinReply),
         Id
     end, lists:seq(0, Num)).
 

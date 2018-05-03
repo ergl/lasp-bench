@@ -38,7 +38,7 @@ run_op(registeruser, State = #state{socket=Sock, rubis_state=RState}) ->
     Msg = rubis_proto:register_user(Username, Password, RegionId),
     ok = gen_tcp:send(Sock, Msg),
     {ok, BinReply} = gen_tcp:recv(Sock, 0),
-    Resp = rubis_proto:decode_reply('RegisterUser', BinReply),
+    Resp = rubis_proto:decode_reply(BinReply),
     case Resp of
         {ok, Id} ->
             FinalState = ?core:update_state({confirm_user, Id, Username}, NewState),
@@ -53,7 +53,7 @@ run_op(browsecategories, State = #state{socket=Sock}) ->
     Msg = rubis_proto:browse_categories(),
     ok = gen_tcp:send(Sock, Msg),
     {ok, BinReply} = gen_tcp:recv(Sock, 0),
-    Resp = rubis_proto:decode_reply('BrowseCategories', BinReply),
+    Resp = rubis_proto:decode_reply(BinReply),
     case Resp of
         ok ->
             {ok, State};
@@ -67,7 +67,7 @@ run_op(searchitemsincategory, State = #state{socket=Sock, rubis_state=RState}) -
     Msg = rubis_proto:search_items_by_category(CategoryId),
     ok = gen_tcp:send(Sock, Msg),
     {ok, BinReply} = gen_tcp:recv(Sock, 0),
-    Resp = rubis_proto:decode_reply('SearchByCategory', BinReply),
+    Resp = rubis_proto:decode_reply(BinReply),
     case Resp of
         ok ->
             {ok, State};
@@ -80,7 +80,7 @@ run_op(browseregions, State = #state{socket=Sock}) ->
     Msg = rubis_proto:browse_regions(),
     ok = gen_tcp:send(Sock, Msg),
     {ok, BinReply} = gen_tcp:recv(Sock, 0),
-    Resp = rubis_proto:decode_reply('BrowseRegions', BinReply),
+    Resp = rubis_proto:decode_reply(BinReply),
     case Resp of
         ok ->
             {ok, State};
@@ -95,7 +95,7 @@ run_op(searchitemsinregion, State = #state{socket=Sock, rubis_state=RState}) ->
     Msg = rubis_proto:search_items_by_region(CategoryId, RegionId),
     ok = gen_tcp:send(Sock, Msg),
     {ok, BinReply} = gen_tcp:recv(Sock, 0),
-    Resp = rubis_proto:decode_reply('SearchByRegion', BinReply),
+    Resp = rubis_proto:decode_reply(BinReply),
     case Resp of
         ok ->
             {ok, State};
@@ -109,7 +109,7 @@ run_op(viewitem, State = #state{socket=Sock, rubis_state=RState}) ->
     Msg = rubis_proto:view_item(ItemId),
     ok = gen_tcp:send(Sock, Msg),
     {ok, BinReply} = gen_tcp:recv(Sock, 0),
-    Resp = rubis_proto:decode_reply('ViewItem', BinReply),
+    Resp = rubis_proto:decode_reply(BinReply),
     case Resp of
         ok ->
             {ok, State};
@@ -123,7 +123,7 @@ run_op(viewuserinfo, State = #state{socket=Sock, rubis_state=RState}) ->
     Msg = rubis_proto:view_user(UserId),
     ok = gen_tcp:send(Sock, Msg),
     {ok, BinReply} = gen_tcp:recv(Sock, 0),
-    Resp = rubis_proto:decode_reply('ViewUser', BinReply),
+    Resp = rubis_proto:decode_reply(BinReply),
     case Resp of
         ok ->
             {ok, State};
@@ -137,7 +137,7 @@ run_op(viewbidhistory, State = #state{socket=Sock, rubis_state=RState}) ->
     Msg = rubis_proto:view_bid_history(ItemId),
     ok = gen_tcp:send(Sock, Msg),
     {ok, BinReply} = gen_tcp:recv(Sock, 0),
-    Resp = rubis_proto:decode_reply('ViewItemBidHist', BinReply),
+    Resp = rubis_proto:decode_reply(BinReply),
     case Resp of
         ok ->
             {ok, State};
@@ -154,7 +154,7 @@ run_op(storebuynow, State = #state{socket=Sock,rubis_state=RState}) ->
     Msg = rubis_proto:store_buy_now(ItemId, UserId, Q),
     ok = gen_tcp:send(Sock, Msg),
     {ok, BinReply} = gen_tcp:recv(Sock, 0),
-    Resp = rubis_proto:decode_reply('StoreBuyNow', BinReply),
+    Resp = rubis_proto:decode_reply(BinReply),
     case Resp of
         {ok, _} ->
             {ok, State};
@@ -171,7 +171,7 @@ run_op(storebid, State = #state{socket=Sock,rubis_state=RState}) ->
     Msg = rubis_proto:store_bid(ItemId, UserId, Price),
     ok = gen_tcp:send(Sock, Msg),
     {ok, BinReply} = gen_tcp:recv(Sock, 0),
-    Resp = rubis_proto:decode_reply('StoreBid', BinReply),
+    Resp = rubis_proto:decode_reply(BinReply),
     case Resp of
         {ok, _} ->
             {ok, State};
@@ -188,7 +188,7 @@ run_op(storecomment, State = #state{socket=Sock,rubis_state=RState}) ->
     Msg = rubis_proto:store_comment(ItemId, FromId, ToId, Rating, Body),
     ok = gen_tcp:send(Sock, Msg),
     {ok, BinReply} = gen_tcp:recv(Sock, 0),
-    Resp = rubis_proto:decode_reply('StoreComment', BinReply),
+    Resp = rubis_proto:decode_reply(BinReply),
     case Resp of
         {ok, _} ->
             {ok, State};
@@ -202,7 +202,7 @@ run_op(registeritem, State = #state{socket=Sock, rubis_state=RState}) ->
     Msg = rubis_proto:store_item(ItemName, Description, Quantity, CategoryId, SellerId),
     ok = gen_tcp:send(Sock, Msg),
     {ok, BinReply} = gen_tcp:recv(Sock, 0),
-    Resp = rubis_proto:decode_reply('StoreItem', BinReply),
+    Resp = rubis_proto:decode_reply(BinReply),
     case Resp of
         {ok, ItemId} ->
             NewState = ?core:update_state({confirm_item, ItemId}, RState),
@@ -220,7 +220,7 @@ run_op(aboutme, State = #state{socket=Sock, rubis_state=RState}) ->
     Msg = rubis_proto:about_me(UserId),
     ok = gen_tcp:send(Sock, Msg),
     {ok, BinReply} = gen_tcp:recv(Sock, 0),
-    Resp = rubis_proto:decode_reply('AboutMe', BinReply),
+    Resp = rubis_proto:decode_reply(BinReply),
     case Resp of
         ok ->
             {ok, State};
@@ -249,7 +249,7 @@ perform_auth(State = #state{socket=Sock, rubis_state=RState}) ->
     Msg = rubis_proto:auth_user(Username, Pass),
     ok = gen_tcp:send(Sock, Msg),
     {ok, BinReply} = gen_tcp:recv(Sock, 0),
-    Resp = rubis_proto:decode_reply('AuthUser', BinReply),
+    Resp = rubis_proto:decode_reply(BinReply),
     case Resp of
         {ok, Id} ->
             NewState = ?core:set_logged_in(Id, RState),
