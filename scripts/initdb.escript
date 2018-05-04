@@ -70,19 +70,19 @@ do_load(Socket, Config) ->
 
 load_regions(Socket, Regions) ->
     lists:foldl(fun(Region, Acc) ->
-        Msg = rubis_proto:put_region(Region),
+        Msg = rpb_rubis_driver:put_region(Region),
         gen_tcp:send(Socket, Msg),
         {ok, BinReply} = gen_tcp:recv(Socket, 0),
-        {ok, Id} = rubis_proto:decode_reply(BinReply),
+        {ok, Id} = rubis_proto:decode_serv_reply(BinReply),
         [Id | Acc]
     end, [], Regions).
 
 load_categories(Socket, Categories) ->
     lists:foldl(fun(Category, Acc) ->
-        Msg = rubis_proto:put_category(Category),
+        Msg = rpb_rubis_driver:put_category(Category),
         gen_tcp:send(Socket, Msg),
         {ok, BinReply} = gen_tcp:recv(Socket, 0),
-        {ok, Id} = rubis_proto:decode_reply(BinReply),
+        {ok, Id} = rubis_proto:decode_serv_reply(BinReply),
         [Id | Acc]
     end, [], Categories).
 
@@ -95,10 +95,10 @@ load_users(Socket, UserNum, RegionIds) ->
         Password = Username,
         N = rand:uniform(RegionLen),
         RandomId = lists:nth(N, RegionIds),
-        Msg = rubis_proto:register_user(Username, Password, RandomId),
+        Msg = rpb_rubis_driver:register_user(Username, Password, RandomId),
         gen_tcp:send(Socket, Msg),
         {ok, BinReply} = gen_tcp:recv(Socket, 0),
-        {ok, Id} = rubis_proto:decode_reply(BinReply),
+        {ok, Id} = rubis_proto:decode_serv_reply(BinReply),
         {NewSet, [Id | Ids]}
     end, {UserSet, []}, lists:seq(0, UserNum)).
 
@@ -130,10 +130,10 @@ load_items_from_category(Socket, Num, NameSet, ItemDescLen, UserIds, CategoryId)
         Quantity = rand:uniform(10000),
         N = rand:uniform(UsersLen),
         SellerId = lists:nth(N, UserIds),
-        Msg = rubis_proto:store_item(ItemName, Description, Quantity, CategoryId, SellerId),
+        Msg = rpb_rubis_driver:store_item(ItemName, Description, Quantity, CategoryId, SellerId),
         gen_tcp:send(Socket, Msg),
         {ok, BinReply} = gen_tcp:recv(Socket, 0),
-        {ok, Id} = rubis_proto:decode_reply(BinReply),
+        {ok, Id} = rubis_proto:decode_serv_reply(BinReply),
         {NewSet, [Id | Ids]}
     end, {NameSet, []}, lists:seq(0, Num)).
 
@@ -144,10 +144,10 @@ load_bids(Socket, Num, UserIds, ItemIds) ->
         RandomUser = lists:nth(rand:uniform(UsersLen), UserIds),
         RandomItem = lists:nth(rand:uniform(ItemsLen), ItemIds),
         Price = rand:uniform(2000),
-        Msg = rubis_proto:store_bid(RandomItem, RandomUser, Price),
+        Msg = rpb_rubis_driver:store_bid(RandomItem, RandomUser, Price),
         gen_tcp:send(Socket, Msg),
         {ok, BinReply} = gen_tcp:recv(Socket, 0),
-        {ok, Id} = rubis_proto:decode_reply(BinReply),
+        {ok, Id} = rubis_proto:decode_serv_reply(BinReply),
         Id
     end, lists:seq(0, Num)).
 
@@ -163,10 +163,10 @@ load_comments(Socket, Num, CommentLen, ItemIds, UserIds) ->
         OnId = lists:nth(rand:uniform(ItemsLen), ItemIds),
         Rating = lists:nth(rand:uniform(length(Ratings)), Ratings),
         Body = random_string(CommentLen),
-        Msg = rubis_proto:store_comment(OnId, FromId, ToId, Rating, Body),
+        Msg = rpb_rubis_driver:store_comment(OnId, FromId, ToId, Rating, Body),
         gen_tcp:send(Socket, Msg),
         {ok, BinReply} = gen_tcp:recv(Socket, 0),
-        {ok, Id} = rubis_proto:decode_reply(BinReply),
+        {ok, Id} = rubis_proto:decode_serv_reply(BinReply),
         Id
     end, lists:seq(0, Num)).
 
