@@ -28,7 +28,7 @@ do_load(_, 0) ->
     ok;
 
 do_load(Socket, N) ->
-    Key = integer_to_binary(N),
+    Key = integer_to_binary(N, 36),
     Value = crypto:strong_rand_bytes(?VAL_SIZE),
     Msg = rpb_simple_driver:read_write([], [{Key, Value}]),
     ok = gen_tcp:send(Socket, Msg),
