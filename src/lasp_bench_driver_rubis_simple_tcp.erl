@@ -6,7 +6,6 @@
 -include("lasp_bench.hrl").
 
 -type key_gen(T) :: fun(() -> T).
--type value_gen(T) :: fun(() -> T).
 
 -record(state, { socket :: gen_tcp:socket(), key_ratio :: {non_neg_integer(), non_neg_integer()} }).
 
@@ -58,7 +57,7 @@ run(readwrite, KeyGen, ValueGen, State = #state{socket=Sock, key_ratio={NReads, 
     end.
 
 %% Util
--spec gen_keys(non_neg_integer(), key_gen(binary())) -> [binary()].
+-spec gen_keys(non_neg_integer(), key_gen(non_neg_integer())) -> [binary()].
 gen_keys(N, K) ->
     gen_keys(N, K, []).
 
@@ -66,14 +65,4 @@ gen_keys(0, _, Acc) ->
     Acc;
 
 gen_keys(N, K, Acc) ->
-    gen_keys(N - 1, K, [K() | Acc]).
-
--spec gen_updates(non_neg_integer(), key_gen(binary()), value_gen(binary())) -> [{binary(), binary()}].
-gen_updates(N, K, V) ->
-    gen_updates(N, K, V, []).
-
-gen_updates(0, _, _, Acc) ->
-    Acc;
-
-gen_updates(N, K, V, Acc) ->
-    gen_updates(N - 1, K, V, [{K(), V()} | Acc]).
+    gen_keys(N - 1, K, [integer_to_binary(K()) | Acc]).
