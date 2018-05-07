@@ -7,17 +7,24 @@
 
 -type key_gen(T) :: fun(() -> T).
 
--record(state, { socket :: gen_tcp:socket(), key_ratio :: {non_neg_integer(), non_neg_integer()} }).
+-record(state, {
+    socket :: gen_tcp:socket(),
+    read_keys :: non_neg_integer(),
+    key_ratio :: {non_neg_integer(), non_neg_integer()}
+}).
 
 new(_Id) ->
     _ = application:ensure_all_started(rubis_proto),
     Ip = lasp_bench_config:get(rubis_ip, '127.0.0.1'),
     Port = lasp_bench_config:get(rubis_port, 7878),
-    Ratio = lasp_bench_config:get(ratio),
+    NRead = lasp_bench_config:get(read_keys),
+    RWRatio = lasp_bench_config:get(ratio),
 
     Options = [binary, {active, false}, {packet, 2}],
     {ok, Sock} = gen_tcp:connect(Ip, Port, Options),
-    {ok, #state{socket=Sock, key_ratio=Ratio}}.
+    {ok, #state{socket=Sock,
+                read_keys=NRead,
+                key_ratio=RWRatio}}.
 
 run(ping, _, _, State = #state{socket=Sock}) ->
     ok = gen_tcp:send(Sock, rpb_simple_driver:ping()),
@@ -27,8 +34,8 @@ run(ping, _, _, State = #state{socket=Sock}) ->
         ok -> {ok, State}
     end;
 
-run(readonly, KeyGen, _, State = #state{socket=Sock, key_ratio={NReads, _}}) ->
-    Keys = gen_keys(NReads, KeyGen),
+run(readonly, KeyGen, _, State = #state{socket=Sock, read_keys=NRead}) ->
+    Keys = gen_keys(NRead, KeyGen),
     Msg = rpb_simple_driver:read_only(Keys),
 
     ok = gen_tcp:send(Sock, Msg),
