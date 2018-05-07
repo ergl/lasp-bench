@@ -42,7 +42,7 @@ ANTIDOTE_BRANCH="pvc-rubis"
 BENCH_URL="https://github.com/ergl/lasp-bench.git"
 
 # git branch of Basho Bench to use
-BENCH_BRANCH="antidote-rubis"
+BENCH_BRANCH="antidote"
 
 # Name of the benchmark configuration file to use
 BENCH_FILE="rubis_default.config"
