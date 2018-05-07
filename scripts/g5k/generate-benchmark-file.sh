@@ -19,7 +19,7 @@ run() {
   local assigned_ip=$(head -n 1 "/root/.antidote_ip_file")
   local out_file="/root/lasp-bench/examples/${BENCH_FILE}"
   pushd /root/lasp-bench/scripts/ > /dev/null 2>&1
-  ./genbenchrun.escript "${assigned_ip}" 7878 "${LOAD_INFO_FILE}" > "${out_file}"
+  ./rubis_generate_bench_config.escript "${assigned_ip}" 7878 "${LOAD_INFO_FILE}" > "${out_file}"
   popd > /dev/null 2>&1
 }
 
