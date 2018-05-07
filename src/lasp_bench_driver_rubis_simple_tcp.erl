@@ -42,9 +42,11 @@ run(readonly, KeyGen, _, State = #state{socket=Sock, key_ratio={NReads, _}}) ->
     end;
 
 run(readwrite, KeyGen, ValueGen, State = #state{socket=Sock, key_ratio={NReads, NWrites}}) ->
-    Keys = gen_keys(NReads, KeyGen),
-    Updates = gen_updates(NWrites, KeyGen, ValueGen),
-    Msg = rpb_simple_driver:read_write(Keys, Updates),
+    Total = NReads + NWrites,
+    AllKeys = gen_keys(Total, KeyGen),
+    WriteKeys = lists:sublist(AllKeys, NWrites),
+    Updates = lists:map(fun(K) -> {K, ValueGen()} end, WriteKeys),
+    Msg = rpb_simple_driver:read_write(AllKeys, Updates),
 
     ok = gen_tcp:send(Sock, Msg),
     {ok, BinReply} = gen_tcp:recv(Sock, 0),
