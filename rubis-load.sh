@@ -2,7 +2,7 @@
 
 load() {
   pushd scripts/
-  ./initdb.escript "${1}" "${2}" "$(pwd)"/dbPropertiesSmall.json "$(pwd)"/output.json
+  ./rubis_load.escript "${1}" "${2}" "$(pwd)"/rubis_db_properties_small.json "$(pwd)"/rubis_output.json
   popd
 }
 

@@ -33,7 +33,7 @@ main([Host, Port, LoadOutput, DefaultOps]) ->
     write_config_file({ops, Ops}, Host, Port, LoadInfo);
 
 main(_) ->
-    io:fwrite("genbenchrun.escript <rubis-ip> <rubis-port> <load-file>~n"),
+    io:fwrite("rubis_generate_bench_config.escript <rubis-ip> <rubis-port> <load-file>~n"),
     halt(1).
 
 load_from_json(JsonFile) ->

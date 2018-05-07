@@ -11,14 +11,14 @@ loadDatabase() {
 
   local db_properties_file
   if [[ "${load_size}" == "small" ]]; then
-    db_properties_file="dbPropertiesSmall.json"
+    db_properties_file="rubis_db_properties_small.json"
   elif [[ "${load_size}" == "big" ]]; then
-    db_properties_file="dbProperties.json"
+    db_properties_file="rubis_db_properties.json"
   fi
 
   local command="\
       cd /root/lasp-bench/scripts; \
-      ./initdb.escript ${antidote_ip} 7878 ./${db_properties_file} ./output.json
+      ./rubis_load.escript ${antidote_ip} 7878 ./${db_properties_file} ./rubis_output.json
   "
 
   # Perform the database load on only one node
@@ -29,14 +29,14 @@ loadDatabase() {
 
   # Copy the file back
   scp -i ${EXPERIMENT_PRIVATE_KEY} \
-      root@"${bench_node}":/root/lasp-bench/scripts/output.json "${DBLOADDIR}"/output.json > /dev/null 2>&1
+      root@"${bench_node}":/root/lasp-bench/scripts/rubis_output.json "${DBLOADDIR}"/rubis_output.json > /dev/null 2>&1
 }
 
 distributeLoadInfo() {
   # First, copy the load information
   while read bench_node; do
     scp -i ${EXPERIMENT_PRIVATE_KEY} \
-        "${DBLOADDIR}"/output.json \
+        "${DBLOADDIR}"/rubis_output.json \
         root@"${bench_node}":/root/lasp-bench/scripts/load_info.json > /dev/null 2>&1
   done < "${BENCH_NODEF}"
 
