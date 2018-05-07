@@ -65,4 +65,4 @@ gen_keys(0, _, Acc) ->
     Acc;
 
 gen_keys(N, K, Acc) ->
-    gen_keys(N - 1, K, [integer_to_binary(K()) | Acc]).
+    gen_keys(N - 1, K, [integer_to_binary(K(), 36) | Acc]).
