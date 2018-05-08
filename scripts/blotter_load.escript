@@ -33,7 +33,8 @@ do_load(Socket, N) ->
     Msg = rpb_simple_driver:read_write([], [{Key, Value}]),
     ok = gen_tcp:send(Socket, Msg),
     {ok, BinReply} = gen_tcp:recv(Socket, 0),
-    case BinReply of
+    Resp = rubis_proto:decode_serv_reply(BinReply),
+    case Resp of
         {error, Reason} -> {error, Reason};
         ok -> do_load(Socket, N - 1)
     end.
