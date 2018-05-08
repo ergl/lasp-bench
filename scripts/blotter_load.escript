@@ -22,10 +22,9 @@ main(_) ->
     halt(1).
 
 do_load(Socket) ->
-    do_load(Socket, ?NUM_KEYS).
-
-do_load(_, 0) ->
-    ok;
+    pmap(fun(N) ->
+        do_load(Socket, N)
+    end, lists:seq(1, ?NUM_KEYS)).
 
 do_load(Socket, N) ->
     Key = integer_to_binary(N, 36),
@@ -33,8 +32,27 @@ do_load(Socket, N) ->
     Msg = rpb_simple_driver:read_write([], [{Key, Value}]),
     ok = gen_tcp:send(Socket, Msg),
     {ok, BinReply} = gen_tcp:recv(Socket, 0),
-    Resp = rubis_proto:decode_serv_reply(BinReply),
-    case Resp of
-        {error, Reason} -> {error, Reason};
-        ok -> do_load(Socket, N - 1)
-    end.
+    rubis_proto:decode_serv_reply(BinReply).
+
+pmap(_, []) ->
+    [];
+
+pmap(Fun, List) when is_function(Fun, 1) andalso is_list(List) ->
+    S = self(),
+    Ref = make_ref(),
+    Pids = lists:map(fun(Elt) ->
+        spawn(fun() -> do_map(S, Ref, Fun, Elt) end)
+    end, List),
+    gather(Pids, Ref).
+
+do_map(Caller, TaskID, Fun, Elt) ->
+    Caller ! {self(), TaskID, catch(Fun(Elt))}.
+
+gather([W | R], TaskID) ->
+    receive
+        {W, TaskID, Val}->
+            [Val | gather(R, TaskID)]
+    end;
+
+gather([], _) ->
+    [].
