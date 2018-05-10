@@ -20,7 +20,7 @@ new(_Id) ->
     NRead = lasp_bench_config:get(read_keys),
     RWRatio = lasp_bench_config:get(ratio),
 
-    Options = [binary, {active, false}, {packet, 2}],
+    Options = [binary, {active, false}, {packet, 2}, {nodelay, true}],
     {ok, Sock} = gen_tcp:connect(Ip, Port, Options),
     {ok, #state{socket=Sock,
                 read_keys=NRead,
