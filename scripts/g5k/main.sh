@@ -206,11 +206,18 @@ provisionBench () {
 provisionAntidote () {
   echo -e "\t[PROVISION_ANTIDOTE_NODES]: Starting... (This may take a while)"
 
+  local make_target
+  if [[ "${ANTIDOTE_BRANCH}" =~ ^pvc.* ]]; then
+    make_target="relgrid"
+  else
+    make_target="rel"
+  fi
+
   local command="\
     rm -rf antidote && \
     git clone ${ANTIDOTE_URL} --branch ${ANTIDOTE_BRANCH} --single-branch antidote && \
     cd antidote && \
-    make relgrid
+    make ${make_target}
   "
 
   while read node; do
@@ -228,11 +235,19 @@ provisionAntidote () {
 
 rebuildAntidote () {
   echo -e "\t[REBUILD_ANTIDOTE]: Starting..."
+
+  local make_target
+  if [[ "${ANTIDOTE_BRANCH}" =~ ^pvc.* ]]; then
+    make_target="relgrid"
+  else
+    make_target="rel"
+  fi
+
   local command="\
     cd antidote; \
     pkill beam; \
     rm -rf deps; mkdir deps; \
-    make clean; make relclean; make relgrid
+    make clean; make relclean; make ${make_target}
   "
   # We use the IPs here so that we can change the default (127.0.0.1)
   doForNodesIn ${ANT_IPS} "${command}" \
@@ -244,12 +259,19 @@ rebuildAntidote () {
 cleanAntidote () {
   echo -e "\t[CLEAN_ANTIDOTE]: Starting..."
 
+  local make_target
+  if [[ "${ANTIDOTE_BRANCH}" =~ ^pvc.* ]]; then
+    make_target="relgrid"
+  else
+    make_target="rel"
+  fi
+
   local command="\
     cd antidote; \
     pkill beam; \
     make clean; \
-    make relcleanl \
-    make relgrid
+    make relclean \
+    make ${make_target}
   "
   doForNodesIn ${ANT_IPS} "${command}" \
     >> ${LOGDIR}/clean-antidote-${GLOBAL_TIMESTART} 2>&1
