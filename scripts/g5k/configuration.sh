@@ -27,10 +27,10 @@ CLEAN_RUN=true
 # Saying SITES=( "nancy" "rennes" )
 # and ANTIDOTE_NODES=2 would create 4 nodes,
 # two in nancy, two in rennes
-ANTIDOTE_NODES=2
+ANTIDOTE_NODES=1
 
 # Number of nodes running lasp_bench per site
-BENCH_NODES=2
+BENCH_NODES=1
 
 # git repository of the antidote code (useful to test forks)
 ANTIDOTE_URL="https://github.com/ergl/antidote.git"
