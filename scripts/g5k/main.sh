@@ -232,18 +232,22 @@ provisionBench () {
 provisionAntidote () {
   echo -e "[PROVISION_ANTIDOTE_NODES]: Starting... (This may take a while)"
 
-  local rebar_command
+  local rebar_deps
+  local rebar_release
   if [[ "${BENCH_TYPE}" == "pvc-blotter" ]]; then
-    rebar_command="./rebar3 as microtest compile"
+    rebar_deps="./rebar3 as microtest compile"
+    rebar_release="./rebar3 as microtest release -n antidote"
   else
-    rebar_command="./rebar3 compile"
+    rebar_deps="./rebar3 compile"
+    rebar_release="./rebar3 release -n antidote"
   fi
 
   local command="\
     rm -rf antidote && \
     git clone ${ANTIDOTE_URL} --branch ${ANTIDOTE_BRANCH} --single-branch antidote && \
     cd antidote && \
-    ${rebar_command}
+    ${rebar_deps} && \
+    ${rebar_release}
   "
 
   while read node; do
