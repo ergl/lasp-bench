@@ -20,7 +20,7 @@
         Path ++ "/tables/default_transitions.txt"
     end).
 
--define(CONFIG_DRIVER, "{driver,lasp_bench_driver_rubis_tcp}.~n").
+-define(CONFIG_DRIVER, "{driver,rubis_bench}.~n").
 
 main([Host, Port, LoadOutput]) ->
     TablePath = ?TRANSITION_TABLE(),

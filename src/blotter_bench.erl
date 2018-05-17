@@ -1,4 +1,4 @@
--module(lasp_bench_driver_rubis_simple_tcp).
+-module(blotter_bench).
 
 -export([new/1,
          run/4]).
