@@ -1,18 +1,18 @@
--module(lasp_bench_driver_rubis_core).
+-module(rubis_bench_core).
 
 -type rubis_id() :: binary().
 -type username() :: bitstring().
 -type user() :: {{atom(), bitstring()}, {atom(), bitstring()}}.
 
 -record(table_info, {
-    transition_table :: lasp_bench_driver_rubis_table:transition_table(),
-    state_sequence :: [lasp_bench_driver_rubis_table:state_name()],
+    transition_table :: rubis_bench_table:transition_table(),
+    state_sequence :: [rubis_bench_table:state_name()],
     exhausted_states :: false | {true, non_neg_integer()},
     seq_len :: non_neg_integer()
 }).
 
 -record(seq_info, {
-    states :: [lasp_bench_driver_rubis_table:state_name()],
+    states :: [rubis_bench_table:state_name()],
     seq_len :: non_neg_integer(),
     current_state :: non_neg_integer()
 }).
@@ -70,7 +70,7 @@ new_rubis_state() ->
     Mode = lasp_bench_config:get(bench_mode),
     TransitionInfo = case Mode of
         {table, TablePath} ->
-            TransitionTable = lasp_bench_driver_rubis_table:new(TablePath),
+            TransitionTable = rubis_bench_table:new(TablePath),
             #table_info{transition_table=TransitionTable,
                         exhausted_states=false,
                         state_sequence=[],
@@ -109,13 +109,13 @@ new_rubis_state() ->
         non_confirmed_usernames=sets:new()
     }.
 
--spec next_operation(rubis_state()) -> {lasp_bench_driver_rubis_table:state_name(), rubis_state()}.
+-spec next_operation(rubis_state()) -> {rubis_bench_table:state_name(), rubis_state()}.
 next_operation(State=#rubis_state{transition_info=TransitionInfo}) ->
     {NextOp, NewTransitionInfo} = next_operation_internal(TransitionInfo),
     {NextOp, State#rubis_state{transition_info=NewTransitionInfo}}.
 
 next_operation_internal(S=#table_info{transition_table=Table, exhausted_states=false, state_sequence=Seq}) ->
-    case lasp_bench_driver_rubis_table:next_state(Table) of
+    case rubis_bench_table:next_state(Table) of
         {ok, OperationName, NextTable} ->
             NewState = S#table_info{transition_table=NextTable,
                                     state_sequence=[OperationName | Seq]},

@@ -1,4 +1,4 @@
--module(lasp_bench_driver_rubis_table).
+-module(rubis_bench_table).
 
 %% Remove the states that call no transactions, don't care about them
 -define(SHOULD_DISCARD, [

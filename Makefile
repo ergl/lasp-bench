@@ -12,7 +12,7 @@ OVERLAY_VARS    ?=
 RUBIS_IP ?= "127.0.0.1"
 RUBIS_PORT ?= "7878"
 
-RUBIS_TABLE_CONFIG ?= "examples/rubis_default.config"
+RUBIS_TABLE_CONFIG ?= "examples/rubis.config"
 
 REBAR := ./rebar3
 
