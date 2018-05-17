@@ -6,16 +6,16 @@ if [[ $# -ne 1 ]]; then
 fi
 
 startSync () {
-  local antidote_nodes=( $(cat ${ANT_NODES}) )
+  local antidote_nodes=( $(cat ${ANTIDOTE_NODES_FILE}) )
   for node in "${antidote_nodes[@]}"; do
     scp -i ${EXPERIMENT_PRIVATE_KEY} ./sync-time-remote.sh root@${node}:/root/
   done
 
-  ./execute-in-nodes.sh "$(cat ${ANT_NODES})" "./sync-time-remote.sh --start" "-debug"
+  ./execute-in-nodes.sh "$(cat ${ANTIDOTE_NODES_FILE})" "./sync-time-remote.sh --start" "-debug"
 }
 
 stopSync () {
-  ./execute-in-nodes.sh "$(cat ${ANT_NODES})" "./sync-time-remote.sh --stop" "-debug"
+  ./execute-in-nodes.sh "$(cat ${ANTIDOTE_NODES_FILE})" "./sync-time-remote.sh --stop" "-debug"
 }
 
 case "$1" in

@@ -4,12 +4,12 @@ set -eo pipefail
 
 IFS=$'\r\n' GLOBIGNORE='*' :;
 
-SELF=$(readlink $0 || true)
+SELF=$(readlink "$0" || true)
 if [[ -z ${SELF} ]]; then
   SELF=$0
 fi
 
-cd $(dirname "$SELF")
+cd "$(dirname "$SELF")"
 
 source ./configuration.sh
 export GLOBAL_TIMESTART=$(date +"%Y-%m-%d-%s")
@@ -70,6 +70,33 @@ fi
 # Delete the reservation if script is killed
 trap 'promptJobCancel ${GRID_JOB_ID}' SIGINT SIGTERM
 
+getAntidoteBranch() {
+  case "${BENCH_TYPE}" in
+    "blotter" )
+      echo "pvc-blotter"
+      return ;;
+    "rubis" )
+      echo "pvc-rubis"
+      return ;;
+    "blotter-cc" )
+      echo "tcp-server"
+       return ;;
+  esac
+}
+export ANTIDOTE_BRANCH=$(getAntidoteBranch)
+
+getBenchFile() {
+  case "${BENCH_TYPE}" in
+    "blotter" | "blotter-cc" )
+      echo "blotter.config"
+      return ;;
+    "rubis" )
+      echo "rubis.config"
+      return ;;
+  esac
+}
+export BENCH_FILE=$(getBenchFile)
+
 export HOMEFOLDER="/home/$(whoami)"
 SCRATCHFOLDER="/home/$(whoami)/grid-benchmark-${GRID_JOB_ID}"
 export LOGDIR=${SCRATCHFOLDER}/logs
@@ -79,13 +106,13 @@ export DBLOADDIR=${SCRATCHFOLDER}/dbload
 export EXPERIMENT_PRIVATE_KEY=${SCRATCHFOLDER}/key
 EXPERIMENT_PUBLIC_KEY=${SCRATCHFOLDER}/exp_key.pub
 
-export ALL_NODES=${SCRATCHFOLDER}/.all_nodes
-export BENCH_NODEF=${SCRATCHFOLDER}/.bench_nodes
-export ANT_NODES=${SCRATCHFOLDER}/.antidote_nodes
+export ALL_NODES_FILE=${SCRATCHFOLDER}/.all_nodes
+export BENCH_NODES_FILE=${SCRATCHFOLDER}/.bench_nodes
+export ANTIDOTE_NODES_FILE=${SCRATCHFOLDER}/.antidote_nodes
 
-export ALL_IPS=${SCRATCHFOLDER}/.all_ips
-BENCH_IPS=${SCRATCHFOLDER}/.bench_ips
-export ANT_IPS=${SCRATCHFOLDER}/.antidote_ips
+export ALL_IPS_FILE=${SCRATCHFOLDER}/.ALL_IPS_FILE
+BENCH_IPS_FILE=${SCRATCHFOLDER}/.BENCH_IPS_FILE
+export ANTIDOTE_IPS_FILE=${SCRATCHFOLDER}/.antidote_ips
 
 # For each node / ip in a file (one each line),
 # ssh into it and run the given command
@@ -93,16 +120,15 @@ doForNodesIn () {
   ./execute-in-nodes.sh "$(cat "$1")" "$2"
 }
 
-
 # Node Name -> IP
 getIPs () {
-  [[ -f ${ALL_IPS} ]] && rm ${ALL_IPS}
-  [[ -f ${BENCH_IPS} ]] && rm ${BENCH_IPS}
-  [[ -f ${ANT_IPS} ]] && rm ${ANT_IPS}
+  [[ -f "${ALL_IPS_FILE}" ]] && rm "${ALL_IPS_FILE}"
+  [[ -f "${BENCH_IPS_FILE}" ]] && rm "${BENCH_IPS_FILE}"
+  [[ -f "${ANTIDOTE_IPS_FILE}" ]] && rm "${ANTIDOTE_IPS_FILE}"
 
-  while read n; do dig +short "${n}"; done < ${ANT_NODES} > ${ANT_IPS}
-  while read n; do dig +short "${n}"; done < ${BENCH_NODEF} > ${BENCH_IPS}
-  while read n; do dig +short "${n}"; done < ${ALL_NODES} > ${ALL_IPS}
+  while read n; do dig +short "${n}"; done < "${ANTIDOTE_NODES_FILE}" > "${ANTIDOTE_IPS_FILE}"
+  while read n; do dig +short "${n}"; done < "${BENCH_NODES_FILE}" > "${BENCH_IPS_FILE}"
+  while read n; do dig +short "${n}"; done < "${ALL_NODES_FILE}" > "${ALL_IPS_FILE}"
 }
 
 
@@ -114,27 +140,27 @@ gatherMachines () {
   local antidote_nodes_per_site="${ANTIDOTE_NODES}"
   local benchmark_nodes_per_site="${BENCH_NODES}"
 
-  [[ -f ${ALL_NODES} ]] && rm ${ALL_NODES}
-  [[ -f ${ANT_NODES} ]] && rm ${ANT_NODES}
-  [[ -f ${BENCH_NODEF} ]] && rm ${BENCH_NODEF}
+  [[ -f "${ALL_NODES_FILE}" ]] && rm "${ALL_NODES_FILE}"
+  [[ -f "${ANTIDOTE_NODES_FILE}" ]] && rm "${ANTIDOTE_NODES_FILE}"
+  [[ -f "${BENCH_NODES_FILE}" ]] && rm "${BENCH_NODES_FILE}"
 
   # Remove all blank lines and repeats
   # and add those to the full machine list
-  oargridstat -w -l ${GRID_JOB_ID} | sed '/^$/d' \
-    | awk '!seen[$0]++' > ${ALL_NODES}
+  oargridstat -w -l "${GRID_JOB_ID}" | sed '/^$/d' \
+    | awk '!seen[$0]++' > "${ALL_NODES_FILE}"
 
   # For each site, get the list of nodes and slice
   # them into antidote and basho bench lists, depending on
   # the configuration given.
   for site in "${sites[@]}"; do
-    awk < ${ALL_NODES} "/${site}/ {print $1}" \
-      | tee >(head -n "${antidote_nodes_per_site}" >> ${ANT_NODES}) \
+    awk < "${ALL_NODES_FILE}" "/${site}/ {print $1}" \
+      | tee >(head -n "${antidote_nodes_per_site}" >> "${ANTIDOTE_NODES_FILE}") \
       | sed "1,${antidote_nodes_per_site}d" \
-      | head -n "${benchmark_nodes_per_site}" >> ${BENCH_NODEF}
+      | head -n "${benchmark_nodes_per_site}" >> "${BENCH_NODES_FILE}"
   done
 
   # Override the full node list, in case we didn't pick all the nodes
-  cat ${BENCH_NODEF} ${ANT_NODES} > ${ALL_NODES}
+  cat "${BENCH_NODES_FILE}" "${ANTIDOTE_NODES_FILE}" > "${ALL_NODES_FILE}"
 
   getIPs
 
@@ -144,21 +170,21 @@ gatherMachines () {
 # Use kadeploy to provision all the machines
 kadeployNodes () {
   for site in "${sites[@]}"; do
-    echo -e "\t[SYNC_IMAGE_${site}]: Starting..."
+    echo -e "[SYNC_IMAGE_${site}]: Starting..."
 
     local image_dir="$(dirname "${K3_IMAGE}")"
 
     # Place the K3 environment in every site
     # rsync can only create dirs up to two levels deep, so we create it just in case
-    ssh -o StrictHostKeyChecking=no ${site} "mkdir -p ${image_dir}"
-    rsync "${image_dir}"/* ${site}:"${image_dir}"
+    ssh -o StrictHostKeyChecking=no "${site}" "mkdir -p ${image_dir}"
+    rsync "${image_dir}"/* "${site}:${image_dir}"
 
     # Create the results folder in every site
-    rsync -r "${SCRATCHFOLDER}"/* ${site}:"${SCRATCHFOLDER}"
+    rsync -r "${SCRATCHFOLDER}"/* "${site}:${SCRATCHFOLDER}"
 
-    echo -e "\t[SYNC_IMAGE_${site}]: Done"
+    echo -e "[SYNC_IMAGE_${site}]: Done"
 
-    echo -e "\t[DEPLOY_IMAGE_${site}]: Starting..."
+    echo -e "[DEPLOY_IMAGE_${site}]: Starting..."
 
     # Deploy the environment in every node in this site
     local command="\
@@ -169,11 +195,11 @@ kadeployNodes () {
     "
 
     $(
-      ssh -t -o StrictHostKeyChecking=no ${site} "${command}" \
-        > ${LOGDIR}/${site}-kadeploy-${GLOBAL_TIMESTART} 2>&1
+      ssh -t -o StrictHostKeyChecking=no "${site}" "${command}" \
+        > "${LOGDIR}"/"${site}"-kadeploy-"${GLOBAL_TIMESTART}" 2>&1
     ) &
 
-    echo -e "\t[DEPLOY_IMAGE_${site}]: In progress"
+    echo -e "[DEPLOY_IMAGE_${site}]: In progress"
   done
   echo "[DEPLOY_IMAGE]: Waiting. (This may take a while)"
   wait
@@ -181,7 +207,7 @@ kadeployNodes () {
 
 
 provisionBench () {
-  echo -e "\t[PROVISION_BENCH_NODES]: Starting..."
+  echo -e "[PROVISION_BENCH_NODES]: Starting..."
 
   local command="\
       rm -rf lasp-bench && \
@@ -192,19 +218,19 @@ provisionBench () {
 
   while read node; do
     $(
-      ssh -i ${EXPERIMENT_PRIVATE_KEY} -T -n -o ConnectTimeout=3 -o StrictHostKeyChecking=no \
+      ssh -i "${EXPERIMENT_PRIVATE_KEY}" -T -n -o ConnectTimeout=3 -o StrictHostKeyChecking=no \
       root@"${node}" "${command}" >> "${LOGDIR}/lasp-bench-compile-job-${GLOBAL_TIMESTART}" 2>&1
     ) &
-  done < "${BENCH_NODEF}"
+  done < "${BENCH_NODES_FILE}"
 
   wait
 
-  echo -e "\t[PROVISION_BENCH_NODES]: Done"
+  echo -e "[PROVISION_BENCH_NODES]: Done"
 }
 
 
 provisionAntidote () {
-  echo -e "\t[PROVISION_ANTIDOTE_NODES]: Starting... (This may take a while)"
+  echo -e "[PROVISION_ANTIDOTE_NODES]: Starting... (This may take a while)"
 
   local make_target
   if [[ "${ANTIDOTE_BRANCH}" =~ ^pvc.* ]]; then
@@ -222,19 +248,19 @@ provisionAntidote () {
 
   while read node; do
     $(
-      ssh -i ${EXPERIMENT_PRIVATE_KEY} -T -n -o ConnectTimeout=3 -o StrictHostKeyChecking=no \
+      ssh -i "${EXPERIMENT_PRIVATE_KEY}" -T -n -o ConnectTimeout=3 -o StrictHostKeyChecking=no \
       root@"${node}" "${command}" >> "${LOGDIR}/antidote-compile-and-config-job-${GLOBAL_TIMESTART}" 2>&1
     ) &
-  done < "${ANT_NODES}"
+  done < "${ANTIDOTE_NODES_FILE}"
 
   wait
 
-  echo -e "\t[PROVISION_ANTIDOTE_NODES]: Done"
+  echo -e "[PROVISION_ANTIDOTE_NODES]: Done"
 }
 
 
 rebuildAntidote () {
-  echo -e "\t[REBUILD_ANTIDOTE]: Starting..."
+  echo -e "[REBUILD_ANTIDOTE]: Starting..."
 
   local make_target
   if [[ "${ANTIDOTE_BRANCH}" =~ ^pvc.* ]]; then
@@ -250,14 +276,14 @@ rebuildAntidote () {
     make clean; make relclean; make ${make_target}
   "
   # We use the IPs here so that we can change the default (127.0.0.1)
-  doForNodesIn ${ANT_IPS} "${command}" \
+  doForNodesIn "${ANTIDOTE_IPS_FILE}" "${command}" \
     >> "${LOGDIR}/config-antidote-${GLOBAL_TIMESTART}" 2>&1
 
-  echo -e "\t[REBUILD_ANTIDOTE]: Done"
+  echo -e "[REBUILD_ANTIDOTE]: Done"
 }
 
 cleanAntidote () {
-  echo -e "\t[CLEAN_ANTIDOTE]: Starting..."
+  echo -e "[CLEAN_ANTIDOTE]: Starting..."
 
   local make_target
   if [[ "${ANTIDOTE_BRANCH}" =~ ^pvc.* ]]; then
@@ -273,10 +299,10 @@ cleanAntidote () {
     make relclean \
     make ${make_target}
   "
-  doForNodesIn ${ANT_IPS} "${command}" \
-    >> ${LOGDIR}/clean-antidote-${GLOBAL_TIMESTART} 2>&1
+  doForNodesIn "${ANTIDOTE_IPS_FILE}" "${command}" \
+    >> "${LOGDIR}/clean-antidote-${GLOBAL_TIMESTART}" 2>&1
 
-  echo -e "\t[CLEAN_ANTIDOTE]: Done"
+  echo -e "[CLEAN_ANTIDOTE]: Done"
 }
 
 
@@ -290,17 +316,17 @@ setupTests () {
   echo "[SETUP_TESTS]: Starting..."
 
   local total_antidote_nodes=$((sites_size * ANTIDOTE_NODES))
-  local antidote_nodes="${ANT_NODES}"
+  local antidote_nodes="${ANTIDOTE_NODES_FILE}"
 
-  echo -e "\t[CHANGE_RING_SIZE]: Starting..."
+  echo -e "[CHANGE_RING_SIZE]: Starting..."
   # Change the ring size of riak depending on the number of nodes
   ./change-partition-size.sh "${total_antidote_nodes}" "${antidote_nodes}"
-  echo -e "\t[CHANGE_RING_SIZE]: Done"
+  echo -e "[CHANGE_RING_SIZE]: Done"
 
   # Distribute Antidote IPs to benchmark nodes
-  echo -e "\t[DISTRIBUTE_IPS]: Starting..."
-  ./distribute-ips.sh "${BENCH_NODEF}" "${total_antidote_nodes}"
-  echo -e "\t[DISTRIBUTE_IPS]: Done"
+  echo -e "[DISTRIBUTE_IPS]: Starting..."
+  ./distribute-ips.sh "${BENCH_NODES_FILE}" "${total_antidote_nodes}"
+  echo -e "[DISTRIBUTE_IPS]: Done"
 
   echo -e "[SETUP_TESTS]: Done"
 
@@ -309,7 +335,7 @@ setupTests () {
 
   # Load the database with some initial data and
   # distribute key information to all bench nodes
-  local antidote_head=$(head -n 1 "${ANT_IPS}")
+  local antidote_head=$(head -n 1 "${ANTIDOTE_IPS_FILE}")
   local load_size="${LOAD_SIZE}"
   echo "[LOAD_DATABASE]: Starting... (This may take a while)"
   ./bootstrap-load.sh "${antidote_head}" "${load_size}"
@@ -318,7 +344,7 @@ setupTests () {
 
 runTests () {
   echo "[RUNNING_TEST]: Starting..."
-  ./run-benchmark.sh >> ${LOGDIR}/lasp-bench-execution-${GLOBAL_TIMESTART} 2>&1
+  ./run-benchmark.sh >> "${LOGDIR}/lasp-bench-execution-${GLOBAL_TIMESTART}" 2>&1
   echo "[RUNNING_TEST]: Done"
 }
 
@@ -327,8 +353,8 @@ collectResults () {
   [[ -d "${RESULTSDIR}" ]] && rm -r "${RESULTSDIR}"
   mkdir -p "${RESULTSDIR}"
   while read bench_node; do
-    scp -i ${EXPERIMENT_PRIVATE_KEY} root@"${bench_node}":/root/*.tar "${RESULTSDIR}"
-  done < "${BENCH_NODEF}"
+    scp -i "${EXPERIMENT_PRIVATE_KEY}" root@"${bench_node}":/root/*.tar "${RESULTSDIR}"
+  done < "${BENCH_NODES_FILE}"
   echo "[COLLECTING_RESULTS]: Done"
 
   echo "[MERGING_RESULTS]: Starting..."
@@ -349,11 +375,11 @@ collectResults () {
 setupScript () {
   echo "[SETUP_KEYS]: Starting..."
 
-  mkdir -p ${SCRATCHFOLDER}
-  mkdir -p ${LOGDIR}
-  mkdir -p ${DBLOADDIR}
-  cp ${PRKFILE} ${EXPERIMENT_PRIVATE_KEY}
-  cp ${PBKFILE} ${EXPERIMENT_PUBLIC_KEY}
+  mkdir -p "${SCRATCHFOLDER}"
+  mkdir -p "${LOGDIR}"
+  mkdir -p "${DBLOADDIR}"
+  cp "${PRKFILE}" "${EXPERIMENT_PRIVATE_KEY}"
+  cp "${PBKFILE}" "${EXPERIMENT_PUBLIC_KEY}"
 
   echo "[SETUP_KEYS]: Done"
 }
