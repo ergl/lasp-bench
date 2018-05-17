@@ -20,9 +20,6 @@ DEPLOY_IMAGE=true
 # Provision the nodes with Antidote / lasp_bench
 PROVISION_IMAGES=true
 
-# Download and compile antidote and lasp_bench from scratch
-CLEAN_RUN=true
-
 # Number of nodes running Antidote per site
 # Saying SITES=( "nancy" "rennes" )
 # and ANTIDOTE_NODES=2 would create 4 nodes,
@@ -47,4 +44,4 @@ BENCH_BRANCH="antidote"
 
 # Size of the initial load information
 # Values can be "small" or "big"
-LOAD_SIZE="small"
+RUBIS_LOAD_SIZE="small"

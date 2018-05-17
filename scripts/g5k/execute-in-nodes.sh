@@ -10,19 +10,19 @@ doForNodes () {
   if [[ $# -ge 3 && "$3" == "-debug" ]]; then
     for node in ${nodes}; do
       # If the command contains the word 'localhost', replace it with the current node or ip
-      ssh -i ${EXPERIMENT_PRIVATE_KEY} -T \
+      ssh -i "${EXPERIMENT_PRIVATE_KEY}" -T \
           -o ConnectTimeout=3 \
           -o StrictHostKeyChecking=no \
           root@"${node}" "${command//localhost/${node}}"
 
       if [[ $# -eq 4 ]]; then
-        sleep $4
+        sleep "$4"
       fi
     done
   else
     local pids=()
     for node in ${nodes}; do
-      ssh -i ${EXPERIMENT_PRIVATE_KEY} -T \
+      ssh -i "${EXPERIMENT_PRIVATE_KEY}" -T \
           -o ConnectTimeout=3 \
           -o StrictHostKeyChecking=no \
           root@"${node}" "${command//localhost/${node}}" &
@@ -32,7 +32,7 @@ doForNodes () {
 
     local fail=0
     for pid in "${pids[@]}"; do
-      wait ${pid} || fail=$((fail + 1))
+      wait "${pid}" || fail=$((fail + 1))
     done
 
     if [[ "${fail}" != "0" ]]; then
