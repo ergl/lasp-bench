@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-if [[ $# -le 2 ]]; then
+if [[ $# -lt 2 ]]; then
   exit 1
 fi
 
