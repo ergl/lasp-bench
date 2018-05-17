@@ -110,8 +110,8 @@ export ALL_NODES_FILE=${SCRATCHFOLDER}/.all_nodes
 export BENCH_NODES_FILE=${SCRATCHFOLDER}/.bench_nodes
 export ANTIDOTE_NODES_FILE=${SCRATCHFOLDER}/.antidote_nodes
 
-export ALL_IPS_FILE=${SCRATCHFOLDER}/.ALL_IPS_FILE
-BENCH_IPS_FILE=${SCRATCHFOLDER}/.BENCH_IPS_FILE
+export ALL_IPS_FILE=${SCRATCHFOLDER}/.all_ips
+BENCH_IPS_FILE=${SCRATCHFOLDER}/.bench_ips
 export ANTIDOTE_IPS_FILE=${SCRATCHFOLDER}/.antidote_ips
 
 # For each node / ip in a file (one each line),
