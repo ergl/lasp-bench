@@ -25,7 +25,7 @@ run() {
 
   # If we're running blotter, we just need to change the node we're targetting
   if [[ "${BENCH_TYPE}" =~ ^blotter.* ]]; then
-    sed -i.bak "s/{rubis_ip.*/{rubis_ip,'${assigned_ip}'}."
+    sed -i.bak "s/{rubis_ip.*/{rubis_ip,'${assigned_ip}'}./g" /root/lasp-bench/examples/blotter.config
     exit 0
   fi
 
