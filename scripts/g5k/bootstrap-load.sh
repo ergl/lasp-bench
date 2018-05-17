@@ -38,7 +38,7 @@ distributeLoadInfo() {
     scp -i ${EXPERIMENT_PRIVATE_KEY} \
         "${DBLOADDIR}"/rubis_output.json \
         root@"${bench_node}":/root/lasp-bench/scripts/load_info.json > /dev/null 2>&1
-  done < "${BENCH_NODEF}"
+  done < "${BENCH_NODES_FILE}"
 
   # Then, generate the benchmark file from that information
   local command="cd /root/lasp-bench/scripts/g5k/; ./generate-benchmark-file.sh"
@@ -47,7 +47,7 @@ distributeLoadInfo() {
         -o ConnectTimeout=3 \
         -o StrictHostKeyChecking=no \
         root@"${bench_node}" "${command}" > /dev/null 2>&1
-  done < "${BENCH_NODEF}"
+  done < "${BENCH_NODES_FILE}"
 }
 
 run() {
@@ -55,7 +55,7 @@ run() {
   local load_size="${2}"
 
   # Bootstrap the database with some sample data
-  local head_bench_node=$(head -n 1 "${BENCH_NODEF}")
+  local head_bench_node=$(head -n 1 "${BENCH_NODES_FILE}")
   loadDatabase "${antidote_ip}" "${head_bench_node}" "${load_size}"
 
   # Distribute load information to all benchmark nodes

@@ -32,20 +32,18 @@ ANTIDOTE_NODES=1
 # Number of nodes running lasp_bench per site
 BENCH_NODES=1
 
+# benchmark types
+# allowed values are "blotter" | "rubis" | "blotter-cc"
+BENCH_TYPE="blotter"
+
 # git repository of the antidote code (useful to test forks)
 ANTIDOTE_URL="https://github.com/ergl/antidote.git"
-
-# git branch of antidote to run the experiment on
-ANTIDOTE_BRANCH="pvc-rubis"
 
 # git repository of the basho_bench code (useful to test forks)
 BENCH_URL="https://github.com/ergl/lasp-bench.git"
 
 # git branch of Basho Bench to use
 BENCH_BRANCH="antidote"
-
-# Name of the benchmark configuration file to use
-BENCH_FILE="rubis_default.config"
 
 # Size of the initial load information
 # Values can be "small" or "big"

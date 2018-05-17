@@ -9,10 +9,10 @@ startNodes () {
   # Transfer the remote control script first
   while read node; do
     scp -i "${EXPERIMENT_PRIVATE_KEY}" ./control-nodes-remote.sh root@"${node}":/root/ > /dev/null 2>&1
-  done < "${ANT_NODES}"
+  done < "${ANTIDOTE_NODES_FILE}"
 
-  # Use ANT_IPS so localhost is replaced by the ip of the node
-  ./execute-in-nodes.sh "$(cat ${ANT_IPS})" "./control-nodes-remote.sh start localhost" "-debug"
+  # Use ANTIDOTE_IPS_FILE so localhost is replaced by the ip of the node
+  ./execute-in-nodes.sh "$(cat ${ANTIDOTE_IPS_FILE})" "./control-nodes-remote.sh start localhost" "-debug"
 }
 
 stopNodes () {
@@ -22,7 +22,7 @@ stopNodes () {
     rm -rf antidote/_build/default/rel/antidote/data/*; \
     rm -rf antidote/_build/default/rel/antidote/log/*; \
   "
-  ./execute-in-nodes.sh "$(cat ${ANT_IPS})" "${command}" "-debug"
+  ./execute-in-nodes.sh "$(cat ${ANTIDOTE_IPS_FILE})" "${command}" "-debug"
 }
 
 case "$1" in

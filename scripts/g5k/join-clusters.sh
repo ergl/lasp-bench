@@ -8,7 +8,7 @@ if [[ $# -ne 1 ]]; then
 fi
 
 joinLocalDC () {
-  local antidote_ips=( $(cat "${ANT_IPS}") )
+  local antidote_ips=( $(cat "${ANTIDOTE_IPS_FILE}") )
   # We will execute the command only in one node
   local head="${antidote_ips[0]}"
 

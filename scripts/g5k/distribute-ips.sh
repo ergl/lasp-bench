@@ -25,7 +25,7 @@ run() {
   # This assumes that each bench node only talks to one Antidote node
   local file_offset=1
   while read bench_node; do
-    sed -n "${file_offset}{p;q;}" "${ANT_IPS}" > "${antidote_ip_file}"
+    sed -n "${file_offset}{p;q;}" "${ANTIDOTE_IPS_FILE}" > "${antidote_ip_file}"
     transferIPs "${bench_node}" "${antidote_ip_file}"
     # If there are more clients than Antidote nodes, wrap around
     file_offset=$(( (((file_offset + 1) - 1) % total_antidote_nodes) + 1 ))
