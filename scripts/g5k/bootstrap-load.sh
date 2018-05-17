@@ -46,6 +46,15 @@ loadBlotter() {
       -o ConnectTimeout=3 \
       -o StrictHostKeyChecking=no \
       root@"${bench_node}" "${command}" > /dev/null 2>&1
+
+  # Change the ip for the blotter.config file
+  local command="cd /root/lasp-bench/scripts/g5k/; ./generate-benchmark-file.sh"
+  while read bench_node; do
+    ssh -i "${EXPERIMENT_PRIVATE_KEY}" -T -n \
+        -o ConnectTimeout=3 \
+        -o StrictHostKeyChecking=no \
+        root@"${bench_node}" "${command}" > /dev/null 2>&1
+  done < "${BENCH_NODES_FILE}"
 }
 
 distributeLoadInfo() {
