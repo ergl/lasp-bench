@@ -234,7 +234,7 @@ provisionAntidote () {
 
   local rebar_deps
   local rebar_release
-  if [[ "${BENCH_TYPE}" == "pvc-blotter" ]]; then
+  if [[ "${BENCH_TYPE}" == "blotter" ]]; then
     rebar_deps="./rebar3 as microtest compile"
     rebar_release="./rebar3 as microtest release -n antidote"
   else
@@ -269,7 +269,7 @@ rebuildAntidote () {
   local rebar_clean
   local relclean_command
   local rebar_release
-  if [[ "${BENCH_TYPE}" == "pvc-blotter" ]]; then
+  if [[ "${BENCH_TYPE}" == "blotter" ]]; then
     rebar_clean="./rebar3 as microtest clean"
     relclean_command="rm -r _build/microtest/rel"
     rebar_release="./rebar3 as microtest release -n antidote"
