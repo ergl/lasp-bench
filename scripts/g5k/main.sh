@@ -232,18 +232,18 @@ provisionBench () {
 provisionAntidote () {
   echo -e "[PROVISION_ANTIDOTE_NODES]: Starting... (This may take a while)"
 
-  local make_target
-  if [[ "${ANTIDOTE_BRANCH}" =~ ^pvc.* ]]; then
-    make_target="relgrid"
+  local rebar_command
+  if [[ "${BENCH_TYPE}" == "pvc-blotter" ]]; then
+    rebar_command="rebar3 as microtest compile"
   else
-    make_target="rel"
+    rebar_command="rebar3 compile"
   fi
 
   local command="\
     rm -rf antidote && \
     git clone ${ANTIDOTE_URL} --branch ${ANTIDOTE_BRANCH} --single-branch antidote && \
     cd antidote && \
-    make ${make_target}
+    ${rebar_command}
   "
 
   while read node; do
@@ -262,18 +262,25 @@ provisionAntidote () {
 rebuildAntidote () {
   echo -e "[REBUILD_ANTIDOTE]: Starting..."
 
-  local make_target
-  if [[ "${ANTIDOTE_BRANCH}" =~ ^pvc.* ]]; then
-    make_target="relgrid"
+  local rebar_clean
+  local relclean_command
+  local rebar_release
+  if [[ "${BENCH_TYPE}" == "pvc-blotter" ]]; then
+    rebar_clean="rebar3 as microtest clean"
+    relclean_command="rm -r _build/microtest/rel"
+    rebar_release="rebar3 as microtest release -n antidote"
   else
-    make_target="rel"
+    rebar_clean="rebar3 clean"
+    relclean_command="rm -r _build/default/rel"
+    rebar_release="rebar3 release -n antidote"
   fi
 
   local command="\
     cd antidote; \
     pkill beam; \
-    rm -rf deps; mkdir deps; \
-    make clean; make relclean; make ${make_target}
+    ${rebar_clean}; \
+    ${relclean_command}; \
+    ${rebar_release} \
   "
   # We use the IPs here so that we can change the default (127.0.0.1)
   doForNodesIn "${ANTIDOTE_IPS_FILE}" "${command}" \
@@ -281,30 +288,6 @@ rebuildAntidote () {
 
   echo -e "[REBUILD_ANTIDOTE]: Done"
 }
-
-cleanAntidote () {
-  echo -e "[CLEAN_ANTIDOTE]: Starting..."
-
-  local make_target
-  if [[ "${ANTIDOTE_BRANCH}" =~ ^pvc.* ]]; then
-    make_target="relgrid"
-  else
-    make_target="rel"
-  fi
-
-  local command="\
-    cd antidote; \
-    pkill beam; \
-    make clean; \
-    make relclean \
-    make ${make_target}
-  "
-  doForNodesIn "${ANTIDOTE_IPS_FILE}" "${command}" \
-    >> "${LOGDIR}/clean-antidote-${GLOBAL_TIMESTART}" 2>&1
-
-  echo -e "[CLEAN_ANTIDOTE]: Done"
-}
-
 
 # Provision all the nodes with Antidote and Basho Bench
 provisionNodes () {
@@ -336,9 +319,14 @@ setupTests () {
   # Load the database with some initial data and
   # distribute key information to all bench nodes
   local antidote_head=$(head -n 1 "${ANTIDOTE_IPS_FILE}")
-  local load_size="${LOAD_SIZE}"
   echo "[LOAD_DATABASE]: Starting... (This may take a while)"
-  ./bootstrap-load.sh "${antidote_head}" "${load_size}"
+
+  # The load size only applies to the rubis benchmark
+  if [[ "${BENCH_TYPE}" == "rubis" ]]; then
+    ./bootstrap-load.sh "${antidote_head}" "${BENCH_TYPE}" "${RUBIS_LOAD_SIZE}"
+  else
+    ./bootstrap-load.sh "${antidote_head}" "${BENCH_TYPE}"
+  fi
   echo "[LOAD_DATABASE]: Done"
 }
 
@@ -350,23 +338,30 @@ runTests () {
 
 collectResults () {
   echo "[COLLECTING_RESULTS]: Starting..."
+
   [[ -d "${RESULTSDIR}" ]] && rm -r "${RESULTSDIR}"
   mkdir -p "${RESULTSDIR}"
+
   while read bench_node; do
     scp -i "${EXPERIMENT_PRIVATE_KEY}" root@"${bench_node}":/root/*.tar "${RESULTSDIR}"
   done < "${BENCH_NODES_FILE}"
+
   echo "[COLLECTING_RESULTS]: Done"
 
-  echo "[MERGING_RESULTS]: Starting..."
-  ./merge-results.sh "${RESULTSDIR}"
-  echo "[MERGING_RESULTS]: Done"
+  if [[ "${BENCH_TYPE}" == "rubis" ]]; then
+    echo "[MERGING_RESULTS]: Starting..."
+    ./merge-results.sh "${RESULTSDIR}"
+    echo "[MERGING_RESULTS]: Done"
 
-  pushd "${SCRATCHFOLDER}" > /dev/null 2>&1
-  local result_folder_name=$(basename "${RESULTSDIR}")
-  local tar_name="${result_folder_name}-${GRID_JOB_ID}.tar"
-  tar -zcf "${tar_name}" "${RESULTSDIR}"
-  mv "${tar_name}" "${HOMEFOLDER}"
-  popd > /dev/null 2>&1
+    pushd "${SCRATCHFOLDER}" > /dev/null 2>&1
+    local result_folder_name=$(basename "${RESULTSDIR}")
+    local tar_name="${result_folder_name}-${GRID_JOB_ID}.tar"
+    tar -zcf "${tar_name}" "${RESULTSDIR}"
+    mv "${tar_name}" "${HOMEFOLDER}"
+    popd > /dev/null 2>&1
+  else
+    echo "[MERGING_RESULTS]: Skipping..."
+  fi
 }
 
 
@@ -410,14 +405,9 @@ configCluster () {
     echo "[PROVISION_NODES]: Done"
   else
     echo "[PROVISION_NODES]: Skipping"
-  fi
-
-  if [[ "${CLEAN_RUN}" == "true" ]]; then
     echo "[CLEAN_RUN]: Starting..."
     rebuildAntidote
     echo "[CLEAN_RUN]: Done"
-  else
-    cleanAntidote
   fi
 }
 
@@ -431,6 +421,8 @@ run () {
   setupTests
   runTests
   collectResults
+
+  echo "Benchmark done and packaged. All done! :^)"
 }
 
 run

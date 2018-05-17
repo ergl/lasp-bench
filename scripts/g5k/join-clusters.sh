@@ -20,7 +20,7 @@ joinLocalDC () {
   # Remove last space
   nodes_str=${nodes_str%?}
 
-  ssh -i ${EXPERIMENT_PRIVATE_KEY} -T \
+  ssh -i "${EXPERIMENT_PRIVATE_KEY}" -T \
           -o ConnectTimeout=3 \
           -o StrictHostKeyChecking=no \
           root@"${head}" "./antidote/bin/join_cluster_script.erl ${nodes_str}"
@@ -31,13 +31,13 @@ joinNodes () {
 
   # No point in clustering if we have only 1 node
   if [[ ${cluster_size} -le 1 ]]; then
-    echo -e "\t[JOIN_ANTIDOTE_NODES]: Skipping"
+    echo -e "[JOIN_ANTIDOTE_NODES]: Skipping"
   else
-    echo -e "\t[JOIN_ANTIDOTE_NODES]: Starting..."
+    echo -e "[JOIN_ANTIDOTE_NODES]: Starting..."
 
-    joinLocalDC >> "${LOGDIR}"/join-local-dc${GLOBAL_TIMESTART} 2>&1
+    joinLocalDC >> "${LOGDIR}/join-local-dc${GLOBAL_TIMESTART}" 2>&1
 
-    echo -e "\t[JOIN_ANTIDOTE_NODES]: Done"
+    echo -e "[JOIN_ANTIDOTE_NODES]: Done"
   fi
 }
 
