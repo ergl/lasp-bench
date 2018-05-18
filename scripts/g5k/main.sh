@@ -352,20 +352,16 @@ collectResults () {
 
   echo "[COLLECTING_RESULTS]: Done"
 
-  if [[ "${BENCH_TYPE}" == "rubis" ]]; then
-    echo "[MERGING_RESULTS]: Starting..."
-    ./merge-results.sh "${RESULTSDIR}"
-    echo "[MERGING_RESULTS]: Done"
+  echo "[MERGING_RESULTS]: Starting..."
+  ./merge-results.sh "${RESULTSDIR}" "${BENCH_TYPE}"
+  echo "[MERGING_RESULTS]: Done"
 
-    pushd "${SCRATCHFOLDER}" > /dev/null 2>&1
-    local result_folder_name=$(basename "${RESULTSDIR}")
-    local tar_name="${result_folder_name}-${GRID_JOB_ID}.tar"
-    tar -zcf "${tar_name}" "${RESULTSDIR}"
-    mv "${tar_name}" "${HOMEFOLDER}"
-    popd > /dev/null 2>&1
-  else
-    echo "[MERGING_RESULTS]: Skipping..."
-  fi
+  pushd "${SCRATCHFOLDER}" > /dev/null 2>&1
+  local result_folder_name=$(basename "${RESULTSDIR}")
+  local tar_name="${result_folder_name}-${GRID_JOB_ID}.tar"
+  tar -zcf "${tar_name}" "${RESULTSDIR}"
+  mv "${tar_name}" "${HOMEFOLDER}"
+  popd > /dev/null 2>&1
 }
 
 
