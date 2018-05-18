@@ -9,7 +9,7 @@ PBKFILE=~/.ssh/benchmark.pub
 K3_IMAGE=/home/$(whoami)/public/antidote-images/latest/antidote.env
 
 # Different g5k sites to run the benchmark
-SITES=( "nancy" )
+SITES=( "nancy" "luxembourg" "lille" )
 
 # Reserve sites and nodes through oargridsub
 RESERVE_SITES=true
