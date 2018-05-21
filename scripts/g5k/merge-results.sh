@@ -68,12 +68,13 @@ mergeBlotter () {
 }
 
 run () {
-  local test_directory="$1"
-  local benchmark_type="$2"
+  local priv_directory="$1"
+  local test_directory="$2"
+  local benchmark_type="$3"
 
   # Move the processing scripts to the test directory
-  cp ../../priv/mergeLatencies.awk "${test_directory}"
-  cp ../../priv/mergeSummary.awk  "${test_directory}"
+  cp "${priv_directory}"/mergeLatencies.awk "${test_directory}"
+  cp "${priv_directory}"/mergeSummary.awk  "${test_directory}"
 
   pushd "${test_directory}" > /dev/null 2>&1
 
