@@ -196,7 +196,7 @@ kadeployNodes () {
 
     $(
       ssh -t -o StrictHostKeyChecking=no "${site}" "${command}" \
-        > "${LOGDIR}"/"${site}"-kadeploy-"${GLOBAL_TIMESTART}" 2>&1
+        > "${LOGDIR}/${GLOBAL_TIMESTART}-kadeploy-${site}.log" 2>&1
     ) &
 
     echo -e "[DEPLOY_IMAGE_${site}]: In progress"
@@ -219,7 +219,7 @@ provisionBench () {
   while read node; do
     $(
       ssh -i "${EXPERIMENT_PRIVATE_KEY}" -T -n -o ConnectTimeout=3 -o StrictHostKeyChecking=no \
-      root@"${node}" "${command}" >> "${LOGDIR}/lasp-bench-compile-job-${GLOBAL_TIMESTART}" 2>&1
+      root@"${node}" "${command}" >> "${LOGDIR}/${GLOBAL_TIMESTART}-provision-bench.log" 2>&1
     ) &
   done < "${BENCH_NODES_FILE}"
 
@@ -253,7 +253,7 @@ provisionAntidote () {
   while read node; do
     $(
       ssh -i "${EXPERIMENT_PRIVATE_KEY}" -T -n -o ConnectTimeout=3 -o StrictHostKeyChecking=no \
-      root@"${node}" "${command}" >> "${LOGDIR}/antidote-compile-and-config-job-${GLOBAL_TIMESTART}" 2>&1
+      root@"${node}" "${command}" >> "${LOGDIR}/${GLOBAL_TIMESTART}-provision-antidote.log" 2>&1
     ) &
   done < "${ANTIDOTE_NODES_FILE}"
 
@@ -288,7 +288,7 @@ rebuildAntidote () {
   "
   # We use the IPs here so that we can change the default (127.0.0.1)
   doForNodesIn "${ANTIDOTE_IPS_FILE}" "${command}" \
-    >> "${LOGDIR}/config-antidote-${GLOBAL_TIMESTART}" 2>&1
+    >> "${LOGDIR}/${GLOBAL_TIMESTART}-rebuild-antidote.log" 2>&1
 
   echo -e "[REBUILD_ANTIDOTE]: Done"
 }
@@ -336,7 +336,7 @@ setupTests () {
 
 runTests () {
   echo "[RUNNING_TEST]: Starting..."
-  ./run-benchmark.sh >> "${LOGDIR}/lasp-bench-execution-${GLOBAL_TIMESTART}" 2>&1
+  ./run-benchmark.sh >> "${LOGDIR}/${GLOBAL_TIMESTART}-bench-execution.log" 2>&1
   echo "[RUNNING_TEST]: Done"
 }
 
