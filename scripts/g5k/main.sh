@@ -100,7 +100,9 @@ export BENCH_FILE=$(getBenchFile)
 export HOMEFOLDER="/home/$(whoami)"
 SCRATCHFOLDER="/home/$(whoami)/grid-benchmark-${GRID_JOB_ID}"
 export LOGDIR=${SCRATCHFOLDER}/logs/${GLOBAL_TIMESTART}
-RESULTSDIR=${SCRATCHFOLDER}/results
+PRIVDIR="/home/$(whoami)/lasp-bench/priv"
+RESULTS_DIR_PARENT=${SCRATCHFOLDER}/results
+RESULTSDIR=${SCRATCHFOLDER}/results/${GLOBAL_TIMESTART}
 export DBLOADDIR=${SCRATCHFOLDER}/dbload
 
 export EXPERIMENT_PRIVATE_KEY=${SCRATCHFOLDER}/key
@@ -353,13 +355,13 @@ collectResults () {
   echo "[COLLECTING_RESULTS]: Done"
 
   echo "[MERGING_RESULTS]: Starting..."
-  ./merge-results.sh "${RESULTSDIR}" "${BENCH_TYPE}"
+  ./merge-results.sh "${PRIVDIR}" "${RESULTSDIR}" "${BENCH_TYPE}"
   echo "[MERGING_RESULTS]: Done"
 
-  pushd "${SCRATCHFOLDER}" > /dev/null 2>&1
-  local result_folder_name=$(basename "${RESULTSDIR}")
-  local tar_name="${result_folder_name}-${GRID_JOB_ID}.tar"
-  tar -zcf "${tar_name}" "${RESULTSDIR}"
+  pushd "${RESULTS_DIR_PARENT}" > /dev/null 2>&1
+  local tar_name="grid-results-${GRID_JOB_ID}-${GLOBAL_TIMESTART}.tar"
+  # There will be a local folder with this name
+  tar -zcf "${tar_name}" ./"${GLOBAL_TIMESTART}"
   mv "${tar_name}" "${HOMEFOLDER}"
   popd > /dev/null 2>&1
 }
