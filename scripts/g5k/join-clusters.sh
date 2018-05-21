@@ -35,7 +35,7 @@ joinNodes () {
   else
     echo -e "[JOIN_ANTIDOTE_NODES]: Starting..."
 
-    joinLocalDC >> "${LOGDIR}/${GLOBAL_TIMESTART}-join-nodes.log" 2>&1
+    joinLocalDC >> "${LOGDIR}/join-nodes.log" 2>&1
 
     echo -e "[JOIN_ANTIDOTE_NODES]: Done"
   fi
