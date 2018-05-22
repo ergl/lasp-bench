@@ -30,8 +30,8 @@ if (!is.null(opt$help))
   }
 
 # Initialize defaults for opt
-if (is.null(opt$width))   { opt$width   = 1280 }
-if (is.null(opt$height))  { opt$height  = 500 }
+if (is.null(opt$width))   { opt$width   = 1500 }
+if (is.null(opt$height))  { opt$height  = 2000 }
 if (is.null(opt$indir))   { opt$indir  = "current"}
 if (is.null(opt$outfile)) { opt$outfile = file.path(opt$indir, "summary.png") }
 
@@ -47,35 +47,87 @@ if (nrow(b$latencies) == 0)
 png(file = opt$outfile, width = opt$width, height = opt$height)
 
 # First plot req/sec from summary
-throughput_plot <- qplot(elapsed, successful / window, data = b$summary,
-                geom = c("smooth", "point"),
-                xlab = "Elapsed Secs", ylab = "Tx/sec",
-                main = "Throughput") +
+throughput_plot <- qplot(elapsed,
+                         successful / window,
+                         data = b$summary,
+                         geom = c("smooth", "point"),
+                         xlab = "Elapsed Secs", ylab = "Tx/sec",
+                         main = "Throughput") +
 
-                geom_smooth(aes(y = successful / window, colour = "ok"), size=0.5) +
-                geom_point(aes(y = successful / window, colour = "ok"), size=4.0) +
+                    geom_smooth(aes(y = successful / window, colour = "Committed"), size=0.5) +
+                    geom_point(aes(y = successful / window, colour = "Committed"), size=4.0) +
 
-                geom_smooth(aes(y = failed / window, colour = "error"), size=0.5) +
-                geom_point(aes(y = failed / window, colour = "error"), size=2.0) +
+                    geom_smooth(aes(y = failed / window, colour = "Aborted"), size=0.5) +
+                    geom_point(aes(y = failed / window, colour = "Aborted"), size=3.0) +
 
-                scale_colour_manual("Response", values = c("#E90C19", "#188125"))
+                    scale_colour_manual("Response", values = c("#FF665F", "#188125")) +
+
+                    # increase legend point size
+                    guides(colour = guide_legend(override.aes = list(size=5))) +
+
+                    # set tick sequence
+                    # set tick thousand mark
+                    scale_y_continuous(breaks = seq(0,1000000,by=1000),
+                    labels=function(x) format(x, big.mark = ",", scientific = FALSE)) +
+
+                    theme(plot.title = element_text(size=30),
+                          plot.margin = margin(t = 10, r = 50, b = 0, l = 20),
+
+                          axis.title.x = element_text(size=25),
+                          axis.title.y = element_text(size=25),
+
+                          axis.text.x = element_text(size=20),
+                          axis.text.y = element_text(size=20),
+
+                          legend.justification = c(1,0),
+                          legend.position = c(1,0),
+
+                          legend.box.margin = margin(t = 0, r = 50, b = 100, l = 0),
+
+                          legend.title = element_text(size=30),
+                          legend.text = element_text(size=25),
+
+                          legend.key.size = unit(35, 'pt'))
 
 
 # Setup common elements of the latency plots
 latency_base <- ggplot(b$latencies, aes(x = elapsed)) +
-                   facet_grid(. ~ op) +
-                   labs(x = "Elapsed Secs", y = "Latency (ms)")
+
+                facet_grid(. ~ op) +
+
+                labs(x = "Elapsed Secs", y = "Latency (ms)") +
+
+                guides(colour = guide_legend(override.aes = list(size=5))) +
+
+                theme(plot.title = element_text(size=30),
+                      plot.margin = margin(t = 10, r = 50, b = 0, l = 20),
+
+                      axis.title.x = element_text(size=25),
+                      axis.title.y = element_text(size=25),
+
+                      axis.text.x = element_text(size=20),
+                      axis.text.y = element_text(size=20),
+
+                      legend.justification = c(1,1),
+                      legend.position = c(1,1),
+
+                      legend.box.margin = margin(t = 50, r = 50, b = 0, l = 0),
+
+                      legend.title = element_text(size=30),
+                      legend.text = element_text(size=25),
+
+                      legend.key.size = unit(35, 'pt'))
 
 # Plot min and max latencies
 latency_plot <- latency_base + labs(title = "Minimum, Mean and Maximum Latency") +
-            geom_smooth(aes(y = min, color = "min"), size=0.5) +
-            geom_point(aes(y = min, color = "min"), size=2.0) +
+            geom_smooth(aes(y = min, color = "min"), size=1) +
+            geom_point(aes(y = min, color = "min"), size=4.0) +
 
-            geom_smooth(aes(y = mean, color = "mean"), size=0.5) +
-            geom_point(aes(y = mean, color = "mean"), size=2.0) +
+            geom_smooth(aes(y = mean, color = "mean"), size=1) +
+            geom_point(aes(y = mean, color = "mean"), size=4.0) +
 
-            geom_smooth(aes(y = max, color = "max"), size=0.5) +
-            geom_point(aes(y = max, color = "max"), size=2.0) +
+            geom_smooth(aes(y = max, color = "max"), size=1) +
+            geom_point(aes(y = max, color = "max"), size=4.0) +
 
             scale_colour_manual("Values", values = c("#FF665F", "#009D91", "#FFA700"))
 

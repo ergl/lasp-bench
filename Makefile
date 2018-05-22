@@ -35,7 +35,7 @@ bench:
 	./_build/default/bin/lasp_bench $(RUBIS_TABLE_CONFIG)
 
 results:
-	Rscript --vanilla priv/summary.r -x 2600 -y 2000 -i tests/current
+	Rscript --vanilla priv/summary.r -x 1500 -y 2500 -i tests/current
 
 
 TARGETS := $(shell ls tests/ | grep -v current)
