@@ -32,8 +32,8 @@ if (!is.null(opt$help))
   }
 
 # Initialize defaults for opt
-if (is.null(opt$width))   { opt$width   = 1280 }
-if (is.null(opt$height))  { opt$height  = 960 }
+if (is.null(opt$width))   { opt$width   = 1500 }
+if (is.null(opt$height))  { opt$height  = 2500 }
 if (is.null(opt$indir))   { opt$indir  = "current"}
 if (is.null(opt$outfile)) { opt$outfile = file.path(opt$indir, "summary.png") }
 if (is.null(opt$ylabel1stgraph)) { opt$ylabel1stgraph = "Ops/sec" }
@@ -63,42 +63,93 @@ thr <- qplot(elapsed,
         geom_point(aes(y = successful / window, colour = "Committed"), size=4.0) +
 
         geom_smooth(aes(y = failed / window, colour = "Aborted"), size=0.5) +
-        geom_point(aes(y = failed / window, colour = "Aborted"), size=2.0) +
+        geom_point(aes(y = failed / window, colour = "Aborted"), size=3.0) +
 
-        scale_colour_manual("Response", values = c("#FF665F", "#188125"))
+        scale_colour_manual("Response", values = c("#FF665F", "#188125")) +
+
+        # increase legend point size
+        guides(colour = guide_legend(override.aes = list(size=5))) +
+
+        # set tick sequence
+        # set tick thousand mark
+        scale_y_continuous(breaks = seq(0,1000000,by=1000),
+                           labels=function(x) format(x, big.mark = ",", scientific = FALSE)) +
+
+        theme(plot.title = element_text(size=30),
+              plot.margin = margin(t = 10, r = 50, b = 0, l = 20),
+
+              axis.title.x = element_text(size=25),
+              axis.title.y = element_text(size=25),
+
+              axis.text.x = element_text(size=20),
+              axis.text.y = element_text(size=20),
+
+              legend.justification = c(1,0),
+              legend.position = c(1,0),
+
+              legend.box.margin = margin(t = 0, r = 50, b = 100, l = 0),
+
+              legend.title = element_text(size=30),
+              legend.text = element_text(size=25),
+
+              legend.key.size = unit(35, 'pt'))
 
 # Setup common elements of the latency plots
 latency_plot <- ggplot(b$latencies, aes(x = elapsed)) +
-                   facet_grid(. ~ op) +
-                   labs(x = "Time (secs)", y = "Latency (ms)")
+
+                facet_grid(. ~ op) +
+
+                labs(x = "Time (secs)", y = "Latency (ms)") +
+
+                guides(colour = guide_legend(override.aes = list(size=5))) +
+
+                theme(plot.title = element_text(size=30),
+                      plot.margin = margin(t = 10, r = 50, b = 0, l = 20),
+
+                      axis.title.x = element_text(size=25),
+                      axis.title.y = element_text(size=25),
+
+                      axis.text.x = element_text(size=20),
+                      axis.text.y = element_text(size=20),
+
+                      legend.justification = c(1,1),
+                      legend.position = c(1,1),
+
+                      legend.box.margin = margin(t = 50, r = 50, b = 0, l = 0),
+
+                      legend.title = element_text(size=30),
+                      legend.text = element_text(size=25),
+
+                      legend.key.size = unit(35, 'pt'))
 
 # Plot median, mean and 95th percentiles
-lat_all <- latency_plot + labs(title = "Mean, Median, and 95th Percentile Latency") +
-            geom_smooth(aes(y = median, color = "median"), size=0.5) +
-            geom_point(aes(y = median, color = "median"), size=2.0) +
+lat_all <- latency_plot +
 
-            geom_smooth(aes(y = mean, color = "mean"), size=0.5) +
-            geom_point(aes(y = mean, color = "mean"), size=2.0) +
+            labs(title = "Mean, Median, and 95th Percentile Latency") +
 
-            geom_smooth(aes(y = X95th, color = "95th"), size=0.5) +
-            geom_point(aes(y = X95th, color = "95th"), size=2.0) +
+            geom_smooth(aes(y = median, color = "median"), size=1) +
+            geom_point(aes(y = median, color = "median"), size=4.0) +
+
+            geom_smooth(aes(y = mean, color = "mean"), size=1) +
+            geom_point(aes(y = mean, color = "mean"), size=4.0) +
+
+            geom_smooth(aes(y = X95th, color = "95th"), size=1) +
+            geom_point(aes(y = X95th, color = "95th"), size=4.0) +
 
             scale_colour_manual("Percentile", values = c("#FF665F", "#009D91", "#FFA700"))
-            # scale_color_hue("Percentile",
-            #                 breaks = c("X95th", "mean", "median"),
-            #                 labels = c("95th", "Mean", "Median"))
 
-# Plot 99.9th percentile
-lat_999 <- latency_plot + labs(title = "99.9th Percentile Latency") +
-            geom_smooth(aes(y = X99_9th, color = "99.9th"), size=0.5) +
-            geom_point(aes(y = X99_9th, color = "99.9th"), size=2.0) +
-            scale_colour_manual("Percentile", values = c("#FF665F", "#009D91", "#FFA700"))
+# Plot 99th percentile
+lat_99 <- latency_plot +
+            labs(title = "99th Percentile Latency") +
 
-# Plot 100th percentile
-lat_max <- latency_plot + labs(title = "Maximum Latency") +
-            geom_smooth(aes(y = max, color = "max"), size=0.5) +
-            geom_point(aes(y = max, color = "max"), size=2.0) +
-            scale_colour_manual("Percentile", values = c("#FF665F", "#009D91", "#FFA700"))
+            geom_smooth(aes(y = X99th, color = "99th"), size=1.5) +
+
+            geom_point(aes(y = X99th, color = "99th"), size=4.0) +
+
+            scale_colour_manual("Percentile", values = c("#FF665F", "#009D91", "#FFA700")) +
+
+            theme(plot.margin = margin(t = 10, r = 50, b = 10, l = 20),
+                  legend.position="none")
 
 grid.newpage()
 
@@ -108,7 +159,6 @@ vplayout <- function(x,y) viewport(layout.pos.row = x, layout.pos.col = y)
 
 print(thr, vp = vplayout(1,1))
 print(lat_all, vp = vplayout(2,1))
-print(lat_999, vp = vplayout(3,1))
-#print(lat_max, vp = vplayout(4,1))
+print(lat_99, vp = vplayout(3,1))
 
 dev.off()
