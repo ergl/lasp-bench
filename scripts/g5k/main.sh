@@ -44,6 +44,7 @@ promptJobCancel() {
   read -r -n 1 -p "Want to cancel reservation? [y/n] " response
   case "${response}" in
     [yY] )
+      sed -i.bak '/^GRID_JOB_ID.*/d' ./configuration.sh
       oargriddel "${grid_job}"
       exit 1 ;;
     *)
