@@ -362,6 +362,7 @@ collectResults () {
   pushd "${RESULTS_DIR_PARENT}" > /dev/null 2>&1
   local tar_name="grid-results-${GRID_JOB_ID}-${GLOBAL_TIMESTART}.tar"
   # There will be a local folder with this name
+  cp ./configuration.sh ./"${GLOBAL_TIMESTART}"/benchmark_configuration.txt
   tar -zcf "${tar_name}" ./"${GLOBAL_TIMESTART}"
   mv "${tar_name}" "${HOMEFOLDER}"
   popd > /dev/null 2>&1
