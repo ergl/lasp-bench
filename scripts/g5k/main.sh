@@ -99,6 +99,8 @@ getBenchFile() {
 export BENCH_FILE=$(getBenchFile)
 
 export HOMEFOLDER="/home/$(whoami)"
+SOURCESDIR="${HOMEFOLDER}/lasp-bench/scripts/g5k/"
+
 SCRATCHFOLDER="/home/$(whoami)/grid-benchmark-${GRID_JOB_ID}"
 export LOGDIR=${SCRATCHFOLDER}/logs/${GLOBAL_TIMESTART}
 PRIVDIR="/home/$(whoami)/lasp-bench/priv"
@@ -362,7 +364,7 @@ collectResults () {
   pushd "${RESULTS_DIR_PARENT}" > /dev/null 2>&1
   local tar_name="grid-results-${GRID_JOB_ID}-${GLOBAL_TIMESTART}.tar"
   # There will be a local folder with this name
-  cp ./configuration.sh ./"${GLOBAL_TIMESTART}"/benchmark_configuration.txt
+  cp "${SOURCESDIR}"/configuration.sh ./"${GLOBAL_TIMESTART}"/benchmark_configuration.txt
   tar -zcf "${tar_name}" ./"${GLOBAL_TIMESTART}"
   mv "${tar_name}" "${HOMEFOLDER}"
   popd > /dev/null 2>&1
