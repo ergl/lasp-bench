@@ -30,7 +30,7 @@ reserveSites () {
   # [OAR_GRIDSUB] Grid reservation id = 56670
   # ...
 
-  local res_id=$(oargridsub -t deploy -w '2:00:00' "${reservation}" \
+  local res_id=$(oargridsub -t deploy -w '1:00:00' "${reservation}" \
     | grep "Grid reservation id" \
     | cut -f2 -d=)
 
