@@ -80,7 +80,7 @@ getAntidoteBranch() {
       echo "pvc-rubis"
       return ;;
     "blotter-cc" )
-      echo "tcp-server"
+      echo "master-blotter"
        return ;;
   esac
 }
