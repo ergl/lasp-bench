@@ -67,7 +67,7 @@ throughput_plot <- qplot(elapsed,
 
                     # set tick sequence
                     # set tick thousand mark
-                    scale_y_continuous(breaks = seq(0,1000000,by=1000),
+                    scale_y_continuous(breaks = seq(0,1000000,by=500),
                     labels=function(x) format(x, big.mark = ",", scientific = FALSE)) +
 
                     theme(plot.title = element_text(size=30),
