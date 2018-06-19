@@ -10,6 +10,7 @@
 -record(state, {
     socket :: gen_tcp:socket(),
     read_keys :: non_neg_integer(),
+    written_keys :: non_neg_integer(),
     key_ratio :: {non_neg_integer(), non_neg_integer()},
     abort_retries :: non_neg_integer()
 }).
@@ -19,6 +20,7 @@ new(_Id) ->
     Ip = lasp_bench_config:get(rubis_ip, '127.0.0.1'),
     Port = lasp_bench_config:get(rubis_port, 7878),
     NRead = lasp_bench_config:get(read_keys),
+    NWrite = lasp_bench_config:get(written_keys),
     RWRatio = lasp_bench_config:get(ratio),
     AbortTries = lasp_bench_config:get(abort_retries, 50),
 
@@ -27,6 +29,7 @@ new(_Id) ->
     {ok, #state{socket=Sock,
                 read_keys=NRead,
                 key_ratio=RWRatio,
+                written_keys=NWrite,
                 abort_retries=AbortTries}}.
 
 run(ping, _, _, State = #state{socket=Sock}) ->
@@ -50,12 +53,25 @@ run(readonly, KeyGen, _, State = #state{socket=Sock, read_keys=NRead}) ->
         ok -> {ok, State}
     end;
 
-run(readwrite, KeyGen, ValueGen, State = #state{socket=Sock, key_ratio={NReads, NWrites}, abort_retries=Tries}) ->
-    Total = NReads + NWrites,
-    AllKeys = gen_keys(Total, KeyGen),
-    WriteKeys = lists:sublist(AllKeys, NWrites),
-    Updates = lists:map(fun(K) -> {K, ValueGen()} end, WriteKeys),
-    Msg = rpb_simple_driver:read_write(AllKeys, Updates),
+run(writeonly, KeyGen, ValueGen, State = #state{socket=Sock,
+                                                written_keys=W,
+                                                abort_retries=Tries}) ->
+
+    Keys = gen_keys(W, KeyGen),
+    Updates = lists:map(fun(K) -> {K, ValueGen()} end, Keys),
+    Msg = rpb_simple_driver:read_write(Keys, Updates),
+
+    perform_write(Sock, Msg, State, Tries);
+
+run(readwrite, KeyGen, ValueGen, State = #state{socket=Sock,
+                                                key_ratio={R, W},
+                                                abort_retries=Tries}) ->
+    Total = R + W,
+    Keys = gen_keys(Total, KeyGen),
+
+    %% Make Updates from the first W keys
+    Updates = lists:map(fun(K) -> {K, ValueGen()} end, lists:sublist(Keys, W)),
+    Msg = rpb_simple_driver:read_write(Keys, Updates),
 
     perform_write(Sock, Msg, State, Tries).
 
