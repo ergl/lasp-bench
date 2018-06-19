@@ -69,7 +69,6 @@ perform_write(Sock, Msg, State, Retries) ->
     Resp = rubis_proto:decode_serv_reply(BinReply),
     case Resp of
         {error, _} ->
-            lager:info("readwrite abort, retrying..."),
             perform_write(Sock, Msg, State, Retries - 1);
         ok ->
             {ok, State}
