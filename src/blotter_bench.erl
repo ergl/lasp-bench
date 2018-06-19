@@ -10,7 +10,8 @@
 -record(state, {
     socket :: gen_tcp:socket(),
     read_keys :: non_neg_integer(),
-    key_ratio :: {non_neg_integer(), non_neg_integer()}
+    key_ratio :: {non_neg_integer(), non_neg_integer()},
+    abort_retries :: non_neg_integer()
 }).
 
 new(_Id) ->
@@ -19,12 +20,14 @@ new(_Id) ->
     Port = lasp_bench_config:get(rubis_port, 7878),
     NRead = lasp_bench_config:get(read_keys),
     RWRatio = lasp_bench_config:get(ratio),
+    AbortTries = lasp_bench_config:get(abort_retries, 50),
 
     Options = [binary, {active, false}, {packet, 2}, {nodelay, true}],
     {ok, Sock} = gen_tcp:connect(Ip, Port, Options),
     {ok, #state{socket=Sock,
                 read_keys=NRead,
-                key_ratio=RWRatio}}.
+                key_ratio=RWRatio,
+                abort_retries=AbortTries}}.
 
 run(ping, _, _, State = #state{socket=Sock}) ->
     ok = gen_tcp:send(Sock, rpb_simple_driver:ping()),
@@ -47,20 +50,29 @@ run(readonly, KeyGen, _, State = #state{socket=Sock, read_keys=NRead}) ->
         ok -> {ok, State}
     end;
 
-run(readwrite, KeyGen, ValueGen, State = #state{socket=Sock, key_ratio={NReads, NWrites}}) ->
+run(readwrite, KeyGen, ValueGen, State = #state{socket=Sock, key_ratio={NReads, NWrites}, abort_retries=Tries}) ->
     Total = NReads + NWrites,
     AllKeys = gen_keys(Total, KeyGen),
     WriteKeys = lists:sublist(AllKeys, NWrites),
     Updates = lists:map(fun(K) -> {K, ValueGen()} end, WriteKeys),
     Msg = rpb_simple_driver:read_write(AllKeys, Updates),
 
+    perform_write(Sock, Msg, State, Tries).
+
+perform_write(_, _, State, 0) ->
+    {error, too_many_retries, State};
+
+perform_write(Sock, Msg, State, Retries) ->
     ok = gen_tcp:send(Sock, Msg),
     {ok, BinReply} = gen_tcp:recv(Sock, 0),
 
     Resp = rubis_proto:decode_serv_reply(BinReply),
     case Resp of
-        {error, Reason} -> {error, Reason, State};
-        ok -> {ok, State}
+        {error, _} ->
+            lager:info("readwrite abort, retrying..."),
+            perform_write(Sock, Msg, State, Retries - 1);
+        ok ->
+            {ok, State}
     end.
 
 %% Util
