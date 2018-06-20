@@ -1,8 +1,8 @@
 #!/usr/bin/env escript
 %%! -pa ../_build/default/lib/jsx/ebin ../_build/default/lib/rubis_proto/ebin -Wall
 
--define(NUM_KEYS, 10000).
--define(VAL_SIZE, 256).
+-define(NUM_KEYS, 100000).
+-define(VAL_SIZE, 1024).
 
 main([BinHost, BinPort]) ->
     Host = list_to_atom(BinHost),
