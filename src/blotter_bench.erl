@@ -66,7 +66,7 @@ run(writeonly, KeyGen, ValueGen, State = #state{socket=Sock,
 run(readwrite, KeyGen, ValueGen, State = #state{socket=Sock,
                                                 key_ratio={R, W},
                                                 abort_retries=Tries}) ->
-    Total = R + W,
+    Total = erlang:max(R, W),
     Keys = gen_keys(Total, KeyGen),
 
     %% Make Updates from the first W keys
