@@ -9,6 +9,8 @@
 
 -record(state, {
     socket :: gen_tcp:socket(),
+    port :: non_neg_integer(),
+    options :: list(any()),
     read_keys :: non_neg_integer(),
     written_keys :: non_neg_integer(),
     key_ratio :: {non_neg_integer(), non_neg_integer()},
@@ -27,6 +29,8 @@ new(_Id) ->
     Options = [binary, {active, false}, {packet, 2}, {nodelay, true}],
     {ok, Sock} = gen_tcp:connect(Ip, Port, Options),
     {ok, #state{socket=Sock,
+                port=Port,
+                options=Options,
                 read_keys=NRead,
                 key_ratio=RWRatio,
                 written_keys=NWrite,
@@ -49,8 +53,14 @@ run(readonly, KeyGen, _, State = #state{socket=Sock, read_keys=NRead}) ->
 
     Resp = rubis_proto:decode_serv_reply(BinReply),
     case Resp of
-        {error, Reason} -> {error, Reason, State};
-        ok -> {ok, State}
+        {request_to, BinIp} ->
+            reroute_read(binary_to_atom(BinIp, latin1), Msg, State);
+
+        {error, Reason} ->
+            {error, Reason, State};
+
+        ok ->
+            {ok, State}
     end;
 
 run(writeonly, KeyGen, ValueGen, State = #state{socket=Sock,
@@ -74,6 +84,18 @@ run(readwrite, KeyGen, ValueGen, State = #state{socket=Sock,
     Msg = rpb_simple_driver:read_write(Keys, Updates),
 
     perform_write(Sock, Msg, State, Tries).
+
+reroute_read(Ip, Msg, State = #state{port=Port,options=Options}) ->
+    {ok, Sock} = gen_tcp:connect(Ip, Port, Options),
+    ok = gen_tcp:send(Sock, Msg),
+    {ok, BinReply} = gen_tcp:recv(Sock, 0),
+    Resp = rubis_proto:decode_serv_reply(BinReply),
+    gen_tcp:close(Sock),
+    case Resp of
+        {error, Reason} -> {error, Reason, State};
+        ok -> {ok, State};
+        {request_to, _} -> {error, too_many_reroutes, State}
+    end.
 
 perform_write(_, _, State, 0) ->
     {error, too_many_retries, State};
