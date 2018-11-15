@@ -8,9 +8,16 @@
 -type key_gen(T) :: fun(() -> T).
 
 -record(state, {
-    socket :: gen_tcp:socket(),
-    port :: non_neg_integer(),
-    options :: list(any()),
+    %% Connection to the main target node
+    main_socket :: gen_tcp:socket(),
+
+    %% Port to connect to
+    remote_port :: inet:port_number(),
+    socket_options :: [gen_tcp:connect_option()],
+    %% Mapping of other nodes -> sockets,
+    %% used for rerouting reads
+    remote_sockets :: orddict:orddict(inet:hostname(), gen_tcp:socket()),
+
     read_keys :: non_neg_integer(),
     written_keys :: non_neg_integer(),
     key_ratio :: {non_neg_integer(), non_neg_integer()},
@@ -28,15 +35,16 @@ new(_Id) ->
 
     Options = [binary, {active, false}, {packet, 2}, {nodelay, true}],
     {ok, Sock} = gen_tcp:connect(Ip, Port, Options),
-    {ok, #state{socket=Sock,
-                port=Port,
-                options=Options,
+    {ok, #state{main_socket=Sock,
+                remote_port=Port,
+                socket_options=Options,
+                remote_sockets=orddict:new(),
                 read_keys=NRead,
                 key_ratio=RWRatio,
                 written_keys=NWrite,
                 abort_retries=AbortTries}}.
 
-run(ping, _, _, State = #state{socket=Sock}) ->
+run(ping, _, _, State = #state{main_socket=Sock}) ->
     ok = gen_tcp:send(Sock, rpb_simple_driver:ping()),
     {ok, BinReply} = gen_tcp:recv(Sock, 0),
     case rubis_proto:decode_serv_reply(BinReply) of
@@ -44,7 +52,7 @@ run(ping, _, _, State = #state{socket=Sock}) ->
         ok -> {ok, State}
     end;
 
-run(readonly, KeyGen, _, State = #state{socket=Sock, read_keys=NRead}) ->
+run(readonly, KeyGen, _, State = #state{main_socket=Sock, read_keys=NRead}) ->
     Keys = gen_keys(NRead, KeyGen),
     Msg = rpb_simple_driver:read_only(Keys),
 
@@ -63,7 +71,7 @@ run(readonly, KeyGen, _, State = #state{socket=Sock, read_keys=NRead}) ->
             {ok, State}
     end;
 
-run(writeonly, KeyGen, ValueGen, State = #state{socket=Sock,
+run(writeonly, KeyGen, ValueGen, State = #state{main_socket=Sock,
                                                 written_keys=W,
                                                 abort_retries=Tries}) ->
 
@@ -73,7 +81,7 @@ run(writeonly, KeyGen, ValueGen, State = #state{socket=Sock,
 
     perform_write(Sock, Msg, State, Tries);
 
-run(readwrite, KeyGen, ValueGen, State = #state{socket=Sock,
+run(readwrite, KeyGen, ValueGen, State = #state{main_socket=Sock,
                                                 key_ratio={R, W},
                                                 abort_retries=Tries}) ->
     Total = erlang:max(R, W),
@@ -85,16 +93,34 @@ run(readwrite, KeyGen, ValueGen, State = #state{socket=Sock,
 
     perform_write(Sock, Msg, State, Tries).
 
-reroute_read(Ip, Msg, State = #state{port=Port,options=Options}) ->
-    {ok, Sock} = gen_tcp:connect(Ip, Port, Options),
+reroute_read(Ip, Msg, State = #state{remote_port=Port,
+                                     socket_options=Options,
+                                     remote_sockets=Sockets}) ->
+
+    {Sock, NewSockets} = case orddict:find(Ip, Sockets) of
+        {ok, Socket} ->
+            {Socket, Sockets};
+
+        error ->
+            {ok, Socket} = gen_tcp:connect(Ip, Port, Options),
+            {Socket, orddict:store(Ip, Socket, Sockets)}
+    end,
+
     ok = gen_tcp:send(Sock, Msg),
     {ok, BinReply} = gen_tcp:recv(Sock, 0),
+
     Resp = rubis_proto:decode_serv_reply(BinReply),
-    gen_tcp:close(Sock),
+    NewState = State#state{remote_sockets=NewSockets},
     case Resp of
-        {error, Reason} -> {error, Reason, State};
-        ok -> {ok, State};
-        {request_to, _} -> {error, too_many_reroutes, State}
+        {request_to, _} ->
+            {error, too_many_reroutes, NewState};
+
+        {error, Reason} ->
+            {error, Reason, NewState};
+
+        ok ->
+            {ok, NewState}
+
     end.
 
 perform_write(_, _, State, 0) ->
