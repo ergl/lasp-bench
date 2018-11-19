@@ -61,7 +61,7 @@ new(_Id) ->
     {ok, #state{main_socket=Sock,
                 remote_port=Port,
                 socket_options=Options,
-                remote_sockets=open_ring_sockets(Ip, Ring, Port, Options, []),
+                remote_sockets=open_ring_sockets(Ip, Ring, Port, Options, [{Ip, Sock}]),
                 remote_ring=Ring,
                 read_keys=NRead,
                 key_ratio=RWRatio,
