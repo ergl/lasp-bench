@@ -6,15 +6,7 @@
 
 
 new(BinRing) ->
-    new(BinRing, []).
-
-new([], Acc) ->
-    lists:reverse(Acc);
-
-new([{TermId, BinNode} | Rest], Acc) ->
-    Id = binary_to_term(TermId, [safe]),
-    Node = binary_to_atom(BinNode, latin1),
-    new(Rest, [{Id, Node} | Acc]).
+    lists:map(fun(N) -> binary_to_atom(N, latin1) end, BinRing).
 
 get_key_node(Key, Ring) ->
     Hash = convert_key(Key),
