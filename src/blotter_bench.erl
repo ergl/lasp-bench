@@ -17,12 +17,32 @@
     %% Mapping of other nodes -> sockets,
     %% used for rerouting reads
     remote_sockets :: orddict:orddict(inet:hostname(), gen_tcp:socket()),
+    %% Remote partitoning
+    remote_ring :: [atom()],
 
     read_keys :: non_neg_integer(),
     written_keys :: non_neg_integer(),
     key_ratio :: {non_neg_integer(), non_neg_integer()},
     abort_retries :: non_neg_integer()
 }).
+
+get_remote_ring(Sock) ->
+    ok = gen_tcp:send(Sock, rpb_simple_driver:get_ring()),
+    {ok, BinReply} = gen_tcp:recv(Sock, 0),
+    Data = rubis_proto:decode_serv_reply(BinReply),
+    blotter_partitioning:new(Data).
+
+open_ring_sockets(SelfNode, Ring, Port, Options, Sockets) ->
+    lists:foldl(fun(Node, AccSock) ->
+        case Node of
+            SelfNode ->
+                AccSock;
+
+            OtherNode ->
+                {ok, Sock} = gen_tcp:connect(OtherNode, Port, Options),
+                orddict:store(Node, Sock, AccSock)
+        end
+    end, Sockets, Ring).
 
 new(_Id) ->
     _ = application:ensure_all_started(rubis_proto),
@@ -35,10 +55,12 @@ new(_Id) ->
 
     Options = [binary, {active, false}, {packet, 2}, {nodelay, true}],
     {ok, Sock} = gen_tcp:connect(Ip, Port, Options),
+    Ring = get_remote_ring(Sock),
     {ok, #state{main_socket=Sock,
                 remote_port=Port,
                 socket_options=Options,
-                remote_sockets=orddict:new(),
+                remote_sockets=open_ring_sockets(Ip, Ring, Port, Options, []),
+                remote_ring=Ring,
                 read_keys=NRead,
                 key_ratio=RWRatio,
                 written_keys=NWrite,
@@ -51,6 +73,30 @@ run(ping, _, _, State = #state{main_socket=Sock}) ->
         {error, Reason} -> {error, Reason, State};
         ok -> {ok, State}
     end;
+
+run(readonly, KeyGen, _, State = #state{read_keys=1, remote_ring=Ring, remote_sockets=Sockets}) ->
+    Key = integer_to_binary(KeyGen(), 36),
+    Target = blotter_partitioning:get_key_node(Key, Ring),
+    case orddict:find(Target, Sockets) of
+        error ->
+            {error, unknown_target_node, State};
+
+        {ok, Sock} ->
+            Msg = rpb_simple_driver:read_only([Key]),
+            ok = gen_tcp:send(Sock, Msg),
+            {ok, BinReply} = gen_tcp:recv(Sock, 0),
+            Resp = rubis_proto:decode_serv_reply(BinReply),
+            case Resp of
+                {request_to, _} ->
+                    {error, too_many_reroutes, State};
+                {error, Reason} ->
+                    {error, Reason, State};
+                ok ->
+                    {ok, State}
+            end
+
+    end;
+
 
 run(readonly, KeyGen, _, State = #state{main_socket=Sock, read_keys=NRead}) ->
     Keys = gen_keys(NRead, KeyGen),
