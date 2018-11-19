@@ -33,16 +33,18 @@ get_remote_ring(Sock) ->
     blotter_partitioning:new(Data).
 
 open_ring_sockets(SelfNode, Ring, Port, Options, Sockets) ->
-    lists:foldl(fun(Node, AccSock) ->
+    Unique = ordsets:from_list(Ring),
+    ordsets:fold(fun(Node, AccSock) ->
         case Node of
             SelfNode ->
                 AccSock;
 
             OtherNode ->
+                lager:info("Opening socket for ~p", [OtherNode]),
                 {ok, Sock} = gen_tcp:connect(OtherNode, Port, Options),
                 orddict:store(Node, Sock, AccSock)
         end
-    end, Sockets, Ring).
+    end, Sockets, Unique).
 
 new(_Id) ->
     _ = application:ensure_all_started(rubis_proto),
@@ -77,8 +79,10 @@ run(ping, _, _, State = #state{main_socket=Sock}) ->
 run(readonly, KeyGen, _, State = #state{read_keys=1, remote_ring=Ring, remote_sockets=Sockets}) ->
     Key = integer_to_binary(KeyGen(), 36),
     Target = blotter_partitioning:get_key_node(Key, Ring),
+    lager:info("Will send tx directly to ~p", [Target]),
     case orddict:find(Target, Sockets) of
         error ->
+            lager:info("Couldn't find socket for ~p", [Target]),
             {error, unknown_target_node, State};
 
         {ok, Sock} ->
