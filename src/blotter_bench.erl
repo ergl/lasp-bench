@@ -9,8 +9,6 @@
 
 -record(partition_info, {
     sockets :: orddict:orddict(inet:hostname(), gen_tcp:socket()),
-    remote_port :: inet:port_number(),
-    socket_options :: [gen_tcp:connect_option()],
     ring :: [inet:hostname()]
 }).
 
@@ -22,25 +20,6 @@
     key_ratio :: {non_neg_integer(), non_neg_integer()},
     abort_retries :: non_neg_integer()
 }).
-
-get_remote_ring(Sock) ->
-    ok = gen_tcp:send(Sock, rpb_simple_driver:get_ring()),
-    {ok, BinReply} = gen_tcp:recv(Sock, 0),
-    Data = rubis_proto:decode_serv_reply(BinReply),
-    blotter_partitioning:new(Data).
-
-open_ring_sockets(SelfNode, Ring, Port, Options, Sockets) ->
-    Unique = ordsets:from_list(Ring),
-    ordsets:fold(fun(Node, AccSock) ->
-        case Node of
-            SelfNode ->
-                AccSock;
-
-            OtherNode ->
-                {ok, Sock} = gen_tcp:connect(OtherNode, Port, Options),
-                orddict:store(Node, Sock, AccSock)
-        end
-    end, Sockets, Unique).
 
 new(_Id) ->
     _ = application:ensure_all_started(rubis_proto),
@@ -60,10 +39,9 @@ new(_Id) ->
             local;
         noproxy ->
             Ring = get_remote_ring(Sock),
-            {noproxy, #partition_info{sockets=open_ring_sockets(Ip, Ring, Port, Options, [{Ip, Sock}]),
-                                      ring=Ring,
-                                      remote_port=Port,
-                                      socket_options=Options}}
+            RemoteSockets = open_ring_sockets(Ip, Ring, Port, Options, [{Ip, Sock}]),
+            {noproxy, #partition_info{ring=Ring,
+                                      sockets=RemoteSockets}}
     end,
 
     {ok, #state{local_socket=Sock,
@@ -81,7 +59,9 @@ run(ping, _, _, State = #state{local_socket=Sock}) ->
         ok -> {ok, State}
     end;
 
-run(readonly, KeyGen, _, State = #state{read_keys=1, connection_mode={noproxy, #partition_info{ring=Ring, sockets=Sockets}}}) ->
+run(readonly, KeyGen, _, State = #state{read_keys=1,
+                                        connection_mode={noproxy, #partition_info{ring=Ring,sockets=Sockets}}}) ->
+
     Key = integer_to_binary(KeyGen(), 36),
     Target = blotter_partitioning:get_key_node(Key, Ring),
     case orddict:find(Target, Sockets) of
@@ -94,8 +74,6 @@ run(readonly, KeyGen, _, State = #state{read_keys=1, connection_mode={noproxy, #
             {ok, BinReply} = gen_tcp:recv(Sock, 0),
             Resp = rubis_proto:decode_serv_reply(BinReply),
             case Resp of
-                {request_to, _} ->
-                    {error, too_many_reroutes, State};
                 {error, Reason} ->
                     {error, Reason, State};
                 ok ->
@@ -114,9 +92,6 @@ run(readonly, KeyGen, _, State = #state{local_socket=Sock, connection_mode=local
 
     Resp = rubis_proto:decode_serv_reply(BinReply),
     case Resp of
-        {request_to, BinIp} ->
-            reroute_read(binary_to_atom(BinIp, latin1), Msg, State);
-
         {error, Reason} ->
             {error, Reason, State};
 
@@ -146,36 +121,6 @@ run(readwrite, KeyGen, ValueGen, State = #state{local_socket=Sock,
 
     perform_write(Sock, Msg, State, Tries).
 
-reroute_read(Ip, Msg, State = #state{connection_mode={noproxy, #partition_info{remote_port=Port,
-                                                                               socket_options=Options,
-                                                                               sockets=Sockets}}})->
-
-    {Sock, NewSockets} = case orddict:find(Ip, Sockets) of
-        {ok, Socket} ->
-            {Socket, Sockets};
-
-        error ->
-            {ok, Socket} = gen_tcp:connect(Ip, Port, Options),
-            {Socket, orddict:store(Ip, Socket, Sockets)}
-    end,
-
-    ok = gen_tcp:send(Sock, Msg),
-    {ok, BinReply} = gen_tcp:recv(Sock, 0),
-
-    Resp = rubis_proto:decode_serv_reply(BinReply),
-    NewState = State#state{connection_mode={nproxy, #partition_info{sockets=NewSockets}}},
-    case Resp of
-        {request_to, _} ->
-            {error, too_many_reroutes, NewState};
-
-        {error, Reason} ->
-            {error, Reason, NewState};
-
-        ok ->
-            {ok, NewState}
-
-    end.
-
 perform_write(_, _, State, 0) ->
     {error, too_many_retries, State};
 
@@ -201,3 +146,22 @@ gen_keys(0, _, Acc) ->
 
 gen_keys(N, K, Acc) ->
     gen_keys(N - 1, K, [integer_to_binary(K(), 36) | Acc]).
+
+get_remote_ring(Sock) ->
+    ok = gen_tcp:send(Sock, rpb_simple_driver:get_ring()),
+    {ok, BinReply} = gen_tcp:recv(Sock, 0),
+    Data = rubis_proto:decode_serv_reply(BinReply),
+    blotter_partitioning:new(Data).
+
+open_ring_sockets(SelfNode, Ring, Port, Options, Sockets) ->
+    Unique = ordsets:from_list(Ring),
+    ordsets:fold(fun(Node, AccSock) ->
+        case Node of
+            SelfNode ->
+                AccSock;
+
+            OtherNode ->
+                {ok, Sock} = gen_tcp:connect(OtherNode, Port, Options),
+                orddict:store(Node, Sock, AccSock)
+        end
+                 end, Sockets, Unique).
