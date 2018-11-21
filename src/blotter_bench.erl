@@ -7,19 +7,16 @@
 
 -type key_gen(T) :: fun(() -> T).
 
--record(state, {
-    %% Connection to the main target node
-    main_socket :: gen_tcp:socket(),
-
-    %% Port to connect to
+-record(partition_info, {
+    sockets :: orddict:orddict(inet:hostname(), gen_tcp:socket()),
     remote_port :: inet:port_number(),
     socket_options :: [gen_tcp:connect_option()],
-    %% Mapping of other nodes -> sockets,
-    %% used for rerouting reads
-    remote_sockets :: orddict:orddict(inet:hostname(), gen_tcp:socket()),
-    %% Remote partitoning
-    remote_ring :: [atom()],
+    ring :: [inet:hostname()]
+}).
 
+-record(state, {
+    local_socket :: gen_tcp:socket(),
+    connection_mode :: local | {noproxy, #partition_info{}},
     read_keys :: non_neg_integer(),
     written_keys :: non_neg_integer(),
     key_ratio :: {non_neg_integer(), non_neg_integer()},
@@ -49,25 +46,34 @@ new(_Id) ->
     _ = application:ensure_all_started(rubis_proto),
     Ip = lasp_bench_config:get(rubis_ip, '127.0.0.1'),
     Port = lasp_bench_config:get(rubis_port, 7878),
+    Options = [binary, {active, false}, {packet, 2}, {nodelay, true}],
+
     NRead = lasp_bench_config:get(read_keys),
     NWrite = lasp_bench_config:get(written_keys),
     RWRatio = lasp_bench_config:get(ratio),
     AbortTries = lasp_bench_config:get(abort_retries, 50),
 
-    Options = [binary, {active, false}, {packet, 2}, {nodelay, true}],
     {ok, Sock} = gen_tcp:connect(Ip, Port, Options),
-    Ring = get_remote_ring(Sock),
-    {ok, #state{main_socket=Sock,
-                remote_port=Port,
-                socket_options=Options,
-                remote_sockets=open_ring_sockets(Ip, Ring, Port, Options, [{Ip, Sock}]),
-                remote_ring=Ring,
+    Mode = lasp_bench_config:get(connection_mode, local),
+    ConnMode = case Mode of
+        local ->
+            local;
+        noproxy ->
+            Ring = get_remote_ring(Sock),
+            {noproxy, #partition_info{sockets=open_ring_sockets(Ip, Ring, Port, Options, [{Ip, Sock}]),
+                                      ring=Ring,
+                                      remote_port=Port,
+                                      socket_options=Options}}
+    end,
+
+    {ok, #state{local_socket=Sock,
+                connection_mode=ConnMode,
                 read_keys=NRead,
                 key_ratio=RWRatio,
                 written_keys=NWrite,
                 abort_retries=AbortTries}}.
 
-run(ping, _, _, State = #state{main_socket=Sock}) ->
+run(ping, _, _, State = #state{local_socket=Sock}) ->
     ok = gen_tcp:send(Sock, rpb_simple_driver:ping()),
     {ok, BinReply} = gen_tcp:recv(Sock, 0),
     case rubis_proto:decode_serv_reply(BinReply) of
@@ -75,7 +81,7 @@ run(ping, _, _, State = #state{main_socket=Sock}) ->
         ok -> {ok, State}
     end;
 
-run(readonly, KeyGen, _, State = #state{read_keys=1, remote_ring=Ring, remote_sockets=Sockets}) ->
+run(readonly, KeyGen, _, State = #state{read_keys=1, connection_mode={noproxy, #partition_info{ring=Ring, sockets=Sockets}}}) ->
     Key = integer_to_binary(KeyGen(), 36),
     Target = blotter_partitioning:get_key_node(Key, Ring),
     case orddict:find(Target, Sockets) of
@@ -99,7 +105,7 @@ run(readonly, KeyGen, _, State = #state{read_keys=1, remote_ring=Ring, remote_so
     end;
 
 
-run(readonly, KeyGen, _, State = #state{main_socket=Sock, read_keys=NRead}) ->
+run(readonly, KeyGen, _, State = #state{local_socket=Sock, connection_mode=local, read_keys=NRead}) ->
     Keys = gen_keys(NRead, KeyGen),
     Msg = rpb_simple_driver:read_only(Keys),
 
@@ -118,7 +124,7 @@ run(readonly, KeyGen, _, State = #state{main_socket=Sock, read_keys=NRead}) ->
             {ok, State}
     end;
 
-run(writeonly, KeyGen, ValueGen, State = #state{main_socket=Sock,
+run(writeonly, KeyGen, ValueGen, State = #state{local_socket=Sock,
                                                 written_keys=W,
                                                 abort_retries=Tries}) ->
 
@@ -128,7 +134,7 @@ run(writeonly, KeyGen, ValueGen, State = #state{main_socket=Sock,
 
     perform_write(Sock, Msg, State, Tries);
 
-run(readwrite, KeyGen, ValueGen, State = #state{main_socket=Sock,
+run(readwrite, KeyGen, ValueGen, State = #state{local_socket=Sock,
                                                 key_ratio={R, W},
                                                 abort_retries=Tries}) ->
     Total = erlang:max(R, W),
@@ -140,9 +146,9 @@ run(readwrite, KeyGen, ValueGen, State = #state{main_socket=Sock,
 
     perform_write(Sock, Msg, State, Tries).
 
-reroute_read(Ip, Msg, State = #state{remote_port=Port,
-                                     socket_options=Options,
-                                     remote_sockets=Sockets}) ->
+reroute_read(Ip, Msg, State = #state{connection_mode={noproxy, #partition_info{remote_port=Port,
+                                                                               socket_options=Options,
+                                                                               sockets=Sockets}}})->
 
     {Sock, NewSockets} = case orddict:find(Ip, Sockets) of
         {ok, Socket} ->
@@ -157,7 +163,7 @@ reroute_read(Ip, Msg, State = #state{remote_port=Port,
     {ok, BinReply} = gen_tcp:recv(Sock, 0),
 
     Resp = rubis_proto:decode_serv_reply(BinReply),
-    NewState = State#state{remote_sockets=NewSockets},
+    NewState = State#state{connection_mode={nproxy, #partition_info{sockets=NewSockets}}},
     case Resp of
         {request_to, _} ->
             {error, too_many_reroutes, NewState};
