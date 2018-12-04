@@ -107,12 +107,7 @@ init([]) ->
         end,
     Measurements = [F2(X) || X <- lasp_bench_config:get(measurements, [])],
 
-    %% Setup a histogram and counter for each operation -- we only track latencies on
-    %% successful operations
-    [begin
-         folsom_metrics:new_histogram({latencies, Op}, slide, lasp_bench_config:get(report_interval)),
-         folsom_metrics:new_counter({units, Op})
-     end || Op <- Ops ++ Measurements],
+    ok = build_folsom_tables(Ops ++ Measurements),
 
     StatsWriter = lasp_bench_config:get(stats, csv),
     {ok, StatsSinkModule} = normalize_name(StatsWriter),
@@ -131,6 +126,17 @@ init([]) ->
                  report_interval = ReportInterval,
                  stats_writer = StatsSinkModule,
                  stats_writer_data = StatsSinkModule:new(Ops, Measurements)}}.
+
+%% @doc Setup a histogram and counter for each operation.
+%%
+%%      We only track latencies on successful operations
+%%
+-spec build_folsom_tables([any()]) -> ok.
+build_folsom_tables(Ops) ->
+    lists:foreach(fun(Op) ->
+        folsom_metrics:new_histogram({latencies, Op}, slide, lasp_bench_config:get(report_interval)),
+        folsom_metrics:new_counter({units, Op})
+    end, Ops).
 
 handle_call(run, _From, State) ->
     %% Schedule next report
