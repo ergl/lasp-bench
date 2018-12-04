@@ -261,7 +261,9 @@ worker_next_op(State) ->
     case Result of
         {Res, DriverState} when Res == ok orelse element(1, Res) == ok ->
             lasp_bench_stats:op_complete(Next, Res, ElapsedUs),
-            {ok, State#state { driver_state = DriverState}};
+            %% TODO(borja): Remove this
+            NewDriverState = hack_preprocess_driver_sate(Next, DriverState),
+            {ok, State#state { driver_state = NewDriverState }};
 
         {Res, DriverState} when Res == silent orelse element(1, Res) == silent ->
             {ok, State#state { driver_state = DriverState}};
@@ -314,6 +316,17 @@ worker_next_op(State) ->
 
             normal
     end.
+
+%% TODO(borja): Remove this
+%% If op was ntping, collect the send and rcv latencies here
+hack_preprocess_driver_sate({_, ntping}=Op, {ntping, SendLatency, RcvLatency, RealState}) ->
+    ok = lasp_bench_stats:op_complete(Op, ok, {send, SendLatency}),
+    ok = lasp_bench_stats:op_complete(Op, ok, {rcv, RcvLatency}),
+    RealState;
+
+hack_preprocess_driver_sate(_, DriverState) ->
+    DriverState.
+
 
 needs_shutdown(State) ->
     Parent = State#state.parent_pid,

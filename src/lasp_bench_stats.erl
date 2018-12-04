@@ -59,6 +59,25 @@ run() ->
 
 op_complete(Op, ok, ElapsedUs) ->
     op_complete(Op, {ok, 1}, ElapsedUs);
+
+%% TODO(borja): Remove this
+op_complete({_, ntping}=Op, {ok, Units}, Payload) ->
+    case get_distributed() of
+        true ->
+            gen_server:cast({global, ?MODULE}, {Op, {ok, Units}, Payload});
+        false ->
+            case Payload of
+                {send, Us} ->
+                    folsom_metrics:notify({send_latencies, Op}, Us);
+                {rcv, Us} ->
+                    folsom_metrics:notify({rcv_latencies, Op}, Us);
+                ElapsedUs ->
+                    %% Same behaviour as before, increment normal latencies and units
+                    folsom_metrics:notify({latencies, Op}, ElapsedUs),
+                    folsom_metrics:notify({units, Op}, {inc, Units})
+            end
+    end;
+
 op_complete(Op, {ok, Units}, ElapsedUs) ->
     %% Update the histogram and units counter for the op in question
    % io:format("Get distributed: ~p~n", [get_distributed()]),
@@ -134,6 +153,13 @@ init([]) ->
 -spec build_folsom_tables([any()]) -> ok.
 build_folsom_tables(Ops) ->
     lists:foreach(fun(Op) ->
+        case Op of
+            {ntping, ntping} ->
+                folsom_metrics:new_histogram({send_latencies, Op}, slide, lasp_bench_config:get(report_interval)),
+                folsom_metrics:new_histogram({rcv_latencies, Op}, slide, lasp_bench_config:get(report_interval));
+            _ ->
+                ok
+        end,
         folsom_metrics:new_histogram({latencies, Op}, slide, lasp_bench_config:get(report_interval)),
         folsom_metrics:new_counter({units, Op})
     end, Ops).
@@ -148,7 +174,7 @@ handle_call({op, Op, {error, Reason}, _ElapsedUs}, _From, State) ->
     increment_error_counter({Op, Reason}),
     {reply, ok, State#state { errors_since_last_report = true }}.
 
-handle_cast({Op, {ok, Units}, ElapsedUs}, State = #state{last_write_time = LWT, report_interval = RI}) ->
+handle_cast({Op, {ok, Units}, Payload}, State = #state{last_write_time = LWT, report_interval = RI}) ->
     Now = os:timestamp(),
     TimeSinceLastReport = timer:now_diff(Now, LWT) / 1000, %% To get the diff in seconds
     TimeSinceLastWarn = timer:now_diff(Now, State#state.last_warn) / 1000,
@@ -161,8 +187,17 @@ handle_cast({Op, {ok, Units}, ElapsedUs}, State = #state{last_write_time = LWT, 
         true ->
             NewState = State
     end,
-    folsom_metrics:notify({latencies, Op}, ElapsedUs),
-    folsom_metrics:notify({units, Op}, {inc, Units}),
+    %% TODO(borja): Remove this
+    case Payload of
+        {send, Us} ->
+            folsom_metrics:notify({send_latencies, Op}, Us);
+        {rcv, Us} ->
+            folsom_metrics:notify({rcv_latencies, Op}, Us);
+        ElapsedUs ->
+            %% Same behaviour as before, increment normal latencies and units
+            folsom_metrics:notify({latencies, Op}, ElapsedUs),
+            folsom_metrics:notify({units, Op}, {inc, Units})
+    end,
     {noreply, NewState};
 handle_cast(_, State) ->
     {noreply, State}.
@@ -280,6 +315,23 @@ process_stats(Now, #state{stats_writer=Module}=State) ->
 %% Write latency info for a given op to the appropriate CSV. Returns the
 %% number of successful and failed ops in this window of time.
 %%
+report_latency(#state{stats_writer=Module}=State, Elapsed, Window, Op={ntping, _}) ->
+    Stats = folsom_metrics:get_histogram_statistics({latencies, Op}),
+    SendStats = folsom_metrics:get_histogram_statistics({send_latencies, Op}),
+    RcvStats = folsom_metrics:get_histogram_statistics({rcv_latencies, Op}),
+    Errors = error_counter(Op),
+    Units = folsom_metrics:get_metric_value({units, Op}),
+
+    Module:report_latency({State#state.stats_writer, State#state.stats_writer_data},
+                          Elapsed,
+                          Window,
+                          Op,
+                          {SendStats, RcvStats, Stats},
+                          Errors,
+                          Units),
+
+    {Units, Errors};
+
 report_latency(#state{stats_writer=Module}=State, Elapsed, Window, Op) ->
     Stats = folsom_metrics:get_histogram_statistics({latencies, Op}),
     Errors = error_counter(Op),
