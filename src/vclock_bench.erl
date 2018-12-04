@@ -18,7 +18,7 @@
 new(_Id) ->
     Module = choose_module(lasp_bench_config:get(impl)),
     Size = lasp_bench_config:get(partitions),
-    io:format("Chose module ~p with size ~p~n", [Module, Size]),
+    io:format("Chosen module ~p with size ~p~n", [Module, Size]),
     Partitions = gen_partitions(Size),
     {ok, #state{target=Module,
                 size=Size,
