@@ -221,14 +221,15 @@ worker_idle_loop(State) ->
     receive
         {init_driver, Caller} ->
             %% Spin up the driver implementation
-            case catch(Driver:new(State#state.id)) of
-                {ok, DriverState} ->
+            DriverState = case catch(Driver:new(State#state.id)) of
+                {ok, InternalState} ->
                     Caller ! driver_ready,
-                    ok;
+                    InternalState;
+
                 Error ->
                     Caller ! {init_driver_failed, Error},
-                    DriverState = undefined, % Make erlc happy
-                    ?FAIL_MSG("Failed to initialize driver ~p: ~p\n", [Driver, Error])
+                    ?FAIL_MSG("Failed to initialize driver ~p: ~p\n", [Driver, Error]),
+                    undefined
             end,
             worker_idle_loop(State#state { driver_state = DriverState });
         run ->
