@@ -1,7 +1,8 @@
 -module(blotter_bench).
 
 -export([new/1,
-         run/4]).
+         run/4,
+         terminate/2]).
 
 -include("lasp_bench.hrl").
 
@@ -50,6 +51,9 @@ new(_Id) ->
                 key_ratio=RWRatio,
                 written_keys=NWrite,
                 abort_retries=AbortTries}}.
+
+terminate(_Reason, _State) ->
+    ok.
 
 run(ping, _, _, State = #state{local_socket=Sock, connection_mode=local}) ->
     ok = gen_tcp:send(Sock, rpb_simple_driver:ping()),
