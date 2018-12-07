@@ -61,7 +61,8 @@ op_complete(Op, ok, ElapsedUs) ->
     op_complete(Op, {ok, 1}, ElapsedUs);
 
 %% TODO(borja): Remove this
-op_complete({_, ntping}=Op, {ok, Units}, Payload) ->
+op_complete({_, Tag}=Op, {ok, Units}, Payload) when Tag =:= ntping
+                                             orelse Tag =:= ntpread ->
     case get_distributed() of
         true ->
             gen_server:cast({global, ?MODULE}, {Op, {ok, Units}, Payload});
@@ -154,7 +155,7 @@ init([]) ->
 build_folsom_tables(Ops) ->
     lists:foreach(fun(Op) ->
         case Op of
-            {ntping, ntping} ->
+            {_, Tag} when Tag =:= ntping orelse Tag =:= ntpread ->
                 folsom_metrics:new_histogram({send_latencies, Op}, slide, lasp_bench_config:get(report_interval)),
                 folsom_metrics:new_histogram({rcv_latencies, Op}, slide, lasp_bench_config:get(report_interval));
             _ ->
@@ -315,7 +316,9 @@ process_stats(Now, #state{stats_writer=Module}=State) ->
 %% Write latency info for a given op to the appropriate CSV. Returns the
 %% number of successful and failed ops in this window of time.
 %%
-report_latency(#state{stats_writer=Module}=State, Elapsed, Window, Op={ntping, _}) ->
+report_latency(#state{stats_writer=Module}=State, Elapsed, Window, Op={_, Tag}) when Tag =:= ntping
+                                                                              orelse Tag =:= ntpread ->
+
     Stats = folsom_metrics:get_histogram_statistics({latencies, Op}),
     SendStats = folsom_metrics:get_histogram_statistics({send_latencies, Op}),
     RcvStats = folsom_metrics:get_histogram_statistics({rcv_latencies, Op}),

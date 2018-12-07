@@ -89,6 +89,18 @@ run(ntping, _, _, State = #state{connection_mode={noproxy, #partition_info{ring=
             do_ntping(Sock, State)
     end;
 
+run(ntpread, K,  _, State = #state{local_socket=Socket, connection_mode=local}) ->
+    do_ntpread(Socket, integer_to_binary(K(), 36), State);
+
+run(ntpread, K, _, State = #state{connection_mode={noproxy, #partition_info{ring=Ring,sockets=Sockets}}}) ->
+    Target = lists:nth(rand:uniform(length(Ring)), Ring),
+    case orddict:find(Target, Sockets) of
+        error ->
+            {error, unknown_target_node, State};
+        {ok, Sock} ->
+            do_ntpread(Sock, integer_to_binary(K(), 36), State)
+    end;
+
 run(readonly, KeyGen, _, State = #state{read_keys=1,
                                         connection_mode={noproxy, #partition_info{ring=Ring,sockets=Sockets}}}) ->
 
@@ -177,6 +189,21 @@ do_ntping(Socket, State) ->
 
         ServerTime={_,_,_} ->
             {ok, {ntping, SendTime, ServerTime, ReplyTime, State}}
+    end.
+
+do_ntpread(Socket, Key, State) ->
+    Msg = rpb_simple_driver:read_single(Key),
+    SendTime = os:timestamp(),
+    ok = gen_tcp:send(Socket, Msg),
+    {ok, BinReply} = gen_tcp:recv(Socket, 0),
+    ReplyTime = os:timestamp(),
+    Resp = rubis_proto:decode_serv_reply(BinReply),
+    case Resp of
+        error ->
+            {error, ignore, State};
+
+        {ok, ServerStart, ServerEnd} ->
+            {ok, {ntpread, {SendTime, ServerStart}, {ServerEnd, ReplyTime}, State}}
     end.
 
 %% Util

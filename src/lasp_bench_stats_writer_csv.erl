@@ -81,14 +81,16 @@ report_error({_SummaryFile, ErrorsFile},
                io_lib:format("\"~w\",\"~w\"\n",
                              [Key, Count])).
 
-report_latency({_SummaryFile, _ErrorsFile}, Elapsed, Window, Op={ntping, _}, Payload, Errors, Units) ->
+report_latency({_SummaryFile, _ErrorsFile}, Elapsed, Window, Op={_,Tag}, Payload, Errors, Units) when Tag =:= ntping
+                                                                                               orelse Tag =:= ntpread ->
+
     {SendStats, RcvStats, Stats} = Payload,
     SendLine = get_line_from_stats(Op, Elapsed, Window, SendStats, Errors, Units),
     RcvLine = get_line_from_stats(Op, Elapsed, Window, RcvStats, Errors, Units),
     DefaultLine = get_line_from_stats(Op, Elapsed, Window, Stats, Errors, Units),
     Fds = erlang:get({csv_file, Op}),
-    lists:foreach(fun({Tag, Fd}) ->
-        case Tag of
+    lists:foreach(fun({Type, Fd}) ->
+        case Type of
             default ->
                 file:write(Fd, DefaultLine);
             send ->
@@ -127,16 +129,17 @@ get_line_from_stats(Op, Elapsed, Window, Stats, Errors, Units) ->
 %% Internal functions
 %% ====================================================================
 %% TODO(borja): Hack
-op_csv_file({ntping, _Op}) ->
+op_csv_file({_, Tag}) when Tag =:= ntping
+                    orelse Tag =:= ntpread ->
     Names = [
-        {default, "ntping_latencies.csv"},
-        {send, "ntping_send_latencies.csv"},
-        {rcv, "ntping_rcv_latencies.csv"}
+        {default, atom_to_list(Tag) ++ "_latencies.csv"},
+        {send, atom_to_list(Tag) ++ "_send_latencies.csv"},
+        {rcv, atom_to_list(Tag) ++ "_rcv_latencies.csv"}
     ],
-    lists:map(fun({Tag, Fname}) ->
+    lists:map(fun({Type, Fname}) ->
         {ok, F} = file:open(Fname, [raw, binary, write]),
         ok = file:write(F, <<"elapsed, window, n, min, mean, median, 95th, 99th, 99_9th, max, errors\n">>),
-        {Tag, F}
+        {Type, F}
     end, Names);
 
 op_csv_file({Label, _Op}) ->
