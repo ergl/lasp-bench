@@ -167,18 +167,16 @@ perform_write(Sock, Msg, State, Retries) ->
     end.
 
 do_ntping(Socket, State) ->
-    ReqT = os:timestamp(),
-    ok = gen_tcp:send(Socket, rpb_simple_driver:ntping(ReqT)),
+    SendTime = os:timestamp(),
+    ok = gen_tcp:send(Socket, rpb_simple_driver:ntping(SendTime)),
     {ok, BinReply} = gen_tcp:recv(Socket, 0),
-    RepT = os:timestamp(),
+    ReplyTime = os:timestamp(),
     case rubis_proto:decode_serv_reply(BinReply) of
         {error, Reason} ->
             {error, Reason, State};
 
-        ServerT={_,_,_} ->
-            SendTime = timer:now_diff(ServerT, ReqT),
-            RepTime = timer:now_diff(RepT, ServerT),
-            {ok, {ntping, SendTime, RepTime, State}}
+        ServerTime={_,_,_} ->
+            {ok, {ntping, SendTime, ServerTime, ReplyTime, State}}
     end.
 
 %% Util

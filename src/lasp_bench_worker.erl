@@ -319,9 +319,11 @@ worker_next_op(State) ->
 
 %% TODO(borja): Remove this
 %% If op was ntping, collect the send and rcv latencies here
-hack_preprocess_driver_sate({_, ntping}=Op, {ntping, SendLatency, RcvLatency, RealState}) ->
-    ok = lasp_bench_stats:op_complete(Op, ok, {send, SendLatency}),
-    ok = lasp_bench_stats:op_complete(Op, ok, {rcv, RcvLatency}),
+hack_preprocess_driver_sate({_, ntping}=Op, {ntping, SendTime, ServerTime, ReplyTime, RealState}) ->
+    RequestTime = erlang:max(0, timer:now_diff(ServerTime, SendTime)),
+    ResponseTime = erlang:max(0, timer:now_diff(ReplyTime, ServerTime)),
+    ok = lasp_bench_stats:op_complete(Op, ok, {send, RequestTime}),
+    ok = lasp_bench_stats:op_complete(Op, ok, {rcv, ResponseTime}),
     RealState;
 
 hack_preprocess_driver_sate(_, DriverState) ->
