@@ -31,6 +31,8 @@
 
 -module(lasp_bench_stats_writer_csv).
 
+-include("hack.hrl").
+
 -export([new/2,
          terminate/1,
          process_summary/5,
@@ -81,8 +83,13 @@ report_error({_SummaryFile, ErrorsFile},
                io_lib:format("\"~w\",\"~w\"\n",
                              [Key, Count])).
 
-report_latency({_SummaryFile, _ErrorsFile}, Elapsed, Window, Op={_,Tag}, Payload, Errors, Units) when Tag =:= ntping
-                                                                                               orelse Tag =:= ntpread ->
+report_latency({_SummaryFile, _ErrorsFile},
+               Elapsed,
+               Window,
+               Op={_,Tag},
+               Payload,
+               Errors,
+               Units) when ?hack_tag(Tag) ->
 
     {SendStats, RcvStats, Stats} = Payload,
     SendLine = get_line_from_stats(Op, Elapsed, Window, SendStats, Errors, Units),
@@ -129,8 +136,7 @@ get_line_from_stats(Op, Elapsed, Window, Stats, Errors, Units) ->
 %% Internal functions
 %% ====================================================================
 %% TODO(borja): Hack
-op_csv_file({_, Tag}) when Tag =:= ntping
-                    orelse Tag =:= ntpread ->
+op_csv_file({_, Tag}) when ?hack_tag(Tag) ->
     Names = [
         {default, atom_to_list(Tag) ++ "_latencies.csv"},
         {send, atom_to_list(Tag) ++ "_send_latencies.csv"},
