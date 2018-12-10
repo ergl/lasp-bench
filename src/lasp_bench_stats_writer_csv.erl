@@ -62,7 +62,14 @@ new(Ops, Measurements) ->
 
 terminate({SummaryFile, ErrorsFile}) ->
     ?INFO("module=~s event=stop stats_sink=csv\n", [?MODULE]),
-    [ok = file:close(F) || {{csv_file, _}, F} <- erlang:get()],
+    [begin
+        case Op of
+            {_, Tag} when ?hack_tag(Tag) ->
+                ok = lists:foreach(fun file:close/1, F);
+            _ ->
+                ok = file:close(F)
+        end
+    end || {{csv_file, Op}, F} <- erlang:get()],
     ok = file:close(SummaryFile),
     ok = file:close(ErrorsFile),
     ok.
