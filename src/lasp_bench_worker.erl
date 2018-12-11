@@ -327,7 +327,9 @@ hack_preprocess_driver_sate({_, ntping}=Op, {ntping, SendTime, ServerTime, Reply
     ok = lasp_bench_stats:op_complete(Op, ok, {rcv, ResponseTime}),
     RealState;
 
-hack_preprocess_driver_sate({_, ntpread}=Op, {ntpread, {SendTime, ServerStart}, {ServerEnd, ReplyTime}, RealState}) ->
+hack_preprocess_driver_sate({_, Tag}=Op,
+                            {Tag, {SendTime, ServerStart}, {ServerEnd, ReplyTime}, RealState}) when Tag =:= ping
+                                                                                             orelse Tag =:= ntpread->
     RequestTime = erlang:max(0, timer:now_diff(ServerStart, SendTime)),
     ExecuteTime = erlang:max(0, timer:now_diff(ServerEnd, ServerStart)),
     ResponseTime = erlang:max(0, timer:now_diff(ReplyTime, ServerEnd)),

@@ -1,2 +1,4 @@
 
--define(hack_tag(Tag), Tag =:= ntping orelse Tag =:= ntpread).
+-define(hack_tag(Tag), Tag =:= ping orelse
+                       Tag =:= ntping orelse
+                       Tag =:= ntpread).
