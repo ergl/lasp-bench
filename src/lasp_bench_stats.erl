@@ -71,6 +71,8 @@ op_complete({_, Tag}=Op, {ok, Units}, Payload) when ?hack_tag(Tag) ->
             case Payload of
                 {send, Us} ->
                     folsom_metrics:notify({send_latencies, Op}, Us);
+                {execute, Us} ->
+                    folsom_metrics:notify({execute_latencies, Op}, Us);
                 {rcv, Us} ->
                     folsom_metrics:notify({rcv_latencies, Op}, Us);
                 ElapsedUs ->
@@ -158,6 +160,7 @@ build_folsom_tables(Ops) ->
         case Op of
             {_, Tag} when ?hack_tag(Tag) ->
                 folsom_metrics:new_histogram({send_latencies, Op}, slide, lasp_bench_config:get(report_interval)),
+                folsom_metrics:new_histogram({execute_latencies, Op}, slide, lasp_bench_config:get(report_interval)),
                 folsom_metrics:new_histogram({rcv_latencies, Op}, slide, lasp_bench_config:get(report_interval));
             _ ->
                 ok
@@ -193,6 +196,8 @@ handle_cast({Op, {ok, Units}, Payload}, State = #state{last_write_time = LWT, re
     case Payload of
         {send, Us} ->
             folsom_metrics:notify({send_latencies, Op}, Us);
+        {execute, Us} ->
+            folsom_metrics:notify({execute_latencies, Op}, Us);
         {rcv, Us} ->
             folsom_metrics:notify({rcv_latencies, Op}, Us);
         ElapsedUs ->
@@ -201,6 +206,7 @@ handle_cast({Op, {ok, Units}, Payload}, State = #state{last_write_time = LWT, re
             folsom_metrics:notify({units, Op}, {inc, Units})
     end,
     {noreply, NewState};
+
 handle_cast(_, State) ->
     {noreply, State}.
 
@@ -219,7 +225,6 @@ terminate(_Reason, #state{stats_writer=Module}=State) ->
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
-
 
 
 %% ====================================================================
@@ -320,6 +325,7 @@ process_stats(Now, #state{stats_writer=Module}=State) ->
 report_latency(#state{stats_writer=Module}=State, Elapsed, Window, Op={_, Tag}) when ?hack_tag(Tag) ->
     Stats = folsom_metrics:get_histogram_statistics({latencies, Op}),
     SendStats = folsom_metrics:get_histogram_statistics({send_latencies, Op}),
+    ExecuteStats = folsom_metrics:get_histogram_statistics({execute_latencies, Op}),
     RcvStats = folsom_metrics:get_histogram_statistics({rcv_latencies, Op}),
     Errors = error_counter(Op),
     Units = folsom_metrics:get_metric_value({units, Op}),
@@ -328,7 +334,7 @@ report_latency(#state{stats_writer=Module}=State, Elapsed, Window, Op={_, Tag}) 
                           Elapsed,
                           Window,
                           Op,
-                          {SendStats, RcvStats, Stats},
+                          {SendStats, ExecuteStats, RcvStats, Stats},
                           Errors,
                           Units),
 

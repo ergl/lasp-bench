@@ -98,8 +98,9 @@ report_latency({_SummaryFile, _ErrorsFile},
                Errors,
                Units) when ?hack_tag(Tag) ->
 
-    {SendStats, RcvStats, Stats} = Payload,
+    {SendStats, ExecuteStats, RcvStats, Stats} = Payload,
     SendLine = get_line_from_stats(Op, Elapsed, Window, SendStats, Errors, Units),
+    ExecuteLine = get_line_from_stats(Op, Elapsed, Window, ExecuteStats, Errors, Units),
     RcvLine = get_line_from_stats(Op, Elapsed, Window, RcvStats, Errors, Units),
     DefaultLine = get_line_from_stats(Op, Elapsed, Window, Stats, Errors, Units),
     Fds = erlang:get({csv_file, Op}),
@@ -109,6 +110,8 @@ report_latency({_SummaryFile, _ErrorsFile},
                 file:write(Fd, DefaultLine);
             send ->
                 file:write(Fd, SendLine);
+            execute ->
+                file:write(Fd, ExecuteLine);
             rcv ->
                 file:write(Fd, RcvLine)
         end
@@ -147,6 +150,7 @@ op_csv_file({_, Tag}) when ?hack_tag(Tag) ->
     Names = [
         {default, atom_to_list(Tag) ++ "_latencies.csv"},
         {send, atom_to_list(Tag) ++ "_send_latencies.csv"},
+        {execute, atom_to_list(Tag) ++ "_execute_latencies.csv"},
         {rcv, atom_to_list(Tag) ++ "_rcv_latencies.csv"}
     ],
     lists:map(fun({Type, Fname}) ->

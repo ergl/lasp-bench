@@ -323,13 +323,16 @@ hack_preprocess_driver_sate({_, ntping}=Op, {ntping, SendTime, ServerTime, Reply
     RequestTime = erlang:max(0, timer:now_diff(ServerTime, SendTime)),
     ResponseTime = erlang:max(0, timer:now_diff(ReplyTime, ServerTime)),
     ok = lasp_bench_stats:op_complete(Op, ok, {send, RequestTime}),
+    ok = lasp_bench_stats:op_complete(Op, ok, {execute, 0}),
     ok = lasp_bench_stats:op_complete(Op, ok, {rcv, ResponseTime}),
     RealState;
 
 hack_preprocess_driver_sate({_, ntpread}=Op, {ntpread, {SendTime, ServerStart}, {ServerEnd, ReplyTime}, RealState}) ->
     RequestTime = erlang:max(0, timer:now_diff(ServerStart, SendTime)),
+    ExecuteTime = erlang:max(0, timer:now_diff(ServerEnd, ServerStart)),
     ResponseTime = erlang:max(0, timer:now_diff(ReplyTime, ServerEnd)),
     ok = lasp_bench_stats:op_complete(Op, ok, {send, RequestTime}),
+    ok = lasp_bench_stats:op_complete(Op, ok, {execute, ExecuteTime}),
     ok = lasp_bench_stats:op_complete(Op, ok, {rcv, ResponseTime}),
     RealState;
 
