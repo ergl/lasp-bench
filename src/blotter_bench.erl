@@ -73,8 +73,8 @@ run(timed_read, K,  _, State) when ?local_conn(State) ->
     do_timed_read(State#state.local_socket, integer_to_binary(K(), 36), State);
 
 run(timed_read, K, _, State) ->
-    route_to_node(fun(Sock, State) ->
-        do_timed_read(Sock, integer_to_binary(K(), 36), State)
+    route_to_node(fun(Sock, FunState) ->
+        do_timed_read(Sock, integer_to_binary(K(), 36), FunState)
     end, State);
 
 run(readonly, KeyGen, _, State = #state{read_keys=1,
