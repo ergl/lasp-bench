@@ -90,30 +90,59 @@ report_error({_SummaryFile, ErrorsFile},
                io_lib:format("\"~w\",\"~w\"\n",
                              [Key, Count])).
 
-report_latency({_SummaryFile, _ErrorsFile},
-               Elapsed,
-               Window,
-               Op={_,Tag},
-               Payload,
-               Errors,
-               Units) when ?hack_tag(Tag) ->
-
-    {SendStats, ExecuteStats, RcvStats, Stats} = Payload,
-    SendLine = get_line_from_stats(Op, Elapsed, Window, SendStats, Errors, Units),
-    ExecuteLine = get_line_from_stats(Op, Elapsed, Window, ExecuteStats, Errors, Units),
-    RcvLine = get_line_from_stats(Op, Elapsed, Window, RcvStats, Errors, Units),
-    DefaultLine = get_line_from_stats(Op, Elapsed, Window, Stats, Errors, Units),
+report_latency(_, Elapsed, Window, Op={_, noop}, Payload, Errors, Units) ->
+    {SendStats, RcvStats, Stats} = Payload,
     Fds = erlang:get({csv_file, Op}),
     lists:foreach(fun({Type, Fd}) ->
         case Type of
             default ->
-                file:write(Fd, DefaultLine);
+                file:write(Fd, get_line_from_stats(Op, Elapsed, Window, Stats, Errors, Units));
             send ->
-                file:write(Fd, SendLine);
-            execute ->
-                file:write(Fd, ExecuteLine);
+                file:write(Fd, get_line_from_stats(Op, Elapsed, Window, SendStats, Errors, Units));
             rcv ->
-                file:write(Fd, RcvLine)
+                file:write(Fd, get_line_from_stats(Op, Elapsed, Window, RcvStats, Errors, Units))
+        end
+    end, Fds);
+
+report_latency(_, Elapsed, Window, Op={_, ping}, Payload, Errors, Units) ->
+    {SendStats, ExecuteStats, StartStats, CommitStats, RcvStats, Stats} = Payload,
+    Fds = erlang:get({csv_file, Op}),
+    lists:foreach(fun({Type, Fd}) ->
+        case Type of
+            default ->
+                file:write(Fd, get_line_from_stats(Op, Elapsed, Window, Stats, Errors, Units));
+            send ->
+                file:write(Fd, get_line_from_stats(Op, Elapsed, Window, SendStats, Errors, Units));
+            exe ->
+                file:write(Fd, get_line_from_stats(Op, Elapsed, Window, ExecuteStats, Errors, Units));
+            start ->
+                file:write(Fd, get_line_from_stats(Op, Elapsed, Window, StartStats, Errors, Units));
+            commit ->
+                file:write(Fd, get_line_from_stats(Op, Elapsed, Window, CommitStats, Errors, Units));
+            rcv ->
+                file:write(Fd, get_line_from_stats(Op, Elapsed, Window, RcvStats, Errors, Units))
+        end
+    end, Fds);
+
+report_latency(_, Elapsed, Window, Op={_, timed_read}, Payload, Errors, Units) ->
+    {SendStats, ExecuteStats, StartStats, ReadStats, CommitStats, RcvStats, Stats} = Payload,
+    Fds = erlang:get({csv_file, Op}),
+    lists:foreach(fun({Type, Fd}) ->
+        case Type of
+            default ->
+                file:write(Fd, get_line_from_stats(Op, Elapsed, Window, Stats, Errors, Units));
+            send ->
+                file:write(Fd, get_line_from_stats(Op, Elapsed, Window, SendStats, Errors, Units));
+            exe ->
+                file:write(Fd, get_line_from_stats(Op, Elapsed, Window, ExecuteStats, Errors, Units));
+            start ->
+                file:write(Fd, get_line_from_stats(Op, Elapsed, Window, StartStats, Errors, Units));
+            read ->
+                file:write(Fd, get_line_from_stats(Op, Elapsed, Window, ReadStats, Errors, Units));
+            commit ->
+                file:write(Fd, get_line_from_stats(Op, Elapsed, Window, CommitStats, Errors, Units));
+            rcv ->
+                file:write(Fd, get_line_from_stats(Op, Elapsed, Window, RcvStats, Errors, Units))
         end
     end, Fds);
 
@@ -146,13 +175,40 @@ get_line_from_stats(Op, Elapsed, Window, Stats, Errors, Units) ->
 %% Internal functions
 %% ====================================================================
 %% TODO(borja): Hack
-op_csv_file({_, Tag}) when ?hack_tag(Tag) ->
-    Names = [
-        {default, atom_to_list(Tag) ++ "_latencies.csv"},
-        {send, atom_to_list(Tag) ++ "_send_latencies.csv"},
-        {execute, atom_to_list(Tag) ++ "_execute_latencies.csv"},
-        {rcv, atom_to_list(Tag) ++ "_rcv_latencies.csv"}
-    ],
+op_csv_file({_, noop}) ->
+    Names = [{default, "noop_latencies.csv"},
+             {send, "noop_send_latencies.csv"},
+             {rcv, "noop_rcv_latencies.csv"}],
+
+    lists:map(fun({Type, Fname}) ->
+        {ok, F} = file:open(Fname, [raw, binary, write]),
+        ok = file:write(F, <<"elapsed, window, n, min, mean, median, 95th, 99th, 99_9th, max, errors\n">>),
+        {Type, F}
+    end, Names);
+
+op_csv_file({_, ping}) ->
+    Names = [{default, "ping_latencies.csv"},
+             {send, "ping_send_latencies.csv"},
+             {exe, "ping_execute_latencies.csv"},
+             {start, "ping_start_tx_latencies.csv"},
+             {commit, "ping_commit_tx_latencies.csv"},
+             {rcv, "ping_rcv_latencies.csv"}],
+
+    lists:map(fun({Type, Fname}) ->
+        {ok, F} = file:open(Fname, [raw, binary, write]),
+        ok = file:write(F, <<"elapsed, window, n, min, mean, median, 95th, 99th, 99_9th, max, errors\n">>),
+        {Type, F}
+    end, Names);
+
+op_csv_file({_, timed_read}) ->
+    Names = [{default, "timed_read_latencies.csv"},
+             {send, "timed_read_send_latencies.csv"},
+             {exe, "timed_read_execute_latencies.csv"},
+             {start, "timed_read_start_tx_latencies.csv"},
+             {read, "timed_read_read_latencies.csv"},
+             {commit, "timed_read_commit_tx_latencies.csv"},
+             {rcv, "timed_read_rcv_latencies.csv"}],
+
     lists:map(fun({Type, Fname}) ->
         {ok, F} = file:open(Fname, [raw, binary, write]),
         ok = file:write(F, <<"elapsed, window, n, min, mean, median, 95th, 99th, 99_9th, max, errors\n">>),

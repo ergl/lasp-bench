@@ -318,25 +318,41 @@ worker_next_op(State) ->
     end.
 
 %% TODO(borja): Remove this
-%% If op was ntping, collect the send and rcv latencies here
-hack_preprocess_driver_sate({_, ntping}=Op, {ntping, SendTime, ServerTime, ReplyTime, RealState}) ->
+hack_preprocess_driver_sate({_, noop}=Op, {noop, SendTime, ServerTime, ReplyTime, State}) ->
     RequestTime = erlang:max(0, timer:now_diff(ServerTime, SendTime)),
     ResponseTime = erlang:max(0, timer:now_diff(ReplyTime, ServerTime)),
     ok = lasp_bench_stats:op_complete(Op, ok, {send, RequestTime}),
-    ok = lasp_bench_stats:op_complete(Op, ok, {execute, 0}),
     ok = lasp_bench_stats:op_complete(Op, ok, {rcv, ResponseTime}),
-    RealState;
+    State;
 
-hack_preprocess_driver_sate({_, Tag}=Op,
-                            {Tag, {SendTime, ServerStart}, {ServerEnd, ReplyTime}, RealState}) when Tag =:= ping
-                                                                                             orelse Tag =:= ntpread->
+hack_preprocess_driver_sate({_, ping}=Op, {ping, SendTime, StampMap, ReplyTime, State}) ->
+    %% Took* times were measured on the server
+    {ServerStart, TookStart, TookCommit, ServerSend} = StampMap,
     RequestTime = erlang:max(0, timer:now_diff(ServerStart, SendTime)),
-    ExecuteTime = erlang:max(0, timer:now_diff(ServerEnd, ServerStart)),
-    ResponseTime = erlang:max(0, timer:now_diff(ReplyTime, ServerEnd)),
+    ExecuteTime = erlang:max(0, timer:now_diff(ServerSend, ServerStart)),
+    ResponseTime = erlang:max(0, timer:now_diff(ReplyTime, ServerSend)),
+
     ok = lasp_bench_stats:op_complete(Op, ok, {send, RequestTime}),
-    ok = lasp_bench_stats:op_complete(Op, ok, {execute, ExecuteTime}),
+    ok = lasp_bench_stats:op_complete(Op, ok, {exe, ExecuteTime}),
+    ok = lasp_bench_stats:op_complete(Op, ok, {start, TookStart}),
+    ok = lasp_bench_stats:op_complete(Op, ok, {commit, TookCommit}),
     ok = lasp_bench_stats:op_complete(Op, ok, {rcv, ResponseTime}),
-    RealState;
+    State;
+
+hack_preprocess_driver_sate({_, timed_read}=Op, {timed_read, SendTime, StampMap, ReplyTime, State}) ->
+    %% Took* times were measured on the server
+    {ServerStart, TookStart, TookRead, TookCommit, ServerSend} = StampMap,
+    RequestTime = erlang:max(0, timer:now_diff(ServerStart, SendTime)),
+    ExecuteTime = erlang:max(0, timer:now_diff(ServerSend, ServerStart)),
+    ResponseTime = erlang:max(0, timer:now_diff(ReplyTime, ServerSend)),
+
+    ok = lasp_bench_stats:op_complete(Op, ok, {send, RequestTime}),
+    ok = lasp_bench_stats:op_complete(Op, ok, {exe, ExecuteTime}),
+    ok = lasp_bench_stats:op_complete(Op, ok, {start, TookStart}),
+    ok = lasp_bench_stats:op_complete(Op, ok, {read, TookRead}),
+    ok = lasp_bench_stats:op_complete(Op, ok, {commit, TookCommit}),
+    ok = lasp_bench_stats:op_complete(Op, ok, {rcv, ResponseTime}),
+    State;
 
 hack_preprocess_driver_sate(_, DriverState) ->
     DriverState.
