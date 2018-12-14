@@ -89,6 +89,7 @@ op_complete(Op, {ok, Units}, ElapsedUs) ->
             folsom_metrics:notify({units, Op}, {inc, Units})
     end,
     ok;
+
 op_complete(Op, Result, ElapsedUs) ->
     gen_server:call({global, ?MODULE}, {op, Op, Result, ElapsedUs}, infinity).
 
@@ -181,11 +182,12 @@ build_folsom_tables(Ops) ->
         folsom_metrics:new_counter({units, Op})
     end, Ops).
 
+%% Schedule next report
 handle_call(run, _From, State) ->
-    %% Schedule next report
     Now = os:timestamp(),
     timer:send_interval(State#state.report_interval, report),
     {reply, ok, State#state { start_time = Now, last_write_time = Now}};
+
 handle_call({op, Op, {error, Reason}, _ElapsedUs}, _From, State) ->
     increment_error_counter(Op),
     increment_error_counter({Op, Reason}),
@@ -238,7 +240,6 @@ terminate(_Reason, #state{stats_writer=Module}=State) ->
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
-
 %% ====================================================================
 %% Internal functions
 %% ====================================================================
@@ -261,6 +262,7 @@ get_distributed() ->
 increment_error_counter(Key) ->
     ets_increment(lasp_bench_errors, Key, 1).
 
+%% FIXME(borja): Update to ets:update_counter/4
 ets_increment(Tab, Key, Incr) when is_integer(Incr) ->
     %% Increment the counter for this specific key. We have to deal with
     %% missing keys, so catch the update if it fails and init as necessary
@@ -276,6 +278,7 @@ ets_increment(Tab, Key, Incr) when is_integer(Incr) ->
                     ets_increment(Tab, Key, Incr)
             end
     end;
+
 ets_increment(Tab, Key, Incr) when is_float(Incr) ->
     Old = case ets:lookup(Tab, Key) of
               [{_, Val}] -> Val;
@@ -293,7 +296,6 @@ lookup_or_zero(Tab, Key) ->
         Value ->
             Value
     end.
-
 
 process_stats(Now, #state{stats_writer=Module}=State) ->
     %% Determine how much time has elapsed (seconds) since our last report
@@ -392,16 +394,14 @@ report_total_errors(#state{stats_writer=Module}=State) ->
             ErrCounts = lists:sort(UnsortedErrCounts),
             ?INFO("Total Errors:\n", []),
             F = fun({Key, Count}) ->
-                        case lists:member(Key, State#state.ops) of
-                            true ->
-                                ok; % per op total
-                            false ->
-                                ?INFO("  ~p: ~p\n", [Key, Count]),
-                                Module:report_error({State#state.stats_writer,
-                                                                       State#state.stats_writer_data},
-                                                                      Key, Count)
-                        end
-                end,
+                case lists:member(Key, State#state.ops) of
+                    true ->
+                        ok; % per op total
+                    false ->
+                        ?INFO("  ~p: ~p\n", [Key, Count]),
+                        Module:report_error({State#state.stats_writer, State#state.stats_writer_data}, Key, Count)
+                end
+            end,
             lists:foreach(F, ErrCounts)
     end.
 
@@ -416,4 +416,6 @@ consume_report_msgs() ->
 % Assuming all stats sink modules are prefixed with lasp_bench_stats_writer_
 normalize_name(StatsSink) when is_atom(StatsSink) ->
     {ok, list_to_atom("lasp_bench_stats_writer_" ++ atom_to_list(StatsSink))};
-normalize_name(StatsSink) -> {error, {StatsSink, invalid_name}}.
+
+normalize_name(StatsSink) ->
+    {error, {StatsSink, invalid_name}}.

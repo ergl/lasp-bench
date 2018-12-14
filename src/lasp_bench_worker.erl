@@ -174,7 +174,6 @@ code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 
-
 %% ====================================================================
 %% Internal functions
 %% ====================================================================
@@ -356,7 +355,6 @@ hack_preprocess_driver_sate({_, timed_read}=Op, {timed_read, SendTime, StampMap,
 
 hack_preprocess_driver_sate(_, DriverState) ->
     DriverState.
-
 
 needs_shutdown(State) ->
     Parent = State#state.parent_pid,
