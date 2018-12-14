@@ -22,6 +22,8 @@
     abort_retries :: non_neg_integer()
 }).
 
+-define(local_conn(State), State#state.connection_mode =:= local).
+
 new(_Id) ->
     _ = application:ensure_all_started(rubis_proto),
     Ip = lasp_bench_config:get(rubis_ip, '127.0.0.1'),
@@ -55,41 +57,25 @@ new(_Id) ->
 terminate(_Reason, _State) ->
     ok.
 
-run(ping, _, _, State = #state{local_socket=Sock, connection_mode=local}) ->
-    do_ping(Sock, State);
+run(noop, _, _, State) when ?local_conn(State) ->
+    do_noop(State#state.local_socket, State);
 
-run(ping, _, _, State = #state{connection_mode={noproxy, #partition_info{ring=Ring,sockets=Sockets}}}) ->
-    Target = lists:nth(rand:uniform(length(Ring)), Ring),
-    case orddict:find(Target, Sockets) of
-        error ->
-            {error, unknown_target_node, State};
-        {ok, Sock} ->
-            do_ping(Sock, State)
-    end;
+run(noop, _, _, State) ->
+    route_to_node(fun do_noop/2, State);
 
-run(ntping, _, _, State = #state{local_socket=Socket, connection_mode=local}) ->
-    do_ntping(Socket, State);
+run(ping, _, _, State) when ?local_conn(State) ->
+    do_ping(State#state.local_socket, State);
 
-run(ntping, _, _, State = #state{connection_mode={noproxy, #partition_info{ring=Ring,sockets=Sockets}}}) ->
-    Target = lists:nth(rand:uniform(length(Ring)), Ring),
-    case orddict:find(Target, Sockets) of
-        error ->
-            {error, unknown_target_node, State};
-        {ok, Sock} ->
-            do_ntping(Sock, State)
-    end;
+run(ping, _, _, State) ->
+    route_to_node(fun do_ping/2, State);
 
-run(ntpread, K,  _, State = #state{local_socket=Socket, connection_mode=local}) ->
-    do_ntpread(Socket, integer_to_binary(K(), 36), State);
+run(timed_read, K,  _, State) when ?local_conn(State) ->
+    do_timed_read(State#state.local_socket, integer_to_binary(K(), 36), State);
 
-run(ntpread, K, _, State = #state{connection_mode={noproxy, #partition_info{ring=Ring,sockets=Sockets}}}) ->
-    Target = lists:nth(rand:uniform(length(Ring)), Ring),
-    case orddict:find(Target, Sockets) of
-        error ->
-            {error, unknown_target_node, State};
-        {ok, Sock} ->
-            do_ntpread(Sock, integer_to_binary(K(), 36), State)
-    end;
+run(timed_read, K, _, State) ->
+    route_to_node(fun(Sock, State) ->
+        do_timed_read(Sock, integer_to_binary(K(), 36), State)
+    end, State);
 
 run(readonly, KeyGen, _, State = #state{read_keys=1,
                                         connection_mode={noproxy, #partition_info{ring=Ring,sockets=Sockets}}}) ->
@@ -168,47 +154,55 @@ perform_write(Sock, Msg, State, Retries) ->
             {ok, State}
     end.
 
+do_noop(Socket, State) ->
+    SendTime = os:timestamp(),
+    ok = gen_tcp:send(Socket, rpb_simple_driver:timed_noop()),
+    {ok, BinReply} = gen_tcp:recv(Socket, 0),
+    ReplyTime = os:timestamp(),
+    case rubis_proto:decode_serv_reply(BinReply) of
+        {no_op, ServerTime={_, _, _}} ->
+            {ok, {noop, SendTime, ServerTime, ReplyTime, State}};
+        Other ->
+            {error, Other, State}
+    end.
+
 do_ping(Socket, State) ->
     SendTime = os:timestamp(),
-    ok = gen_tcp:send(Socket, rpb_simple_driver:ping()),
+    ok = gen_tcp:send(Socket, rpb_simple_driver:timed_ping()),
     {ok, BinReply} = gen_tcp:recv(Socket, 0),
     ReplyTime = os:timestamp(),
     case rubis_proto:decode_serv_reply(BinReply) of
-        {error, Reason} ->
-            {error, Reason, State};
-        {ok, ServerStart, ServerEnd} ->
-            {ok, {ping, {SendTime, ServerStart}, {ServerEnd, ReplyTime}, State}}
+        {ping, StampMap} ->
+            {ok, {ping, SendTime, StampMap, ReplyTime, State}};
+        Other ->
+            {error, Other, State}
     end.
 
-do_ntping(Socket, State) ->
-    SendTime = os:timestamp(),
-    ok = gen_tcp:send(Socket, rpb_simple_driver:ntping(SendTime)),
-    {ok, BinReply} = gen_tcp:recv(Socket, 0),
-    ReplyTime = os:timestamp(),
-    case rubis_proto:decode_serv_reply(BinReply) of
-        {error, Reason} ->
-            {error, Reason, State};
-
-        ServerTime={_,_,_} ->
-            {ok, {ntping, SendTime, ServerTime, ReplyTime, State}}
-    end.
-
-do_ntpread(Socket, Key, State) ->
-    Msg = rpb_simple_driver:read_single(Key),
+do_timed_read(Socket, Key, State) ->
+    Msg = rpb_simple_driver:timed_read(Key),
     SendTime = os:timestamp(),
     ok = gen_tcp:send(Socket, Msg),
     {ok, BinReply} = gen_tcp:recv(Socket, 0),
     ReplyTime = os:timestamp(),
     Resp = rubis_proto:decode_serv_reply(BinReply),
     case Resp of
-        error ->
-            {error, ignore, State};
-
-        {ok, ServerStart, ServerEnd} ->
-            {ok, {ntpread, {SendTime, ServerStart}, {ServerEnd, ReplyTime}, State}}
+        {error, Reason} ->
+            {error, Reason, State};
+        {ok, StampMap} ->
+            {ok, {timed_read, SendTime, StampMap, ReplyTime, State}}
     end.
 
 %% Util
+route_to_node(Fn, State) ->
+    {noproxy, #partition_info{ring=Ring,sockets=Sockets}} = State#state.connection_mode,
+    Target = lists:nth(rand:uniform(length(Ring)), Ring),
+    case orddict:find(Target, Sockets) of
+        error ->
+            {error, unknown_target_node, State};
+        {ok, Sock} ->
+            Fn(Sock, State)
+    end.
+
 -spec gen_keys(non_neg_integer(), key_gen(non_neg_integer())) -> [binary()].
 gen_keys(N, K) ->
     gen_keys(N, K, []).
@@ -220,10 +214,10 @@ gen_keys(N, K, Acc) ->
     gen_keys(N - 1, K, [integer_to_binary(K(), 36) | Acc]).
 
 get_remote_ring(Sock) ->
-    ok = gen_tcp:send(Sock, rpb_simple_driver:get_ring()),
+    ok = gen_tcp:send(Sock, rpb_simple_driver:partitions()),
     {ok, BinReply} = gen_tcp:recv(Sock, 0),
-    Data = rubis_proto:decode_serv_reply(BinReply),
-    blotter_partitioning:new(Data).
+    {ring, RingData} = rubis_proto:decode_serv_reply(BinReply),
+    blotter_partitioning:new(RingData).
 
 open_ring_sockets(SelfNode, Ring, Port, Options, Sockets) ->
     Unique = ordsets:from_list(Ring),

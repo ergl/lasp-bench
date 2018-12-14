@@ -10,7 +10,7 @@
  {<<"lager">>,{pkg,<<"lager">>,<<"3.5.1">>},0},
  {<<"rubis_proto">>,
   {git,"https://github.com/ergl/rubis_proto.git",
-       {ref,"3f61155899adddda4ddc1f9a57557aa2c97c0ad5"}},
+       {ref,"6f894376c523d28d9910e20a607a6501d7ea505c"}},
   0}]}.
 [
 {pkg_hash,[

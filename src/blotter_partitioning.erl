@@ -5,8 +5,7 @@
          get_key_node/2]).
 
 
-new(BinRing) ->
-    lists:map(fun(N) -> binary_to_atom(N, latin1) end, BinRing).
+new(Ring) -> Ring.
 
 get_key_node(Key, Ring) ->
     Hash = convert_key(Key),
