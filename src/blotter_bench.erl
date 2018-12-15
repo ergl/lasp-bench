@@ -77,36 +77,12 @@ run(timed_read, K, _, State) ->
         do_timed_read(Sock, integer_to_binary(K(), 36), FunState)
     end, State);
 
-run(readonly, KeyGen, _, State = #state{read_keys=1,
-                                        connection_mode={noproxy, #partition_info{ring=Ring,sockets=Sockets}}}) ->
-
-    Key = integer_to_binary(KeyGen(), 36),
-    Target = blotter_partitioning:get_key_node(Key, Ring),
-    case orddict:find(Target, Sockets) of
-        error ->
-            {error, unknown_target_node, State};
-
-        {ok, Sock} ->
-            Msg = rpb_simple_driver:read_only([Key]),
-            ok = gen_tcp:send(Sock, Msg),
-            {ok, BinReply} = gen_tcp:recv(Sock, 0),
-            Resp = rubis_proto:decode_serv_reply(BinReply),
-            case Resp of
-                {error, Reason} ->
-                    {error, Reason, State};
-                ok ->
-                    {ok, State}
-            end
-
-    end;
-
-
-run(readonly, KeyGen, _, State = #state{local_socket=Sock, connection_mode=local, read_keys=NRead}) ->
-    Keys = gen_keys(NRead, KeyGen),
+run(readonly, K, _, State=#state{local_socket=Socket, read_keys=NRead}) when ?local_conn(State) ->
+    Keys = gen_keys(NRead, K),
     Msg = rpb_simple_driver:read_only(Keys),
 
-    ok = gen_tcp:send(Sock, Msg),
-    {ok, BinReply} = gen_tcp:recv(Sock, 0),
+    ok = gen_tcp:send(Socket, Msg),
+    {ok, BinReply} = gen_tcp:recv(Socket, 0),
 
     Resp = rubis_proto:decode_serv_reply(BinReply),
     case Resp of
