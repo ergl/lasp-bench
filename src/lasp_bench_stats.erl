@@ -46,6 +46,14 @@
                  last_warn = {0,0,0}}).
 
 -define(WARN_INTERVAL, 1000). % Warn once a second
+
+-define(COUNTER(Name), folsom_metrics:new_counter(Name)).
+-define(HISTOGRAM(Name, Interval), folsom_metrics:new_histogram(Name, slide, Interval)).
+-define(HISTOGRAMS(Op, Names, Interval),
+    lists:foreach(fun(Name) ->
+        folsom_metrics:new_histogram({Name, Op}, slide, Interval)
+    end, Names)).
+
 %% ====================================================================
 %% API
 %% ====================================================================
@@ -158,28 +166,18 @@ build_folsom_tables(Ops) ->
         case Op of
             {_, noop} ->
                 %% We only care about send/receive for noop
-                folsom_metrics:new_histogram({send, Op}, slide, Interval),
-                folsom_metrics:new_histogram({rcv, Op}, slide, Interval);
+                ?HISTOGRAMS(Op, [send, rcv], Interval);
             {_, ping} ->
                 %% For ping, we care about send, receive, overall execution, and time to start and commit
-                folsom_metrics:new_histogram({send, Op}, slide, Interval),
-                folsom_metrics:new_histogram({rcv, Op}, slide, Interval),
-                folsom_metrics:new_histogram({exe, Op}, slide, Interval),
-                folsom_metrics:new_histogram({start, Op}, slide, Interval),
-                folsom_metrics:new_histogram({commit, Op}, slide, Interval);
+                ?HISTOGRAMS(Op, [send, rcv, exe, start, commit], Interval);
             {_, timed_read} ->
                 %% For read, we care about send, receive, overall execution, time to start and commit, and read
-                folsom_metrics:new_histogram({send, Op}, slide, Interval),
-                folsom_metrics:new_histogram({rcv, Op}, slide, Interval),
-                folsom_metrics:new_histogram({exe, Op}, slide, Interval),
-                folsom_metrics:new_histogram({start, Op}, slide, Interval),
-                folsom_metrics:new_histogram({read, Op}, slide, Interval),
-                folsom_metrics:new_histogram({commit, Op}, slide, Interval);
+                ?HISTOGRAMS(Op, [send, rcv, exe, start, read, commit], Interval);
             _ ->
                 ok
         end,
-        folsom_metrics:new_histogram({latencies, Op}, slide, Interval),
-        folsom_metrics:new_counter({units, Op})
+        ?HISTOGRAM({latencies, Op}, Interval),
+        ?COUNTER({units, Op})
     end, Ops).
 
 %% Schedule next report
