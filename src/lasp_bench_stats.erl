@@ -178,9 +178,11 @@ build_folsom_tables(Ops) ->
                                  start,
                                  read,
                                  pvc_async_read,
+                                 replica_diff,
                                  get_mrvc,
                                  find_maxvc,
                                  mat_read,
+                                 fsm_diff,
                                  commit], Interval);
             _ ->
                 ok
@@ -377,9 +379,11 @@ report_latency(State, Elapsed, Window, Op={_, timed_read}) ->
                  {start,           folsom_metrics:get_histogram_statistics({start, Op})},
                  {read,            folsom_metrics:get_histogram_statistics({read, Op})},
                  {pvc_async_read,  folsom_metrics:get_histogram_statistics({pvc_async_read, Op})},
+                 {replica_diff,    folsom_metrics:get_histogram_statistics({replica_diff, Op})},
                  {get_mrvc,        folsom_metrics:get_histogram_statistics({get_mrvc, Op})},
                  {find_maxvc,      folsom_metrics:get_histogram_statistics({find_maxvc, Op})},
                  {mat_read,        folsom_metrics:get_histogram_statistics({mat_read, Op})},
+                 {fsm_diff,        folsom_metrics:get_histogram_statistics({fsm_diff, Op})},
                  {commit,          folsom_metrics:get_histogram_statistics({commit, Op})}],
 
     send_report(State, Elapsed, Window, Op, [{default, Stats} | ReadStats], Errors, Units);

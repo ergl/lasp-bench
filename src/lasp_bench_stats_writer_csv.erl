@@ -153,16 +153,18 @@ op_csv_file({_, ping}) ->
 
 op_csv_file({_, timed_read}) ->
     Names = [{default, "timed_read_latencies.csv"},
-             {send, "timed_read_send_latencies.csv"},
-             {rcv, "timed_read_rcv_latencies.csv"},
-             {exe, "timed_read_exe_latencies.csv"},
-             {start, "timed_read_start_latencies.csv"},
-             {read, "timed_read_read_latencies.csv"},
-             {pvc_async_read, "timed_read_pvc_async_read_latencies.csv"},
-             {get_mrvc, "timed_read_get_mrvc_latencies.csv"},
-             {find_maxvc, "timed_read_find_maxvc_latencies.csv"},
-             {mat_read, "timed_read_mat_read_latencies.csv"},
-             {commit, "timed_read_commit_latencies.csv"}],
+             {send, "tr_send_latencies.csv"},
+             {rcv, "tr_rcv_latencies.csv"},
+             {exe, "tr_exe_latencies.csv"},
+             {start, "tr_start_tx_latencies.csv"},
+             {read, "tr_read_latencies.csv"},
+             {pvc_async_read, "tr_pvc_async_read_latencies.csv"},
+             {replica_diff, "tr_replica_diff_latencies.csv"},
+             {get_mrvc, "tr_get_mrvc_latencies.csv"},
+             {find_maxvc, "tr_find_maxvc_latencies.csv"},
+             {mat_read, "tr_mat_read_latencies.csv"},
+             {fsm_diff, "tr_fsm_diff_latencies.csv"},
+             {commit, "tr_commit_latencies.csv"}],
 
     lists:map(fun({Type, Fname}) ->
         {ok, F} = file:open(Fname, [raw, binary, write]),
