@@ -340,7 +340,7 @@ hack_preprocess_driver_sate({_, ping}=Op, {ping, SendTime, StampMap, ReplyTime, 
 
 hack_preprocess_driver_sate({_, timed_read}=Op, {timed_read, SendTime, StampMap, ReplyTime, State}) ->
     %% Took* times were measured on the server
-    {ServerStart, TookStart, TookRead, TookCommit, ServerSend} = StampMap,
+    {ServerStart, TookStart, InfoMap, TookCommit, ServerSend} = StampMap,
     RequestTime = erlang:max(0, timer:now_diff(ServerStart, SendTime)),
     ExecuteTime = erlang:max(0, timer:now_diff(ServerSend, ServerStart)),
     ResponseTime = erlang:max(0, timer:now_diff(ReplyTime, ServerSend)),
@@ -348,7 +348,9 @@ hack_preprocess_driver_sate({_, timed_read}=Op, {timed_read, SendTime, StampMap,
     ok = lasp_bench_stats:op_complete(Op, ok, {send, RequestTime}),
     ok = lasp_bench_stats:op_complete(Op, ok, {exe, ExecuteTime}),
     ok = lasp_bench_stats:op_complete(Op, ok, {start, TookStart}),
-    ok = lasp_bench_stats:op_complete(Op, ok, {read, TookRead}),
+    ok = maps:fold(fun(Key, Value, ok) ->
+        lasp_bench_stats:op_complete(Op, ok, {Key, Value})
+    end, ok, InfoMap),
     ok = lasp_bench_stats:op_complete(Op, ok, {commit, TookCommit}),
     ok = lasp_bench_stats:op_complete(Op, ok, {rcv, ResponseTime}),
     State;

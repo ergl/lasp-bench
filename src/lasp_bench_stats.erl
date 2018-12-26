@@ -172,7 +172,16 @@ build_folsom_tables(Ops) ->
                 ?HISTOGRAMS(Op, [send, rcv, exe, start, commit], Interval);
             {_, timed_read} ->
                 %% For read, we care about send, receive, overall execution, time to start and commit, and read
-                ?HISTOGRAMS(Op, [send, rcv, exe, start, read, commit], Interval);
+                ?HISTOGRAMS(Op, [send,
+                                 rcv,
+                                 exe,
+                                 start,
+                                 read,
+                                 pvc_async_read,
+                                 get_mrvc,
+                                 find_maxvc,
+                                 mat_read,
+                                 commit], Interval);
             _ ->
                 ok
         end,
@@ -339,39 +348,41 @@ report_latency(State, Elapsed, Window, Op={_, noop}) ->
     Errors = error_counter(Op),
     Units = folsom_metrics:get_metric_value({units, Op}),
 
-    SendStats = folsom_metrics:get_histogram_statistics({send, Op}),
-    RcvStats = folsom_metrics:get_histogram_statistics({rcv, Op}),
+    NoopStats = [{send, folsom_metrics:get_histogram_statistics({send, Op})},
+                 {rcv,  folsom_metrics:get_histogram_statistics({rcv, Op})}],
 
-    send_report(State, Elapsed, Window, Op, {SendStats, RcvStats, Stats}, Errors, Units);
+    send_report(State, Elapsed, Window, Op, [{default, Stats} | NoopStats], Errors, Units);
 
 report_latency(State, Elapsed, Window, Op={_, ping}) ->
     Stats = folsom_metrics:get_histogram_statistics({latencies, Op}),
     Errors = error_counter(Op),
     Units = folsom_metrics:get_metric_value({units, Op}),
 
-    SendStats = folsom_metrics:get_histogram_statistics({send, Op}),
-    ExecuteStats = folsom_metrics:get_histogram_statistics({exe, Op}),
-    StartStats = folsom_metrics:get_histogram_statistics({start, Op}),
-    CommitStats = folsom_metrics:get_histogram_statistics({commit, Op}),
-    RcvStats = folsom_metrics:get_histogram_statistics({rcv, Op}),
-    Payload = {SendStats, ExecuteStats, StartStats, CommitStats, RcvStats, Stats},
+    PingStats = [{send,   folsom_metrics:get_histogram_statistics({send, Op})},
+                 {exe,    folsom_metrics:get_histogram_statistics({exe, Op})},
+                 {start,  folsom_metrics:get_histogram_statistics({start, Op})},
+                 {commit, folsom_metrics:get_histogram_statistics({commit, Op})},
+                 {rcv,    folsom_metrics:get_histogram_statistics({rcv, Op})}],
 
-    send_report(State, Elapsed, Window, Op, Payload, Errors, Units);
+    send_report(State, Elapsed, Window, Op, [{default, Stats} | PingStats], Errors, Units);
 
 report_latency(State, Elapsed, Window, Op={_, timed_read}) ->
     Stats = folsom_metrics:get_histogram_statistics({latencies, Op}),
     Errors = error_counter(Op),
     Units = folsom_metrics:get_metric_value({units, Op}),
 
-    SendStats = folsom_metrics:get_histogram_statistics({send, Op}),
-    ExecuteStats = folsom_metrics:get_histogram_statistics({exe, Op}),
-    StartStats = folsom_metrics:get_histogram_statistics({start, Op}),
-    ReadStats = folsom_metrics:get_histogram_statistics({read, Op}),
-    CommitStats = folsom_metrics:get_histogram_statistics({commit, Op}),
-    RcvStats = folsom_metrics:get_histogram_statistics({rcv, Op}),
-    Payload = {SendStats, ExecuteStats, StartStats, ReadStats, CommitStats, RcvStats, Stats},
+    ReadStats = [{send,            folsom_metrics:get_histogram_statistics({send, Op})},
+                 {rcv,             folsom_metrics:get_histogram_statistics({rcv, Op})},
+                 {exe,             folsom_metrics:get_histogram_statistics({exe, Op})},
+                 {start,           folsom_metrics:get_histogram_statistics({start, Op})},
+                 {read,            folsom_metrics:get_histogram_statistics({read, Op})},
+                 {pvc_async_read,  folsom_metrics:get_histogram_statistics({pvc_async_read, Op})},
+                 {get_mrvc,        folsom_metrics:get_histogram_statistics({get_mrvc, Op})},
+                 {find_maxvc,      folsom_metrics:get_histogram_statistics({find_maxvc, Op})},
+                 {mat_read,        folsom_metrics:get_histogram_statistics({mat_read, Op})},
+                 {commit,          folsom_metrics:get_histogram_statistics({commit, Op})}],
 
-    send_report(State, Elapsed, Window, Op, Payload, Errors, Units);
+    send_report(State, Elapsed, Window, Op, [{default, Stats} | ReadStats], Errors, Units);
 
 report_latency(State, Elapsed, Window, Op) ->
     Stats = folsom_metrics:get_histogram_statistics({latencies, Op}),
