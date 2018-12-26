@@ -348,8 +348,11 @@ hack_preprocess_driver_sate({_, timed_read}=Op, {timed_read, SendTime, StampMap,
     ok = lasp_bench_stats:op_complete(Op, ok, {send, RequestTime}),
     ok = lasp_bench_stats:op_complete(Op, ok, {exe, ExecuteTime}),
     ok = lasp_bench_stats:op_complete(Op, ok, {start, TookStart}),
-    ok = maps:fold(fun(Key, Value, ok) ->
-        lasp_bench_stats:op_complete(Op, ok, {Key, Value})
+    ok = maps:fold(fun
+        (mrvc_retries, _, _) ->
+            ok;
+        (Key, Value, ok) ->
+            lasp_bench_stats:op_complete(Op, ok, {Key, Value})
     end, ok, InfoMap),
     ok = lasp_bench_stats:op_complete(Op, ok, {commit, TookCommit}),
     ok = lasp_bench_stats:op_complete(Op, ok, {rcv, ResponseTime}),
