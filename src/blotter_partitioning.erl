@@ -20,4 +20,11 @@ convert_key(BinKey) when is_binary(BinKey) ->
         %% Looked into the internals of riak_core for this
         HashedKey = crypto:hash(sha, term_to_binary({<<"antidote">>, BinKey})),
         abs(crypto:bytes_to_integer(HashedKey))
-    end.
+    end;
+
+convert_key(IntKey) when is_integer(IntKey) ->
+    abs(IntKey);
+
+convert_key(TermKey) ->
+    HashedKey = crypto:hash(sha, term_to_binary({<<"antidote">>, term_to_binary(TermKey)})),
+    abs(crypto:bytes_to_integer(HashedKey)).
