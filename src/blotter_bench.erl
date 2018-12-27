@@ -15,7 +15,7 @@
 
 -record(state, {
     local_socket :: gen_tcp:socket(),
-    connection_mode :: local | {noproxy, #partition_info{}},
+    connection_mode :: local | #partition_info{},
     read_keys :: non_neg_integer(),
     written_keys :: non_neg_integer(),
     key_ratio :: {non_neg_integer(), non_neg_integer()},
@@ -38,13 +38,11 @@ new(_Id) ->
     {ok, Sock} = gen_tcp:connect(Ip, Port, Options),
     Mode = lasp_bench_config:get(connection_mode, local),
     ConnMode = case Mode of
-        local ->
-            local;
+        local -> local;
         noproxy ->
             Ring = get_remote_ring(Sock),
             RemoteSockets = open_ring_sockets(Ip, Ring, Port, Options, [{Ip, Sock}]),
-            {noproxy, #partition_info{ring=Ring,
-                                      sockets=RemoteSockets}}
+            #partition_info{ring=Ring, sockets=RemoteSockets}
     end,
 
     {ok, #state{local_socket=Sock,
@@ -170,7 +168,7 @@ do_timed_read(Socket, Key, State) ->
 
 %% Util
 route_to_node(Fn, State) ->
-    {noproxy, #partition_info{ring=Ring,sockets=Sockets}} = State#state.connection_mode,
+    #partition_info{ring=Ring,sockets=Sockets} = State#state.connection_mode,
     Target = lists:nth(rand:uniform(length(Ring)), Ring),
     case orddict:find(Target, Sockets) of
         error ->
