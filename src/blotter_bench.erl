@@ -207,12 +207,14 @@ get_remote_ring(Sock) ->
     blotter_partitioning:new(RingData).
 
 open_ring_sockets(SelfNode, Ring, Port, Options, Sockets) ->
-    lists:foldl(fun(Node, AccSock) ->
+    Unique = ordsets:from_list(Ring),
+    ordsets:fold(fun(Node, AccSock) ->
         case Node of
             SelfNode ->
                 AccSock;
+
             OtherNode ->
                 {ok, Sock} = gen_tcp:connect(OtherNode, Port, Options),
-                orddict:store(OtherNode, Sock, AccSock)
+                orddict:store(Node, Sock, AccSock)
         end
-    end, Sockets, Ring).
+                 end, Sockets, Unique).
