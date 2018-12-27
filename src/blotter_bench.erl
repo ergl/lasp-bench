@@ -10,6 +10,7 @@
 
 -record(partition_info, {
     sockets :: orddict:orddict(inet:hostname(), gen_tcp:socket()),
+    unique_nodes :: ordsets:ordset(inet:hostname()),
     ring :: [inet:hostname()]
 }).
 
@@ -43,8 +44,9 @@ new(_Id) ->
         local -> local;
         noproxy ->
             Ring = get_remote_ring(Sock),
-            RemoteSockets = open_ring_sockets(Ip, Ring, Port, Options, [{Ip, Sock}]),
-            #partition_info{ring=Ring, sockets=RemoteSockets}
+            UniqueNodes = ordsets:from_list(Ring),
+            RemoteSockets = open_ring_sockets(Ip, UniqueNodes, Port, Options, [{Ip, Sock}]),
+            #partition_info{ring=Ring, unique_nodes=UniqueNodes, sockets=RemoteSockets}
     end,
 
     {ok, #state{local_socket=Sock,
@@ -170,8 +172,8 @@ do_timed_read(Socket, Key, State) ->
 %% Util
 -spec with_random_node(fun((inet:socket(), state()) -> _), state()) -> _.
 with_random_node(Fn, State) when is_function(Fn, 2) ->
-    #partition_info{ring=Ring,sockets=Sockets} = State#state.connection_mode,
-    Target = lists:nth(rand:uniform(length(Ring)), Ring),
+    #partition_info{unique_nodes=Nodes,sockets=Sockets} = State#state.connection_mode,
+    Target = lists:nth(rand:uniform(length(Nodes)), Nodes),
     case orddict:find(Target, Sockets) of
         error ->
             {error, unknown_target_node, State};
@@ -206,8 +208,16 @@ get_remote_ring(Sock) ->
     {ring, RingData} = rubis_proto:decode_serv_reply(BinReply),
     blotter_partitioning:new(RingData).
 
-open_ring_sockets(SelfNode, Ring, Port, Options, Sockets) ->
-    Unique = ordsets:from_list(Ring),
+%% @doc Given a list of nodes, open sockets to all except the current node
+-spec open_ring_sockets(
+    inet:hostname(),
+    ordsets:ordset(inet:hostname()),
+    inet:port_number(),
+    proplists:proplist(),
+    orddict:orddict(inet:socket(), inet:socket())
+) -> orddict:orddict(inet:hostname(), inet:socket()).
+
+open_ring_sockets(SelfNode, Nodes, Port, Options, Sockets) ->
     ordsets:fold(fun(Node, AccSock) ->
         case Node of
             SelfNode ->
@@ -215,6 +225,6 @@ open_ring_sockets(SelfNode, Ring, Port, Options, Sockets) ->
 
             OtherNode ->
                 {ok, Sock} = gen_tcp:connect(OtherNode, Port, Options),
-                orddict:store(Node, Sock, AccSock)
+                orddict:store(OtherNode, Sock, AccSock)
         end
-                 end, Sockets, Unique).
+    end, Sockets, Nodes).
