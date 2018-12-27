@@ -22,6 +22,8 @@
     abort_retries :: non_neg_integer()
 }).
 
+-type state() :: #state{}.
+
 -define(local_conn(State), State#state.connection_mode =:= local).
 
 new(_Id) ->
@@ -59,21 +61,20 @@ run(noop, _, _, State) when ?local_conn(State) ->
     do_noop(State#state.local_socket, State);
 
 run(noop, _, _, State) ->
-    route_to_node(fun do_noop/2, State);
+    with_random_node(fun do_noop/2, State);
 
 run(ping, _, _, State) when ?local_conn(State) ->
     do_ping(State#state.local_socket, State);
 
 run(ping, _, _, State) ->
-    route_to_node(fun do_ping/2, State);
+    with_random_node(fun do_ping/2, State);
 
 run(timed_read, K,  _, State) when ?local_conn(State) ->
     do_timed_read(State#state.local_socket, integer_to_binary(K(), 36), State);
 
 run(timed_read, K, _, State) ->
-    route_to_node(fun(Sock, FunState) ->
-        do_timed_read(Sock, integer_to_binary(K(), 36), FunState)
-    end, State);
+    Key = integer_to_binary(K(), 36),
+    route_to_node(fun do_timed_read/3, Key, State);
 
 run(readonly, K, _, State=#state{local_socket=Socket, read_keys=NRead}) when ?local_conn(State) ->
     Keys = gen_keys(NRead, K),
@@ -167,7 +168,8 @@ do_timed_read(Socket, Key, State) ->
     end.
 
 %% Util
-route_to_node(Fn, State) ->
+-spec with_random_node(fun((inet:socket(), state()) -> _), state()) -> _.
+with_random_node(Fn, State) when is_function(Fn, 2) ->
     #partition_info{ring=Ring,sockets=Sockets} = State#state.connection_mode,
     Target = lists:nth(rand:uniform(length(Ring)), Ring),
     case orddict:find(Target, Sockets) of
@@ -175,6 +177,17 @@ route_to_node(Fn, State) ->
             {error, unknown_target_node, State};
         {ok, Sock} ->
             Fn(Sock, State)
+    end.
+
+-spec route_to_node(fun((inet:socket(), binary(), state()) -> _), binary(), state()) -> _.
+route_to_node(Fn, Key, State) when is_function(Fn, 3) ->
+    #partition_info{ring=Ring,sockets=Sockets} = State#state.connection_mode,
+    Target = blotter_partitioning:get_key_node(Key, Ring),
+    case orddict:find(Target, Sockets) of
+        error ->
+            {error, unknown_target_node, State};
+        {ok, Sock} ->
+            Fn(Sock, Key, State)
     end.
 
 -spec gen_keys(non_neg_integer(), key_gen(non_neg_integer())) -> [binary()].
