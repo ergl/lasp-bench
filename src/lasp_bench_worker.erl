@@ -261,7 +261,7 @@ worker_next_op(State) ->
         {Res, DriverState} when Res == ok orelse element(1, Res) == ok ->
             lasp_bench_stats:op_complete(Next, Res, ElapsedUs),
             %% TODO(borja): Remove this
-            NewDriverState = hack_preprocess_driver_sate(Next, DriverState),
+            NewDriverState = hack_preprocess_driver_state(Next, DriverState),
             {ok, State#state { driver_state = NewDriverState }};
 
         {Res, DriverState} when Res == silent orelse element(1, Res) == silent ->
@@ -317,14 +317,14 @@ worker_next_op(State) ->
     end.
 
 %% TODO(borja): Remove this
-hack_preprocess_driver_sate({_, noop}=Op, {noop, SendTime, ServerTime, ReplyTime, State}) ->
+hack_preprocess_driver_state({_, noop}=Op, {noop, SendTime, ServerTime, ReplyTime, State}) ->
     RequestTime = erlang:max(0, timer:now_diff(ServerTime, SendTime)),
     ResponseTime = erlang:max(0, timer:now_diff(ReplyTime, ServerTime)),
     ok = lasp_bench_stats:op_complete(Op, ok, {send, RequestTime}),
     ok = lasp_bench_stats:op_complete(Op, ok, {rcv, ResponseTime}),
     State;
 
-hack_preprocess_driver_sate({_, ping}=Op, {ping, SendTime, StampMap, ReplyTime, State}) ->
+hack_preprocess_driver_state({_, ping}=Op, {ping, SendTime, StampMap, ReplyTime, State}) ->
     %% Took* times were measured on the server
     {ServerStart, TookStart, TookCommit, ServerSend} = StampMap,
     RequestTime = erlang:max(0, timer:now_diff(ServerStart, SendTime)),
@@ -338,7 +338,7 @@ hack_preprocess_driver_sate({_, ping}=Op, {ping, SendTime, StampMap, ReplyTime, 
     ok = lasp_bench_stats:op_complete(Op, ok, {rcv, ResponseTime}),
     State;
 
-hack_preprocess_driver_sate({_, timed_read}=Op, {timed_read, SendTime, StampMap, ReplyTime, State}) ->
+hack_preprocess_driver_state({_, timed_read}=Op, {timed_read, SendTime, StampMap, ReplyTime, State}) ->
     %% Took* times were measured on the server
     {ServerStart, TookStart, InfoMap, TookCommit, ServerSend} = StampMap,
     RequestTime = erlang:max(0, timer:now_diff(ServerStart, SendTime)),
@@ -355,7 +355,7 @@ hack_preprocess_driver_sate({_, timed_read}=Op, {timed_read, SendTime, StampMap,
     ok = lasp_bench_stats:op_complete(Op, ok, {rcv, ResponseTime}),
     State;
 
-hack_preprocess_driver_sate(_, DriverState) ->
+hack_preprocess_driver_state(_, DriverState) ->
     DriverState.
 
 needs_shutdown(State) ->
