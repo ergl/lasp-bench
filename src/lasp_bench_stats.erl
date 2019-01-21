@@ -183,6 +183,8 @@ build_folsom_tables(Ops) ->
                                  find_maxvc,
                                  mat_read,
                                  fsm_diff,
+                                 remote_read_server,
+                                 remote_read_socket,
                                  commit], Interval);
             _ ->
                 ok
@@ -373,18 +375,20 @@ report_latency(State, Elapsed, Window, Op={_, timed_read}) ->
     Errors = error_counter(Op),
     Units = folsom_metrics:get_metric_value({units, Op}),
 
-    ReadStats = [{send,            folsom_metrics:get_histogram_statistics({send, Op})},
-                 {rcv,             folsom_metrics:get_histogram_statistics({rcv, Op})},
-                 {exe,             folsom_metrics:get_histogram_statistics({exe, Op})},
-                 {start,           folsom_metrics:get_histogram_statistics({start, Op})},
-                 {read,            folsom_metrics:get_histogram_statistics({read, Op})},
-                 {pvc_async_read,  folsom_metrics:get_histogram_statistics({pvc_async_read, Op})},
-                 {replica_diff,    folsom_metrics:get_histogram_statistics({replica_diff, Op})},
-                 {get_mrvc,        folsom_metrics:get_histogram_statistics({get_mrvc, Op})},
-                 {find_maxvc,      folsom_metrics:get_histogram_statistics({find_maxvc, Op})},
-                 {mat_read,        folsom_metrics:get_histogram_statistics({mat_read, Op})},
-                 {fsm_diff,        folsom_metrics:get_histogram_statistics({fsm_diff, Op})},
-                 {commit,          folsom_metrics:get_histogram_statistics({commit, Op})}],
+    ReadStats = [{send,               folsom_metrics:get_histogram_statistics({send, Op})},
+                 {rcv,                folsom_metrics:get_histogram_statistics({rcv, Op})},
+                 {exe,                folsom_metrics:get_histogram_statistics({exe, Op})},
+                 {start,              folsom_metrics:get_histogram_statistics({start, Op})},
+                 {read,               folsom_metrics:get_histogram_statistics({read, Op})},
+                 {pvc_async_read,     folsom_metrics:get_histogram_statistics({pvc_async_read, Op})},
+                 {replica_diff,       folsom_metrics:get_histogram_statistics({replica_diff, Op})},
+                 {get_mrvc,           folsom_metrics:get_histogram_statistics({get_mrvc, Op})},
+                 {find_maxvc,         folsom_metrics:get_histogram_statistics({find_maxvc, Op})},
+                 {mat_read,           folsom_metrics:get_histogram_statistics({mat_read, Op})},
+                 {fsm_diff,           folsom_metrics:get_histogram_statistics({fsm_diff, Op})},
+                 {remote_read_server, folsom_metrics:get_histogram_statistics({remote_read_server, Op})},
+                 {remote_read_socket, folsom_metrics:get_histogram_statistics({remote_read_socket, Op})},
+                 {commit,             folsom_metrics:get_histogram_statistics({commit, Op})}],
 
     send_report(State, Elapsed, Window, Op, [{default, Stats} | ReadStats], Errors, Units);
 
