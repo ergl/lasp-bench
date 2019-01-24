@@ -164,8 +164,8 @@ op_csv_file({_, timed_read}) ->
              {find_maxvc, "tr_find_maxvc_latencies.csv"},
              {mat_read, "tr_mat_read_latencies.csv"},
              {fsm_diff, "tr_fsm_diff_latencies.csv"},
-             {remote_read_server, "tr_rr_server.csv"},
-             {remote_read_socket, "tr_rr_socket.csv"},
+             {remote_read_server, "tr_rr_server_latencies.csv"},
+             {remote_read_socket, "tr_rr_socket_latencies.csv"},
              {commit, "tr_commit_latencies.csv"}],
 
     lists:map(fun({Type, Fname}) ->
