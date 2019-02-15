@@ -21,6 +21,9 @@
 %% -------------------------------------------------------------------
 -module(lasp_bench).
 
+%% Ignore xref for entry point
+-ignore_xref([main/1]).
+
 -export([main/1, md5/1]).
 -include("lasp_bench.hrl").
 

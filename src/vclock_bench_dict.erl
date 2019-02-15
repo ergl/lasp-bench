@@ -1,5 +1,12 @@
 -module(vclock_bench_dict).
 
+%% Called in Module:function fashion
+-ignore_xref([new/0,
+              from_list/1,
+              get_time/2,
+              set_time/3,
+              max/2]).
+
 -export([new/0,
          from_list/1,
          get_time/2,
