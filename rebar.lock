@@ -8,10 +8,18 @@
        {ref,"d4b6d3dc5fd9e759ff7a0c476654ea5124f5bae9"}},
   0},
  {<<"lager">>,{pkg,<<"lager">>,<<"3.5.1">>},0},
- {<<"rubis_proto">>,
-  {git,"https://github.com/ergl/rubis_proto.git",
-       {ref,"13d34604ee1ef30855ec31e888ece41ef8393c27"}},
-  0}]}.
+ {<<"pvc">>,
+  {git,"https://github.com/ergl/pvc.git",
+       {ref,"2b69432763e48a1923478b337b8a3bb514fccdfc"}},
+  0},
+ {<<"pvc_proto">>,
+  {git,"https://github.com/ergl/pvc_proto.git",
+       {ref,"d86ae083ff7945937c8cc90f9da02abbfff55a68"}},
+  0},
+ {<<"pvc_types">>,
+  {git,"https://github.com/ergl/pvc_types.git",
+       {ref,"9e21098f8f67ec72510077abcc6570613d6c6c37"}},
+  1}]}.
 [
 {pkg_hash,[
  {<<"bear">>, <<"E95FCA1627CD9E15BAF93CE0A52AFF16917BAF325F0EE65B88CD715376CD2344">>},

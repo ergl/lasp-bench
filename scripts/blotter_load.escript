@@ -1,5 +1,5 @@
 #!/usr/bin/env escript
-%%! -pa ../_build/default/lib/jsx/ebin ../_build/default/lib/rubis_proto/ebin -Wall
+%%! -pa ../_build/default/lib/pvc_proto/ebin -Wall
 
 -define(NUM_KEYS, 100000).
 -define(VAL_SIZE, 1024).
@@ -13,10 +13,10 @@ main([BinHost, BinPort]) ->
             halt(1);
         true ->
             {ok, Sock} = gen_tcp:connect(Host, Port, [binary, {active, false}, {packet, 2}]),
-            Msg = rpb_simple_driver:load(?NUM_KEYS, ?VAL_SIZE),
+            Msg = ppb_simple_driver:load(?NUM_KEYS, ?VAL_SIZE),
             ok = gen_tcp:send(Sock, Msg),
             {ok, BinReply} = gen_tcp:recv(Sock, 0),
-            ok = rubis_proto:decode_serv_reply(BinReply),
+            ok = pvc_proto:decode_serv_reply(BinReply),
             gen_tcp:close(Sock)
     end;
 

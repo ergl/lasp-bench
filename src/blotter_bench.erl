@@ -1,176 +1,146 @@
 -module(blotter_bench).
 
+%% Ignore xref for all lasp bench drivers
+-ignore_xref([new/1, run/4, terminate/2]).
+
 -export([new/1,
          run/4,
          terminate/2]).
 
 -include("lasp_bench.hrl").
 
+-type tx_id() :: {non_neg_integer(), non_neg_integer()}.
 -type key_gen(T) :: fun(() -> T).
 
--record(partition_info, {
-    sockets :: orddict:orddict(inet:hostname(), gen_tcp:socket()),
-    ring :: [inet:hostname()]
-}).
-
 -record(state, {
-    local_socket :: gen_tcp:socket(),
-    connection_mode :: local | {noproxy, #partition_info{}},
-    read_keys :: non_neg_integer(),
-    written_keys :: non_neg_integer(),
-    key_ratio :: {non_neg_integer(), non_neg_integer()},
+    %% Id of this worker thread
+    worker_id :: non_neg_integer(),
+    %% Auto incremented counter to create unique transaction ids
+    transaction_count :: non_neg_integer(),
+
+    %% Coordinator connection to Antidote
+    coord_connection :: pvc:connection(),
+
+    %% Keys to read in readonly op
+    keys_to_read :: non_neg_integer(),
+    %% Keys to write in writeonly op
+    keys_to_write :: non_neg_integer(),
+    %% Ratio of read/writes in readwrite op
+    mixed_readwrite_ratio :: {non_neg_integer(), non_neg_integer()},
+
+    %% Number of retries on aborted transaction
     abort_retries :: non_neg_integer()
 }).
 
-new(_Id) ->
-    _ = application:ensure_all_started(rubis_proto),
+new(Id) ->
+    _ = application:ensure_all_started(pvc),
+
     Ip = lasp_bench_config:get(rubis_ip, '127.0.0.1'),
     Port = lasp_bench_config:get(rubis_port, 7878),
-    Options = [binary, {active, false}, {packet, 2}, {nodelay, true}],
 
-    NRead = lasp_bench_config:get(read_keys),
-    NWrite = lasp_bench_config:get(written_keys),
-    RWRatio = lasp_bench_config:get(ratio),
+    KeysToRead = lasp_bench_config:get(read_keys),
+    KeysToWrite = lasp_bench_config:get(written_keys),
+    ReadWriteRatio = lasp_bench_config:get(ratio),
     AbortTries = lasp_bench_config:get(abort_retries, 50),
 
-    {ok, Sock} = gen_tcp:connect(Ip, Port, Options),
-    Mode = lasp_bench_config:get(connection_mode, local),
-    ConnMode = case Mode of
-        local ->
-            local;
-        noproxy ->
-            Ring = get_remote_ring(Sock),
-            RemoteSockets = open_ring_sockets(Ip, Ring, Port, Options, [{Ip, Sock}]),
-            {noproxy, #partition_info{ring=Ring,
-                                      sockets=RemoteSockets}}
-    end,
+    {ok, Connection} = pvc:connect(Ip, Port),
 
-    {ok, #state{local_socket=Sock,
-                connection_mode=ConnMode,
-                read_keys=NRead,
-                key_ratio=RWRatio,
-                written_keys=NWrite,
-                abort_retries=AbortTries}}.
+    State = #state{worker_id = Id,
+                   transaction_count = 0,
+                   coord_connection = Connection,
+                   keys_to_read = KeysToRead,
+                   keys_to_write = KeysToWrite,
+                   mixed_readwrite_ratio = ReadWriteRatio,
+                   abort_retries = AbortTries},
 
-terminate(_Reason, _State) ->
+    {ok, State}.
+
+terminate(_Reason, #state{coord_connection=Connection}) ->
+    ok = pvc:close(Connection),
     ok.
 
-run(ping, _, _, State = #state{local_socket=Sock, connection_mode=local}) ->
-    ok = gen_tcp:send(Sock, rpb_simple_driver:ping()),
-    {ok, BinReply} = gen_tcp:recv(Sock, 0),
-    case rubis_proto:decode_serv_reply(BinReply) of
-        {error, Reason} -> {error, Reason, State};
-        ok -> {ok, State}
-    end;
 
-run(ping, _, _, State = #state{connection_mode={noproxy, #partition_info{ring=Ring,sockets=Sockets}}}) ->
-    Target = lists:nth(rand:uniform(length(Ring)), Ring),
-    case orddict:find(Target, Sockets) of
-        error ->
-            {error, unknown_target_node, State};
-        {ok, Sock} ->
-            ok = gen_tcp:send(Sock, rpb_simple_driver:ping()),
-            {ok, BinReply} = gen_tcp:recv(Sock, 0),
-            case rubis_proto:decode_serv_reply(BinReply) of
-                {error, Reason} -> {error, Reason, State};
-                ok -> {ok, State}
-            end
-    end;
+run(readonly, KeyGen, _, State = #state{keys_to_read = KeysToRead,
+                                        abort_retries = Tries}) ->
 
-run(ntping, _, _, State = #state{connection_mode={noproxy, #partition_info{ring=Ring,sockets=Sockets}}}) ->
-    Target = lists:nth(rand:uniform(length(Ring)), Ring),
-    case orddict:find(Target, Sockets) of
-        error ->
-            {error, unknown_target_node, State};
-        {ok, Sock} ->
-            ok = gen_tcp:send(Sock, rpb_simple_driver:ntping(os:timestamp())),
-            {ok, BinReply} = gen_tcp:recv(Sock, 0),
-            case rubis_proto:decode_serv_reply(BinReply) of
-                {error, Reason} -> {error, Reason, State};
-                ok -> {ok, State}
-            end
-    end;
+    Keys = gen_keys(KeysToRead, KeyGen),
+    perform_readonly_tx(Keys, State, Tries);
 
-run(readonly, KeyGen, _, State = #state{read_keys=1,
-                                        connection_mode={noproxy, #partition_info{ring=Ring,sockets=Sockets}}}) ->
-
-    Key = integer_to_binary(KeyGen(), 36),
-    Target = blotter_partitioning:get_key_node(Key, Ring),
-    case orddict:find(Target, Sockets) of
-        error ->
-            {error, unknown_target_node, State};
-
-        {ok, Sock} ->
-            Msg = rpb_simple_driver:read_only([Key]),
-            ok = gen_tcp:send(Sock, Msg),
-            {ok, BinReply} = gen_tcp:recv(Sock, 0),
-            Resp = rubis_proto:decode_serv_reply(BinReply),
-            case Resp of
-                {error, Reason} ->
-                    {error, Reason, State};
-                ok ->
-                    {ok, State}
-            end
-
-    end;
-
-
-run(readonly, KeyGen, _, State = #state{local_socket=Sock, connection_mode=local, read_keys=NRead}) ->
-    Keys = gen_keys(NRead, KeyGen),
-    Msg = rpb_simple_driver:read_only(Keys),
-
-    ok = gen_tcp:send(Sock, Msg),
-    {ok, BinReply} = gen_tcp:recv(Sock, 0),
-
-    Resp = rubis_proto:decode_serv_reply(BinReply),
-    case Resp of
-        {error, Reason} ->
-            {error, Reason, State};
-
-        ok ->
-            {ok, State}
-    end;
-
-run(writeonly, KeyGen, ValueGen, State = #state{local_socket=Sock,
-                                                written_keys=W,
+run(writeonly, KeyGen, ValueGen, State = #state{keys_to_write = KeysToWrite,
                                                 abort_retries=Tries}) ->
 
-    Keys = gen_keys(W, KeyGen),
+    Keys = gen_keys(KeysToWrite, KeyGen),
     Updates = lists:map(fun(K) -> {K, ValueGen()} end, Keys),
-    Msg = rpb_simple_driver:read_write(Keys, Updates),
+    perform_write_tx(Keys, Updates, State, Tries);
 
-    perform_write(Sock, Msg, State, Tries);
+run(readwrite, KeyGen, ValueGen, State = #state{mixed_readwrite_ratio = {ToRead, ToWrite},
+                                                abort_retries = Tries}) ->
 
-run(readwrite, KeyGen, ValueGen, State = #state{local_socket=Sock,
-                                                key_ratio={R, W},
-                                                abort_retries=Tries}) ->
-    Total = erlang:max(R, W),
+    %% If readwrite is {2, 1}, means we want to read 2 keys, update 1
+    %% If it is {1, 2}, we need to read 2, then update 2 (no blind writes)
+
+    %% We pick the max of read and write to read all the keys we need
+    Total = erlang:max(ToRead, ToWrite),
     Keys = gen_keys(Total, KeyGen),
 
-    %% Make Updates from the first W keys
-    Updates = lists:map(fun(K) -> {K, ValueGen()} end, lists:sublist(Keys, W)),
-    Msg = rpb_simple_driver:read_write(Keys, Updates),
+    %% Then perform updates on the sublist of total keys (ToWrite)
+    Updates = lists:map(fun(K) -> {K, ValueGen()} end, lists:sublist(Keys, ToWrite)),
+    perform_write_tx(Keys, Updates, State, Tries).
 
-    perform_write(Sock, Msg, State, Tries).
 
-perform_write(_, _, State, 0) ->
+%% @doc Try a readonly transaction N times before giving up
+perform_readonly_tx(_, State, 0) ->
     {error, too_many_retries, State};
 
-perform_write(Sock, Msg, State, Retries) ->
-    ok = gen_tcp:send(Sock, Msg),
-    {ok, BinReply} = gen_tcp:recv(Sock, 0),
-
-    Resp = rubis_proto:decode_serv_reply(BinReply),
-    case Resp of
-        {error, _} ->
-            perform_write(Sock, Msg, State, Retries - 1);
-        ok ->
-            {ok, State}
+perform_readonly_tx(Keys, State=#state{coord_connection=Conn}, N) ->
+    {ok, Tx} = pvc:start_transaction(Conn, next_tx_id(State)),
+    case pvc:read(Conn, Tx, Keys) of
+        {error, Reason} ->
+            {error, Reason, incr_tx_id(State)};
+        {abort, _AbortReason} ->
+            perform_readonly_tx(Keys, incr_tx_id(State), N - 1);
+        {ok, _, Tx1} ->
+            %% Readonly transactions always commit
+            ok = pvc:commit(Conn, Tx1),
+            {ok, incr_tx_id(State)}
     end.
 
-%% Util
--spec gen_keys(non_neg_integer(), key_gen(non_neg_integer())) -> [binary()].
-gen_keys(N, K) ->
+%% @doc Try a writeonly transaction N times before giving up
+%%
+%%      Since we can't perform blind writes, go through a read before
+%%
+perform_write_tx(_, _, State, 0) ->
+    {error, too_many_retries, State};
+
+perform_write_tx(Keys, Updates, State=#state{coord_connection=Conn}, N) ->
+    {ok, Tx} = pvc:start_transaction(Conn, next_tx_id(State)),
+    case pvc:read(Conn, Tx, Keys) of
+        {error, Reason} ->
+            {error, Reason, incr_tx_id(State)};
+        {abort, _AbortReason} ->
+            perform_write_tx(Keys, Updates, incr_tx_id(State), N - 1);
+        {ok, _, Tx1} ->
+            {ok, Tx2} = pvc:update(Conn, Tx1, Updates),
+            case pvc:commit(Conn, Tx2) of
+                {error, Reason} ->
+                    {error, Reason, incr_tx_id(State)};
+                {abort, _AbortReason} ->
+                    perform_write_tx(Keys, Updates, incr_tx_id(State), N - 1);
+                ok ->
+                    {ok, incr_tx_id(State)}
+            end
+    end.
+
+%%====================================================================
+%% Util functions
+%%====================================================================
+
+%% @doc Generate N random keys
+-spec gen_keys(non_neg_integer(), key_gen(non_neg_integer())) -> binary() | [binary()].
+gen_keys(1, K) ->
+    K();
+
+gen_keys(N, K) when N > 1 ->
     gen_keys(N, K, []).
 
 gen_keys(0, _, Acc) ->
@@ -179,21 +149,10 @@ gen_keys(0, _, Acc) ->
 gen_keys(N, K, Acc) ->
     gen_keys(N - 1, K, [integer_to_binary(K(), 36) | Acc]).
 
-get_remote_ring(Sock) ->
-    ok = gen_tcp:send(Sock, rpb_simple_driver:get_ring()),
-    {ok, BinReply} = gen_tcp:recv(Sock, 0),
-    Data = rubis_proto:decode_serv_reply(BinReply),
-    blotter_partitioning:new(Data).
+-spec next_tx_id(#state{}) -> tx_id().
+next_tx_id(#state{worker_id = Id, transaction_count = N}) ->
+    {Id, N}.
 
-open_ring_sockets(SelfNode, Ring, Port, Options, Sockets) ->
-    Unique = ordsets:from_list(Ring),
-    ordsets:fold(fun(Node, AccSock) ->
-        case Node of
-            SelfNode ->
-                AccSock;
-
-            OtherNode ->
-                {ok, Sock} = gen_tcp:connect(OtherNode, Port, Options),
-                orddict:store(Node, Sock, AccSock)
-        end
-                 end, Sockets, Unique).
+-spec incr_tx_id(#state{}) -> #state{}.
+incr_tx_id(State=#state{transaction_count=N}) ->
+    State#state{transaction_count = N + 1}.
