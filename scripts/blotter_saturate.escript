@@ -1,5 +1,5 @@
 #!/usr/bin/env escript
-%%! -pa ../_build/default/lib/jsx/ebin ../_build/default/lib/rubis_proto/ebin -Wall
+%%! -pa ../_build/default/lib/pvc_proto/ebin -Wall
 
 -define(NUM_KEYS, 100).
 -define(VAL_SIZE, 256).
@@ -36,7 +36,7 @@ saturate_key(_, _, _, 0) ->
     ok;
 
 saturate_key(Sock, Key, Value, N) ->
-    Msg = rpb_simple_driver:read_write([Key], [{Key, Value}]),
+    Msg = ppb_simple_driver:read_write([Key], [{Key, Value}]),
     ok = perform_write(Sock, Msg, ?TRIES),
     saturate_key(Sock, Key, Value, N - 1).
 
@@ -47,7 +47,7 @@ perform_write(Sock, Msg, Tries) ->
     ok = gen_tcp:send(Sock, Msg),
     {ok, BinReply} = gen_tcp:recv(Sock, 0),
 
-    Resp = rubis_proto:decode_serv_reply(BinReply),
+    Resp = pvc_proto:decode_serv_reply(BinReply),
     case Resp of
         {error, _} ->
             perform_write(Sock, Msg, Tries - 1);

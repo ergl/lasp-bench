@@ -8,9 +8,9 @@
        {ref,"d4b6d3dc5fd9e759ff7a0c476654ea5124f5bae9"}},
   0},
  {<<"lager">>,{pkg,<<"lager">>,<<"3.5.1">>},0},
- {<<"rubis_proto">>,
-  {git,"https://github.com/ergl/rubis_proto.git",
-       {ref,"13d34604ee1ef30855ec31e888ece41ef8393c27"}},
+ {<<"pvc_proto">>,
+  {git,"https://github.com/ergl/pvc_proto.git",
+       {ref,"fb93303b40f771119cd9815bf77cd2e5f0a61a49"}},
   0}]}.
 [
 {pkg_hash,[

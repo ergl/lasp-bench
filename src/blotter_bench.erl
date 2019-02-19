@@ -23,7 +23,7 @@
 }).
 
 new(_Id) ->
-    _ = application:ensure_all_started(rubis_proto),
+    _ = application:ensure_all_started(pvc_proto),
     Ip = lasp_bench_config:get(rubis_ip, '127.0.0.1'),
     Port = lasp_bench_config:get(rubis_port, 7878),
     Options = [binary, {active, false}, {packet, 2}, {nodelay, true}],
@@ -56,9 +56,9 @@ terminate(_Reason, _State) ->
     ok.
 
 run(ping, _, _, State = #state{local_socket=Sock, connection_mode=local}) ->
-    ok = gen_tcp:send(Sock, rpb_simple_driver:ping()),
+    ok = gen_tcp:send(Sock, ppb_simple_driver:ping()),
     {ok, BinReply} = gen_tcp:recv(Sock, 0),
-    case rubis_proto:decode_serv_reply(BinReply) of
+    case pvc_proto:decode_serv_reply(BinReply) of
         {error, Reason} -> {error, Reason, State};
         ok -> {ok, State}
     end;
@@ -69,9 +69,9 @@ run(ping, _, _, State = #state{connection_mode={noproxy, #partition_info{ring=Ri
         error ->
             {error, unknown_target_node, State};
         {ok, Sock} ->
-            ok = gen_tcp:send(Sock, rpb_simple_driver:ping()),
+            ok = gen_tcp:send(Sock, ppb_simple_driver:ping()),
             {ok, BinReply} = gen_tcp:recv(Sock, 0),
-            case rubis_proto:decode_serv_reply(BinReply) of
+            case pvc_proto:decode_serv_reply(BinReply) of
                 {error, Reason} -> {error, Reason, State};
                 ok -> {ok, State}
             end
@@ -83,9 +83,9 @@ run(ntping, _, _, State = #state{connection_mode={noproxy, #partition_info{ring=
         error ->
             {error, unknown_target_node, State};
         {ok, Sock} ->
-            ok = gen_tcp:send(Sock, rpb_simple_driver:ntping(os:timestamp())),
+            ok = gen_tcp:send(Sock, ppb_simple_driver:ntping(os:timestamp())),
             {ok, BinReply} = gen_tcp:recv(Sock, 0),
-            case rubis_proto:decode_serv_reply(BinReply) of
+            case pvc_proto:decode_serv_reply(BinReply) of
                 {error, Reason} -> {error, Reason, State};
                 ok -> {ok, State}
             end
@@ -101,10 +101,10 @@ run(readonly, KeyGen, _, State = #state{read_keys=1,
             {error, unknown_target_node, State};
 
         {ok, Sock} ->
-            Msg = rpb_simple_driver:read_only([Key]),
+            Msg = ppb_simple_driver:read_only([Key]),
             ok = gen_tcp:send(Sock, Msg),
             {ok, BinReply} = gen_tcp:recv(Sock, 0),
-            Resp = rubis_proto:decode_serv_reply(BinReply),
+            Resp = pvc_proto:decode_serv_reply(BinReply),
             case Resp of
                 {error, Reason} ->
                     {error, Reason, State};
@@ -117,12 +117,12 @@ run(readonly, KeyGen, _, State = #state{read_keys=1,
 
 run(readonly, KeyGen, _, State = #state{local_socket=Sock, connection_mode=local, read_keys=NRead}) ->
     Keys = gen_keys(NRead, KeyGen),
-    Msg = rpb_simple_driver:read_only(Keys),
+    Msg = ppb_simple_driver:read_only(Keys),
 
     ok = gen_tcp:send(Sock, Msg),
     {ok, BinReply} = gen_tcp:recv(Sock, 0),
 
-    Resp = rubis_proto:decode_serv_reply(BinReply),
+    Resp = pvc_proto:decode_serv_reply(BinReply),
     case Resp of
         {error, Reason} ->
             {error, Reason, State};
@@ -137,7 +137,7 @@ run(writeonly, KeyGen, ValueGen, State = #state{local_socket=Sock,
 
     Keys = gen_keys(W, KeyGen),
     Updates = lists:map(fun(K) -> {K, ValueGen()} end, Keys),
-    Msg = rpb_simple_driver:read_write(Keys, Updates),
+    Msg = ppb_simple_driver:read_write(Keys, Updates),
 
     perform_write(Sock, Msg, State, Tries);
 
@@ -149,7 +149,7 @@ run(readwrite, KeyGen, ValueGen, State = #state{local_socket=Sock,
 
     %% Make Updates from the first W keys
     Updates = lists:map(fun(K) -> {K, ValueGen()} end, lists:sublist(Keys, W)),
-    Msg = rpb_simple_driver:read_write(Keys, Updates),
+    Msg = ppb_simple_driver:read_write(Keys, Updates),
 
     perform_write(Sock, Msg, State, Tries).
 
@@ -160,7 +160,7 @@ perform_write(Sock, Msg, State, Retries) ->
     ok = gen_tcp:send(Sock, Msg),
     {ok, BinReply} = gen_tcp:recv(Sock, 0),
 
-    Resp = rubis_proto:decode_serv_reply(BinReply),
+    Resp = pvc_proto:decode_serv_reply(BinReply),
     case Resp of
         {error, _} ->
             perform_write(Sock, Msg, State, Retries - 1);
@@ -180,9 +180,9 @@ gen_keys(N, K, Acc) ->
     gen_keys(N - 1, K, [integer_to_binary(K(), 36) | Acc]).
 
 get_remote_ring(Sock) ->
-    ok = gen_tcp:send(Sock, rpb_simple_driver:get_ring()),
+    ok = gen_tcp:send(Sock, ppb_simple_driver:get_ring()),
     {ok, BinReply} = gen_tcp:recv(Sock, 0),
-    Data = rubis_proto:decode_serv_reply(BinReply),
+    Data = pvc_proto:decode_serv_reply(BinReply),
     blotter_partitioning:new(Data).
 
 open_ring_sockets(SelfNode, Ring, Port, Options, Sockets) ->

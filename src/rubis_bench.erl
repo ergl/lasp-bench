@@ -13,7 +13,7 @@
 }).
 
 new(Id) ->
-    _ = application:ensure_all_started(rubis_proto),
+    _ = application:ensure_all_started(pvc_proto),
 
     Ip = lasp_bench_config:get(rubis_ip, '127.0.0.1'),
     Port = lasp_bench_config:get(rubis_port, 7878),
@@ -33,10 +33,10 @@ run(perform_operation, _, _, State = #state{rubis_state=RState}) ->
 run_op(registeruser, State = #state{socket=Sock, rubis_state=RState}) ->
     RegionId = rubis_bench_core:random_region_id(RState),
     {{Username, Password}, NewState} = rubis_bench_core:gen_new_user(RState),
-    Msg = rpb_rubis_driver:register_user(Username, Password, RegionId),
+    Msg = ppb_rubis_driver:register_user(Username, Password, RegionId),
     ok = gen_tcp:send(Sock, Msg),
     {ok, BinReply} = gen_tcp:recv(Sock, 0),
-    Resp = rubis_proto:decode_serv_reply(BinReply),
+    Resp = pvc_proto:decode_serv_reply(BinReply),
     case Resp of
         {ok, Id} ->
             FinalState = rubis_bench_core:update_state({confirm_user, Id, Username}, NewState),
@@ -48,10 +48,10 @@ run_op(registeruser, State = #state{socket=Sock, rubis_state=RState}) ->
     end;
 
 run_op(browsecategories, State = #state{socket=Sock}) ->
-    Msg = rpb_rubis_driver:browse_categories(),
+    Msg = ppb_rubis_driver:browse_categories(),
     ok = gen_tcp:send(Sock, Msg),
     {ok, BinReply} = gen_tcp:recv(Sock, 0),
-    Resp = rubis_proto:decode_serv_reply(BinReply),
+    Resp = pvc_proto:decode_serv_reply(BinReply),
     case Resp of
         ok ->
             {ok, State};
@@ -62,10 +62,10 @@ run_op(browsecategories, State = #state{socket=Sock}) ->
 
 run_op(searchitemsincategory, State = #state{socket=Sock, rubis_state=RState}) ->
     CategoryId = rubis_bench_core:random_category_id(RState),
-    Msg = rpb_rubis_driver:search_items_by_category(CategoryId),
+    Msg = ppb_rubis_driver:search_items_by_category(CategoryId),
     ok = gen_tcp:send(Sock, Msg),
     {ok, BinReply} = gen_tcp:recv(Sock, 0),
-    Resp = rubis_proto:decode_serv_reply(BinReply),
+    Resp = pvc_proto:decode_serv_reply(BinReply),
     case Resp of
         ok ->
             {ok, State};
@@ -75,10 +75,10 @@ run_op(searchitemsincategory, State = #state{socket=Sock, rubis_state=RState}) -
     end;
 
 run_op(browseregions, State = #state{socket=Sock}) ->
-    Msg = rpb_rubis_driver:browse_regions(),
+    Msg = ppb_rubis_driver:browse_regions(),
     ok = gen_tcp:send(Sock, Msg),
     {ok, BinReply} = gen_tcp:recv(Sock, 0),
-    Resp = rubis_proto:decode_serv_reply(BinReply),
+    Resp = pvc_proto:decode_serv_reply(BinReply),
     case Resp of
         ok ->
             {ok, State};
@@ -90,10 +90,10 @@ run_op(browseregions, State = #state{socket=Sock}) ->
 run_op(searchitemsinregion, State = #state{socket=Sock, rubis_state=RState}) ->
     RegionId = rubis_bench_core:random_region_id(RState),
     CategoryId = rubis_bench_core:random_category_id(RState),
-    Msg = rpb_rubis_driver:search_items_by_region(CategoryId, RegionId),
+    Msg = ppb_rubis_driver:search_items_by_region(CategoryId, RegionId),
     ok = gen_tcp:send(Sock, Msg),
     {ok, BinReply} = gen_tcp:recv(Sock, 0),
-    Resp = rubis_proto:decode_serv_reply(BinReply),
+    Resp = pvc_proto:decode_serv_reply(BinReply),
     case Resp of
         ok ->
             {ok, State};
@@ -104,10 +104,10 @@ run_op(searchitemsinregion, State = #state{socket=Sock, rubis_state=RState}) ->
 
 run_op(viewitem, State = #state{socket=Sock, rubis_state=RState}) ->
     ItemId = rubis_bench_core:random_item_id(RState),
-    Msg = rpb_rubis_driver:view_item(ItemId),
+    Msg = ppb_rubis_driver:view_item(ItemId),
     ok = gen_tcp:send(Sock, Msg),
     {ok, BinReply} = gen_tcp:recv(Sock, 0),
-    Resp = rubis_proto:decode_serv_reply(BinReply),
+    Resp = pvc_proto:decode_serv_reply(BinReply),
     case Resp of
         ok ->
             {ok, State};
@@ -118,10 +118,10 @@ run_op(viewitem, State = #state{socket=Sock, rubis_state=RState}) ->
 
 run_op(viewuserinfo, State = #state{socket=Sock, rubis_state=RState}) ->
     UserId = rubis_bench_core:random_user_id(RState),
-    Msg = rpb_rubis_driver:view_user(UserId),
+    Msg = ppb_rubis_driver:view_user(UserId),
     ok = gen_tcp:send(Sock, Msg),
     {ok, BinReply} = gen_tcp:recv(Sock, 0),
-    Resp = rubis_proto:decode_serv_reply(BinReply),
+    Resp = pvc_proto:decode_serv_reply(BinReply),
     case Resp of
         ok ->
             {ok, State};
@@ -132,10 +132,10 @@ run_op(viewuserinfo, State = #state{socket=Sock, rubis_state=RState}) ->
 
 run_op(viewbidhistory, State = #state{socket=Sock, rubis_state=RState}) ->
     ItemId = rubis_bench_core:random_item_id(RState),
-    Msg = rpb_rubis_driver:view_bid_history(ItemId),
+    Msg = ppb_rubis_driver:view_bid_history(ItemId),
     ok = gen_tcp:send(Sock, Msg),
     {ok, BinReply} = gen_tcp:recv(Sock, 0),
-    Resp = rubis_proto:decode_serv_reply(BinReply),
+    Resp = pvc_proto:decode_serv_reply(BinReply),
     case Resp of
         ok ->
             {ok, State};
@@ -149,10 +149,10 @@ run_op(buynowauth, State) ->
 
 run_op(storebuynow, State = #state{socket=Sock,rubis_state=RState}) ->
     {ItemId, UserId, Q} = rubis_bench_core:gen_buy_now(RState),
-    Msg = rpb_rubis_driver:store_buy_now(ItemId, UserId, Q),
+    Msg = ppb_rubis_driver:store_buy_now(ItemId, UserId, Q),
     ok = gen_tcp:send(Sock, Msg),
     {ok, BinReply} = gen_tcp:recv(Sock, 0),
-    Resp = rubis_proto:decode_serv_reply(BinReply),
+    Resp = pvc_proto:decode_serv_reply(BinReply),
     case Resp of
         {ok, _} ->
             {ok, State};
@@ -166,10 +166,10 @@ run_op(putbidauth, State) ->
 
 run_op(storebid, State = #state{socket=Sock,rubis_state=RState}) ->
     {ItemId, UserId, Price} = rubis_bench_core:gen_bid(RState),
-    Msg = rpb_rubis_driver:store_bid(ItemId, UserId, Price),
+    Msg = ppb_rubis_driver:store_bid(ItemId, UserId, Price),
     ok = gen_tcp:send(Sock, Msg),
     {ok, BinReply} = gen_tcp:recv(Sock, 0),
-    Resp = rubis_proto:decode_serv_reply(BinReply),
+    Resp = pvc_proto:decode_serv_reply(BinReply),
     case Resp of
         {ok, _} ->
             {ok, State};
@@ -183,10 +183,10 @@ run_op(putcommentauth, State) ->
 
 run_op(storecomment, State = #state{socket=Sock,rubis_state=RState}) ->
     {ItemId, FromId, ToId, Rating, Body} = rubis_bench_core:gen_comment(RState),
-    Msg = rpb_rubis_driver:store_comment(ItemId, FromId, ToId, Rating, Body),
+    Msg = ppb_rubis_driver:store_comment(ItemId, FromId, ToId, Rating, Body),
     ok = gen_tcp:send(Sock, Msg),
     {ok, BinReply} = gen_tcp:recv(Sock, 0),
-    Resp = rubis_proto:decode_serv_reply(BinReply),
+    Resp = pvc_proto:decode_serv_reply(BinReply),
     case Resp of
         {ok, _} ->
             {ok, State};
@@ -197,10 +197,10 @@ run_op(storecomment, State = #state{socket=Sock,rubis_state=RState}) ->
 
 run_op(registeritem, State = #state{socket=Sock, rubis_state=RState}) ->
     {ItemName, Description, Quantity, CategoryId, SellerId} = rubis_bench_core:gen_item(RState),
-    Msg = rpb_rubis_driver:store_item(ItemName, Description, Quantity, CategoryId, SellerId),
+    Msg = ppb_rubis_driver:store_item(ItemName, Description, Quantity, CategoryId, SellerId),
     ok = gen_tcp:send(Sock, Msg),
     {ok, BinReply} = gen_tcp:recv(Sock, 0),
-    Resp = rubis_proto:decode_serv_reply(BinReply),
+    Resp = pvc_proto:decode_serv_reply(BinReply),
     case Resp of
         {ok, ItemId} ->
             NewState = rubis_bench_core:update_state({confirm_item, ItemId}, RState),
@@ -215,10 +215,10 @@ run_op(aboutme_auth, State) ->
 
 run_op(aboutme, State = #state{socket=Sock, rubis_state=RState}) ->
     UserId = rubis_bench_core:random_user_id(RState),
-    Msg = rpb_rubis_driver:about_me(UserId),
+    Msg = ppb_rubis_driver:about_me(UserId),
     ok = gen_tcp:send(Sock, Msg),
     {ok, BinReply} = gen_tcp:recv(Sock, 0),
-    Resp = rubis_proto:decode_serv_reply(BinReply),
+    Resp = pvc_proto:decode_serv_reply(BinReply),
     case Resp of
         ok ->
             {ok, State};
@@ -244,10 +244,10 @@ get_state({error, _, #state{rubis_state=RState}}) ->
 
 perform_auth(State = #state{socket=Sock, rubis_state=RState}) ->
     {Username, Pass} = rubis_bench_core:random_user(RState),
-    Msg = rpb_rubis_driver:auth_user(Username, Pass),
+    Msg = ppb_rubis_driver:auth_user(Username, Pass),
     ok = gen_tcp:send(Sock, Msg),
     {ok, BinReply} = gen_tcp:recv(Sock, 0),
-    Resp = rubis_proto:decode_serv_reply(BinReply),
+    Resp = pvc_proto:decode_serv_reply(BinReply),
     case Resp of
         {ok, Id} ->
             NewState = rubis_bench_core:set_logged_in(Id, RState),
