@@ -66,6 +66,22 @@ run() ->
 
 op_complete(Op, ok, ElapsedUs) ->
     op_complete(Op, {ok, 1}, ElapsedUs);
+
+op_complete({_, readonly}=Op, {ok, Units}, Payload) ->
+    case get_distributed() of
+        true ->
+            gen_server:cast({global, ?MODULE}, {Op, {ok, Units}, Payload});
+        false ->
+            case Payload of
+                {TableTag, Us} ->
+                    folsom_metrics:notify({TableTag, Op}, Us);
+                ElapsedUs ->
+                    %% Same behaviour as before, increment normal latencies and units
+                    folsom_metrics:notify({latencies, Op}, ElapsedUs),
+                    folsom_metrics:notify({units, Op}, {inc, Units})
+            end
+    end;
+
 op_complete(Op, {ok, Units}, ElapsedUs) ->
     %% Update the histogram and units counter for the op in question
    % io:format("Get distributed: ~p~n", [get_distributed()]),
@@ -143,6 +159,13 @@ init([]) ->
 build_folsom_tables(Ops) ->
     Interval = lasp_bench_config:get(report_interval),
     lists:foreach(fun(Op) ->
+        case Op of
+            {_, readonly} ->
+                %% Send and receive times, async read execution and wait time
+                ?HISTOGRAMS(Op, [send, rcv, read_took, wait_took], Interval);
+            _ ->
+                ok
+        end,
         ?HISTOGRAM({latencies, Op}, Interval),
         folsom_metrics:new_counter({units, Op})
     end, Ops).
@@ -289,11 +312,22 @@ process_stats(Now, #state{stats_writer=Module}=State) ->
 %% Write latency info for a given op to the appropriate CSV. Returns the
 %% number of successful and failed ops in this window of time.
 %%
-report_latency(State, Elapsed, Window, Op) ->
+report_latency(State, Elapsed, Window, Op={_, readonly}) ->
     Stats = folsom_metrics:get_histogram_statistics({latencies, Op}),
     Errors = error_counter(Op),
     Units = folsom_metrics:get_metric_value({units, Op}),
 
+    ReadStats = [{send,         folsom_metrics:get_histogram_statistics({send, Op})},
+                 {rcv,          folsom_metrics:get_histogram_statistics({rcv, Op})},
+                 {read_took,    folsom_metrics:get_histogram_statistics({read_took, Op})},
+                 {wait_took,    folsom_metrics:get_histogram_statistics({wait_took, Op})}],
+
+    send_report(State, Elapsed, Window, Op, [{default, Stats} | ReadStats], Errors, Units);
+
+report_latency(State, Elapsed, Window, Op) ->
+    Stats = folsom_metrics:get_histogram_statistics({latencies, Op}),
+    Errors = error_counter(Op),
+    Units = folsom_metrics:get_metric_value({units, Op}),
     send_report(State, Elapsed, Window, Op, Stats, Errors, Units).
 
 send_report(State, Elapsed, Window, Op, Stats, Errors, Units) ->

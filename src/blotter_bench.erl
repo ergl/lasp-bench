@@ -59,6 +59,23 @@ terminate(_Reason, #state{coord_connection=Connection}) ->
     ok = pvc:close(Connection),
     ok.
 
+%% Concrete readonly 1 callback
+run(readonly, KeyGen, _, State = #state{keys_to_read = 1,
+                                        coord_connection = Conn}) ->
+
+    {ok, Tx} = pvc:start_transaction(Conn, next_tx_id(State)),
+    Sent = os:timestamp(),
+    case pvc:read(Conn, Tx, KeyGen()) of
+        {error, Reason} ->
+            {error, Reason, incr_tx_id(State)};
+        {abort, AbortReason} ->
+            {error, AbortReason, incr_tx_id(State)};
+        {ok, StampMap, Tx1} ->
+            Received = os:timestamp(),
+            ok = pvc:commit(Conn, Tx1),
+            %% Return stamp map for further processing
+            {ok, {Sent, Received, StampMap, incr_tx_id(State)}}
+    end;
 
 run(readonly, KeyGen, _, State = #state{keys_to_read = KeysToRead,
                                         abort_retries = Tries}) ->

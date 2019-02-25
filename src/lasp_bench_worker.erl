@@ -261,7 +261,9 @@ worker_next_op(State) ->
     case Result of
         {Res, DriverState} when Res == ok orelse element(1, Res) == ok ->
             lasp_bench_stats:op_complete(Next, Res, ElapsedUs),
-            {ok, State#state { driver_state = DriverState}};
+            %% TODO(borja): Remove this
+            NewDriverState = hack_preprocess_driver_state(Next, DriverState),
+            {ok, State#state{driver_state = NewDriverState}};
 
         {Res, DriverState} when Res == silent orelse element(1, Res) == silent ->
             {ok, State#state { driver_state = DriverState}};
@@ -314,6 +316,26 @@ worker_next_op(State) ->
 
             normal
     end.
+
+hack_preprocess_driver_state({_, readonly}=Op, {Sent, Received, StampMap, State}) ->
+    %% *Took times were measured on the server
+    #{rcv := ServerRcv,
+      read_took := ReadTook,
+      wait_took := WaitTook,
+      send := ServerSend} = StampMap,
+
+    RequestTime = erlang:max(0, timer:now_diff(ServerRcv, Sent)),
+    ResponseTime = erlang:max(0, timer:now_diff(Received, ServerSend)),
+
+    ok = lasp_bench_stats:op_complete(Op, ok, {send, RequestTime}),
+    ok = lasp_bench_stats:op_complete(Op, ok, {read_took, ReadTook}),
+    ok = lasp_bench_stats:op_complete(Op, ok, {wait_took, WaitTook}),
+    ok = lasp_bench_stats:op_complete(Op, ok, {rcv, ResponseTime}),
+
+    State;
+
+hack_preprocess_driver_state(_, State) ->
+    State.
 
 needs_shutdown(State) ->
     Parent = State#state.parent_pid,

@@ -60,7 +60,14 @@ new(Ops, Measurements) ->
 
 terminate({SummaryFile, ErrorsFile}) ->
     ?INFO("module=~s event=stop stats_sink=csv\n", [?MODULE]),
-    [ok = file:close(F) || {{csv_file, _}, F} <- erlang:get()],
+    [begin
+         case Op of
+             {_, readonly} ->
+                 ok = lists:foreach(fun file:close/1, F);
+             _ ->
+                 ok = file:close(F)
+         end
+     end || {{csv_file, Op}, F} <- erlang:get()],
     ok = file:close(SummaryFile),
     ok = file:close(ErrorsFile),
     ok.
@@ -80,6 +87,13 @@ report_error({_SummaryFile, ErrorsFile},
     file:write(ErrorsFile,
                io_lib:format("\"~w\",\"~w\"\n",
                              [Key, Count])).
+
+report_latency(_, Elapsed, Window, Op={_, readonly}, Payload, Errors, Units) ->
+    Fds = erlang:get({csv_file, Op}),
+    lists:foreach(fun({StatLabel, Stat}) ->
+        Fd = proplists:get_value(StatLabel, Fds),
+        file:write(Fd, get_line_from_stats(Op, Elapsed, Window, Stat, Errors, Units))
+    end, Payload);
 
 report_latency({_SummaryFile, _ErrorsFile}, Elapsed, Window, Op, Stats, Errors, Units) ->
     Line = get_line_from_stats(Op, Elapsed, Window, Stats, Errors, Units),
@@ -109,6 +123,19 @@ get_line_from_stats(Op, Elapsed, Window, Stats, Errors, Units) ->
 %% ====================================================================
 %% Internal functions
 %% ====================================================================
+
+op_csv_file({_, readonly}) ->
+    Names = [{default, "readonly_latencies.csv"},
+             {send, "readonly_send_latencies.csv"},
+             {rcv, "readonly_rcv_latencies.csv"},
+             {read_took, "readonly_read_took_latencies.csv"},
+             {wait_took, "readonly_wait_took_latencies.csv"}],
+
+    lists:map(fun({Type, Fname}) ->
+        {ok, F} = file:open(Fname, [raw, binary, write]),
+        ok = file:write(F, <<"elapsed, window, n, min, mean, median, 95th, 99th, 99_9th, max, errors\n">>),
+        {Type, F}
+    end, Names);
 
 op_csv_file({Label, _Op}) ->
     Fname = normalize_label(Label) ++ "_latencies.csv",
