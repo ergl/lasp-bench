@@ -44,6 +44,13 @@
                  last_warn = {0,0,0}}).
 
 -define(WARN_INTERVAL, 1000). % Warn once a second
+
+-define(HISTOGRAM(Name, Interval), folsom_metrics:new_histogram(Name, slide, Interval)).
+-define(HISTOGRAMS(Op, Names, Interval),
+    lists:foreach(fun(Name) ->
+        folsom_metrics:new_histogram({Name, Op}, slide, Interval)
+    end, Names)).
+
 %% ====================================================================
 %% API
 %% ====================================================================
@@ -70,6 +77,7 @@ op_complete(Op, {ok, Units}, ElapsedUs) ->
             folsom_metrics:notify({units, Op}, {inc, Units})
     end,
     ok;
+
 op_complete(Op, Result, ElapsedUs) ->
     gen_server:call({global, ?MODULE}, {op, Op, Result, ElapsedUs}, infinity).
 
@@ -133,8 +141,9 @@ init([]) ->
 %%
 -spec build_folsom_tables([any()]) -> ok.
 build_folsom_tables(Ops) ->
+    Interval = lasp_bench_config:get(report_interval),
     lists:foreach(fun(Op) ->
-        folsom_metrics:new_histogram({latencies, Op}, slide, lasp_bench_config:get(report_interval)),
+        ?HISTOGRAM({latencies, Op}, Interval),
         folsom_metrics:new_counter({units, Op})
     end, Ops).
 
@@ -280,15 +289,16 @@ process_stats(Now, #state{stats_writer=Module}=State) ->
 %% Write latency info for a given op to the appropriate CSV. Returns the
 %% number of successful and failed ops in this window of time.
 %%
-report_latency(#state{stats_writer=Module}=State, Elapsed, Window, Op) ->
+report_latency(State, Elapsed, Window, Op) ->
     Stats = folsom_metrics:get_histogram_statistics({latencies, Op}),
     Errors = error_counter(Op),
     Units = folsom_metrics:get_metric_value({units, Op}),
 
-    Module:report_latency({State#state.stats_writer,
-                                             State#state.stats_writer_data},
-                                            Elapsed, Window, Op,
-                                            Stats, Errors, Units),
+    send_report(State, Elapsed, Window, Op, Stats, Errors, Units).
+
+send_report(State, Elapsed, Window, Op, Stats, Errors, Units) ->
+    #state{stats_writer=Module, stats_writer_data=WriterData} = State,
+    Module:report_latency({Module, WriterData}, Elapsed, Window, Op, Stats, Errors, Units),
     {Units, Errors}.
 
 report_total_errors(#state{stats_writer=Module}=State) ->

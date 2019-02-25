@@ -81,32 +81,30 @@ report_error({_SummaryFile, ErrorsFile},
                io_lib:format("\"~w\",\"~w\"\n",
                              [Key, Count])).
 
-report_latency({_SummaryFile, _ErrorsFile},
-               Elapsed, Window, Op,
-               Stats, Errors, Units) ->
+report_latency({_SummaryFile, _ErrorsFile}, Elapsed, Window, Op, Stats, Errors, Units) ->
+    Line = get_line_from_stats(Op, Elapsed, Window, Stats, Errors, Units),
+    file:write(erlang:get({csv_file, Op}), Line).
+
+get_line_from_stats(Op, Elapsed, Window, Stats, Errors, Units) ->
     case proplists:get_value(n, Stats) > 0 of
         true ->
             P = proplists:get_value(percentile, Stats),
-            Line = io_lib:format("~w, ~w, ~w, ~w, ~.1f, ~w, ~w, ~w, ~w, ~w, ~w\n",
-                                 [Elapsed,
-                                  Window,
-                                  Units,
-                                  proplists:get_value(min, Stats),
-                                  proplists:get_value(arithmetic_mean, Stats),
-                                  proplists:get_value(median, Stats),
-                                  proplists:get_value(95, P),
-                                  proplists:get_value(99, P),
-                                  proplists:get_value(999, P),
-                                  proplists:get_value(max, Stats),
-                                  Errors]);
+            io_lib:format("~w, ~w, ~w, ~w, ~.1f, ~w, ~w, ~w, ~w, ~w, ~w\n",
+                          [Elapsed,
+                           Window,
+                           Units,
+                           proplists:get_value(min, Stats),
+                           proplists:get_value(arithmetic_mean, Stats),
+                           proplists:get_value(median, Stats),
+                           proplists:get_value(95, P),
+                           proplists:get_value(99, P),
+                           proplists:get_value(999, P),
+                           proplists:get_value(max, Stats),
+                           Errors]);
         false ->
             ?WARN("No data for op: ~p\n", [Op]),
-            Line = io_lib:format("~w, ~w, 0, 0, 0, 0, 0, 0, 0, 0, ~w\n",
-                                 [Elapsed,
-                                  Window,
-                                  Errors])
-    end,
-    file:write(erlang:get({csv_file, Op}), Line).
+            io_lib:format("~w, ~w, 0, 0, 0, 0, 0, 0, 0, 0, ~w\n", [Elapsed, Window, Errors])
+    end.
 
 %% ====================================================================
 %% Internal functions
