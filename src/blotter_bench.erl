@@ -59,6 +59,23 @@ terminate(_Reason, #state{coord_connection=Connection}) ->
     ok = pvc:close(Connection),
     ok.
 
+
+run(ping, _, _, State = #state{coord_connection = Conn}) ->
+    %% Hack to get raw socket field from connection
+    {conn, _, _, SocketsDict} = Conn,
+
+    %% Get a node from the cluster at random
+    RandomChoice = rand:uniform(orddict:size(SocketsDict)),
+    {_, Socket} = lists:nth(RandomChoice, SocketsDict),
+    ok = gen_tcp:send(Socket, ppb_simple_driver:ping()),
+    {ok, BinReply} = gen_tcp:recv(Socket, 0),
+    case pvc_proto:decode_serv_reply(BinReply) of
+        {error, Reason} ->
+            {error, Reason, State};
+        ok ->
+            {ok, State}
+    end;
+
 %% Concrete readonly 1 callback
 run(readonly, KeyGen, _, State = #state{keys_to_read = 1,
                                         coord_connection = Conn}) ->
