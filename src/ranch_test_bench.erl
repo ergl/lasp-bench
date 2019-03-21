@@ -14,10 +14,11 @@
 -record(state, { sockets }).
 
 new(_Id) ->
-    Sockets = lists:map(fun({IP, Port}) ->
+    Port = lasp_bench_config:get(ranch_port, 7878),
+    Sockets = lists:map(fun(IP) ->
         {ok, Socket} = gen_tcp:connect(IP, Port, ?CONN_OPTIONS),
         Socket
-    end, lasp_bench_config:get(dst_proplist)),
+    end, lasp_bench_config:get(ranch_ips)),
     {ok, #state{sockets = Sockets}}.
 
 terminate(_Reason, #state{sockets=Sockets}) ->
