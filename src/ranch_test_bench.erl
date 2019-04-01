@@ -1,36 +1,28 @@
 -module(ranch_test_bench).
 
 %% Ignore xref for all lasp bench drivers
--ignore_xref([new/1, run/4, terminate/2]).
+-ignore_xref([new/1, run/4]).
 
 -export([new/1,
-         run/4,
-         terminate/2]).
+         run/4]).
 
 -include("lasp_bench.hrl").
 
--define(CONN_OPTIONS, [binary, {active, false}, {packet, 2}, {nodelay, true}]).
+-record(state, { worker_id, connections }).
 
--record(state, { sockets }).
-
-new(_Id) ->
-    Port = lasp_bench_config:get(ranch_port, 7878),
-    Sockets = lists:map(fun(IP) ->
-        {ok, Socket} = gen_tcp:connect(IP, Port, ?CONN_OPTIONS),
-        Socket
+new(Id) ->
+    Connections = lists:map(fun(IP) ->
+        [{IP, ConnectionHandle}] = ets:lookup(prehook_ets, IP),
+        ConnectionHandle
     end, lasp_bench_config:get(ranch_ips)),
-    {ok, #state{sockets = Sockets}}.
-
-terminate(_Reason, #state{sockets=Sockets}) ->
-    lists:foreach(fun gen_tcp:close/1, Sockets).
-
+    {ok, #state{worker_id = Id, connections = Connections}}.
 
 %% Ping a node at random
-run(ping, _, ValueGen, State = #state{sockets = Sockets}) ->
-    Socket = lists:nth(rand:uniform(length(Sockets)), Sockets),
-
-    ok = gen_tcp:send(Socket, Payload = ValueGen()),
-    case gen_tcp:recv(Socket, 0) of
+run(ping, _, ValueGen, State = #state{worker_id=Id, connections=Connections}) ->
+    Connection = lists:nth(rand:uniform(length(Connections)), Connections),
+    %% FIXME(borja): Take into account id exhaustion
+    Payload = <<Id:8, (ValueGen())/binary>>,
+    case pipesock_worker:send_sync(Connection, Payload, 5000) of
         {ok, Payload} ->
             {ok, State};
         {error, Reason} ->
