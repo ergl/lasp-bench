@@ -11,6 +11,7 @@ start() ->
 
     Port = lasp_bench_config:get(ranch_port),
     IPs = lasp_bench_config:get(ranch_ips),
+    %% TODO(borja): Either spawn multiple connections or create pool
     lists:foreach(fun(IP) ->
         {ok, ServerPid} = pipesock_worker_sup:start_connection(IP, Port),
         true = ets:insert(prehook_ets, {IP, ServerPid})
