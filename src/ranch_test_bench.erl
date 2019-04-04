@@ -21,7 +21,7 @@ new(Id) ->
 run(ping, _, ValueGen, State = #state{worker_id=Id, connections=Connections}) ->
     Connection = lists:nth(rand:uniform(length(Connections)), Connections),
     %% FIXME(borja): Take into account id exhaustion
-    Payload = <<Id:8, (ValueGen())/binary>>,
+    Payload = <<Id:16, (ValueGen())/binary>>,
     case pipesock_worker:send_sync(Connection, Payload, 5000) of
         {ok, Payload} ->
             {ok, State};
