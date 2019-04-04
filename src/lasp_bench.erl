@@ -270,15 +270,15 @@ load_source_files(Dir) ->
     filelib:fold_files(Dir, ".*.erl", false, CompileFn, ok).
 
 run_pre_hook() ->
-    run_hook(lasp_bench_config:get(pre_hook, no_op)).
+    run_hook(lasp_bench_config:get(pre_hook, no_op), lasp_bench_config:get(pre_hook_args, [])).
 
 run_post_hook() ->
-    run_hook(lasp_bench_config:get(post_hook, no_op)).
+    run_hook(lasp_bench_config:get(post_hook, no_op), lasp_bench_config:get(post_hook_args, [])).
 
-run_hook({Module, Function}) ->
-    Module:Function();
+run_hook({Module, Function}, Args) ->
+    erlang:apply(Module, Function, Args);
 
-run_hook(no_op) ->
+run_hook(no_op, _) ->
     no_op.
 
 md5(Bin) -> crypto:hash(md5, Bin).
