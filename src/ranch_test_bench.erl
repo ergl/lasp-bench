@@ -12,8 +12,8 @@
 
 new(Id) ->
     Connections = lists:map(fun(IP) ->
-        [{IP, ConnectionHandle}] = ets:lookup(prehook_ets, IP),
-        ConnectionHandle
+        [{IP, PoolSize, Conns}] = ets:lookup(prehook_ets, IP),
+        lists:nth((Id rem PoolSize) + 1, Conns)
     end, lasp_bench_config:get(ranch_ips)),
     {ok, #state{worker_id = Id, connections = Connections}}.
 
