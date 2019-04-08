@@ -11,16 +11,16 @@
 -record(state, { worker_id, connections }).
 
 new(Id) ->
-    Connections = lists:map(fun(IP) ->
-        [{IP, PoolSize, Conns}] = ets:lookup(prehook_ets, IP),
-        lists:nth((Id rem PoolSize) + 1, Conns)
-    end, lasp_bench_config:get(ranch_ips)),
+    Connections = [begin
+         [{Ip, PoolSize, Conns}] = ets:lookup(prehook_ets, Ip),
+         {Ip, lists:nth((Id rem PoolSize) + 1, Conns)}
+     end || Ip <- lasp_bench_config:get(ranch_ips)],
     {ok, #state{worker_id = Id, connections = Connections}}.
 
 %% Ping a node at random
 run(ping, _, ValueGen, State = #state{worker_id=Id, connections=Connections}) ->
-    Connection = lists:nth(rand:uniform(length(Connections)), Connections),
-    %% FIXME(borja): Take into account id exhaustion
+    {Ip, Connection} = lists:nth(rand:uniform(length(Connections)), Connections),
+    lager:info("Picked connection for ~p", [Ip]),
     Payload = <<Id:16, (ValueGen())/binary>>,
     case pipesock_worker:send_sync(Connection, Payload, 5000) of
         {ok, Payload} ->

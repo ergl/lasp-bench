@@ -2,7 +2,7 @@
 
 %% API
 -export([start/1,
-         stop/1]).
+         stop/0]).
 
 start(PoolSize) ->
     lager:info("Running pre hook, loading pipesock with args ~p", [PoolSize]),
@@ -12,6 +12,11 @@ start(PoolSize) ->
     Port = lasp_bench_config:get(ranch_port),
     IPs = lasp_bench_config:get(ranch_ips),
 
+    %% Create a pool of `PoolSize` connections for each server node in the cluster
+    %% These pools will be partitioned uniformly among worker threads
+    %%
+    %% Store in the ETS a mapping Ip -> {PoolSize, Conns=[connection()]}
+    %% A worker will, for each Ip, pick Conns[random(0, PoolSize)]
     ok = lists:foreach(fun(Ip) ->
         Connections = spawn_pool(Ip, Port, PoolSize),
         true = ets:insert(prehook_ets, {Ip, PoolSize, Connections}),
@@ -25,7 +30,7 @@ spawn_pool(_, _, 0, Acc) ->
     Acc;
 
 spawn_pool(Ip, Port, N, Acc) ->
-    PID = case pipesock_worker_sup:start_connection(Ip, Port, N) of
+    PID = case pipesock_worker_sup:start_connection(Ip, Port) of
       {ok, ServerPid} ->
           ServerPid;
       {error, {already_started, ServerPid}} ->
@@ -33,7 +38,7 @@ spawn_pool(Ip, Port, N, Acc) ->
     end,
     spawn_pool(Ip, Port, N - 1, [PID | Acc]).
 
-stop([]) ->
+stop() ->
     lager:info("Running post hook, unloading pipesock"),
     IPs = lasp_bench_config:get(ranch_ips),
     lists:foreach(fun(Ip) ->
