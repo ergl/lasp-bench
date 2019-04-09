@@ -19,8 +19,7 @@ new(Id) ->
 
 %% Ping a node at random
 run(ping, _, ValueGen, State = #state{worker_id=Id, connections=Connections}) ->
-    {Ip, Connection} = lists:nth(rand:uniform(length(Connections)), Connections),
-    lager:info("Picked connection for ~p", [Ip]),
+    {_Ip, Connection} = lists:nth(rand:uniform(length(Connections)), Connections),
     Payload = <<Id:16, (ValueGen())/binary>>,
     case pipesock_worker:send_sync(Connection, Payload, 5000) of
         {ok, Payload} ->
