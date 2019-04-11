@@ -21,7 +21,7 @@ new(Id) ->
 run(ping, _, ValueGen, State = #state{worker_id=Id, connections=Connections}) ->
     {_Ip, Connection} = lists:nth(rand:uniform(length(Connections)), Connections),
     Payload = <<Id:16, (ValueGen())/binary>>,
-    case pipesock_worker:send_sync(Connection, Payload, 5000) of
+    case pipesock_conn:send_sync(Connection, Payload, 5000) of
         {ok, Payload} ->
             {ok, State};
         {error, Reason} ->
