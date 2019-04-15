@@ -1,18 +1,17 @@
--module(pipesock_hook).
+-module(hook_pipesock).
 
 %% API
 -export([start/1,
          stop/0]).
 
-start(KeyList) ->
-    lager:info("Running pre hook, loading pipesock with args ~p", [KeyList]),
+start(HookOpts) ->
+    lager:info("Running pre hook, loading pipesock with args ~p", [HookOpts]),
     ok = application:ensure_started(pipesock),
     _ = ets:new(prehook_ets, [set, named_table, protected]),
 
-    {value, {pool_size, PoolSize}, ConnOpts} = lists:keytake(pool_size, 1, KeyList),
+    {pool_size, PoolSize} = lists:keyfind(pool_size, 1, HookOpts),
     Port = lasp_bench_config:get(ranch_port),
     IPs = lasp_bench_config:get(ranch_ips),
-    ConnMap = maps:from_list(ConnOpts),
 
     %% Create a pool of `PoolSize` connections for each server node in the cluster
     %% These pools will be partitioned uniformly among worker threads
@@ -21,20 +20,20 @@ start(KeyList) ->
     %% A worker will, for each Ip, pick Conns[random(0, PoolSize)]
 
     ok = lists:foreach(fun(Ip) ->
-        Connections = spawn_pool(Ip, Port, ConnMap, PoolSize),
+        Connections = spawn_pool(Ip, Port, PoolSize),
         true = ets:insert(prehook_ets, {Ip, PoolSize, Connections}),
         ok
     end, IPs).
 
-spawn_pool(Ip, Port, Options, Size) ->
-    spawn_pool(Ip, Port, Options, Size, []).
+spawn_pool(Ip, Port, Size) ->
+    spawn_pool(Ip, Port, Size, []).
 
-spawn_pool(_, _, _Options, 0, Acc) ->
+spawn_pool(_, _, 0, Acc) ->
     Acc;
 
-spawn_pool(Ip, Port, Options, N, Acc) ->
-    {ok, Connection} = pipesock_conn:open(Ip, Port, Options),
-    spawn_pool(Ip, Port, Options, N - 1, [Connection | Acc]).
+spawn_pool(Ip, Port, N, Acc) ->
+    {ok, Connection} = pipesock_conn:open(Ip, Port),
+    spawn_pool(Ip, Port, N - 1, [Connection | Acc]).
 
 stop() ->
     lager:info("Running post hook, unloading pipesock"),
