@@ -1,16 +1,20 @@
 -module(blotter_bench).
 
 %% Ignore xref for all lasp bench drivers
--ignore_xref([new/1, run/4, terminate/2]).
+-ignore_xref([new/1, run/4]).
 
 -export([new/1,
-         run/4,
-         terminate/2]).
+         run/4]).
 
 -include("lasp_bench.hrl").
 
 -type tx_id() :: {non_neg_integer(), non_neg_integer()}.
 -type key_gen(T) :: fun(() -> T).
+
+%% Generator for message identifiers in pvc
+%% The identifier for all messages will always be the worker id,
+%% since these ids are never shared along more than one connection
+-define(MSG_ID_GEN, fun({_, {WorkerId, _}}) -> WorkerId end).
 
 -record(state, {
     %% Id of this worker thread
@@ -18,8 +22,8 @@
     %% Auto incremented counter to create unique transaction ids
     transaction_count :: non_neg_integer(),
 
-    %% Coordinator connection to Antidote
-    coord_connection :: pvc:connection(),
+    %% Client coordinator state
+    coord_state :: pvc:coord_state(),
 
     %% Keys to read in readonly op
     keys_to_read :: non_neg_integer(),
@@ -33,21 +37,18 @@
 }).
 
 new(Id) ->
-    _ = application:ensure_all_started(pvc),
-
-    Ip = lasp_bench_config:get(rubis_ip, '127.0.0.1'),
-    Port = lasp_bench_config:get(rubis_port, 7878),
-
     KeysToRead = lasp_bench_config:get(read_keys),
     KeysToWrite = lasp_bench_config:get(written_keys),
     ReadWriteRatio = lasp_bench_config:get(ratio),
     AbortTries = lasp_bench_config:get(abort_retries, 50),
 
-    {ok, Connection} = pvc:connect(Ip, Port),
+    RingInfo = ets:lookup_element(hook_pvc, ring, 2),
+    Connections = hook_pvc:conns_for_worker(Id),
+    {ok, CoordState} = pvc:new(RingInfo, Connections),
 
     State = #state{worker_id = Id,
                    transaction_count = 0,
-                   coord_connection = Connection,
+                   coord_state = CoordState,
                    keys_to_read = KeysToRead,
                    keys_to_write = KeysToWrite,
                    mixed_readwrite_ratio = ReadWriteRatio,
@@ -55,20 +56,14 @@ new(Id) ->
 
     {ok, State}.
 
-terminate(_Reason, #state{coord_connection=Connection}) ->
-    ok = pvc:close(Connection),
-    ok.
-
-
-run(ping, _, _, State = #state{coord_connection = Conn}) ->
+run(ping, _, _, State = #state{worker_id=Id, coord_state=Conn}) ->
     %% Hack to get raw socket field from connection
-    {conn, _, _, SocketsDict} = Conn,
+    {coord_state, _, _, ConnectionsDict} = Conn,
 
     %% Get a node from the cluster at random
-    RandomChoice = rand:uniform(orddict:size(SocketsDict)),
-    {_, Socket} = lists:nth(RandomChoice, SocketsDict),
-    ok = gen_tcp:send(Socket, ppb_simple_driver:ping()),
-    {ok, BinReply} = gen_tcp:recv(Socket, 0),
+    RandomChoice = rand:uniform(orddict:size(ConnectionsDict)),
+    {_, Connection} = lists:nth(RandomChoice, ConnectionsDict),
+    {ok, BinReply} = pvc_connection:send(Connection, Id, ppb_simple_driver:ping(), 5000),
     case pvc_proto:decode_serv_reply(BinReply) of
         {error, Reason} ->
             {error, Reason, State};
@@ -78,9 +73,9 @@ run(ping, _, _, State = #state{coord_connection = Conn}) ->
 
 %% Concrete readonly 1 callback
 run(readonly, KeyGen, _, State = #state{keys_to_read = 1,
-                                        coord_connection = Conn}) ->
+                                        coord_state = Conn}) ->
 
-    {ok, Tx} = pvc:start_transaction(Conn, next_tx_id(State)),
+    {ok, Tx} = pvc:start_transaction(Conn, next_tx_id(State), ?MSG_ID_GEN),
     Sent = os:timestamp(),
     case pvc:read(Conn, Tx, KeyGen()) of
         {error, Reason} ->
@@ -126,8 +121,8 @@ run(readwrite, KeyGen, ValueGen, State = #state{mixed_readwrite_ratio = {ToRead,
 perform_readonly_tx(_, State, 0) ->
     {error, too_many_retries, State};
 
-perform_readonly_tx(Keys, State=#state{coord_connection=Conn}, N) ->
-    {ok, Tx} = pvc:start_transaction(Conn, next_tx_id(State)),
+perform_readonly_tx(Keys, State=#state{coord_state=Conn}, N) ->
+    {ok, Tx} = pvc:start_transaction(Conn, next_tx_id(State), ?MSG_ID_GEN),
     case pvc:read(Conn, Tx, Keys) of
         {error, Reason} ->
             {error, Reason, incr_tx_id(State)};
@@ -146,8 +141,8 @@ perform_readonly_tx(Keys, State=#state{coord_connection=Conn}, N) ->
 perform_write_tx(_, _, State, 0) ->
     {error, too_many_retries, State};
 
-perform_write_tx(Keys, Updates, State=#state{coord_connection=Conn}, N) ->
-    {ok, Tx} = pvc:start_transaction(Conn, next_tx_id(State)),
+perform_write_tx(Keys, Updates, State=#state{coord_state=Conn}, N) ->
+    {ok, Tx} = pvc:start_transaction(Conn, next_tx_id(State), ?MSG_ID_GEN),
     case pvc:read(Conn, Tx, Keys) of
         {error, Reason} ->
             {error, Reason, incr_tx_id(State)};
@@ -183,6 +178,7 @@ gen_keys(0, _, Acc) ->
 gen_keys(N, K, Acc) ->
     gen_keys(N - 1, K, [integer_to_binary(K(), 36) | Acc]).
 
+%% FIXME(borja): Id should be a single integer, so we can serialize it
 -spec next_tx_id(#state{}) -> tx_id().
 next_tx_id(#state{worker_id = Id, transaction_count = N}) ->
     {Id, N}.
