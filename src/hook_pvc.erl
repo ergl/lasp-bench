@@ -1,5 +1,7 @@
 -module(hook_pvc).
 
+-ignore_xref([start/1, stop/0]).
+
 %% API
 -export([start/1,
          stop/0]).

@@ -11,11 +11,6 @@
 -type tx_id() :: {non_neg_integer(), non_neg_integer()}.
 -type key_gen(T) :: fun(() -> T).
 
-%% Generator for message identifiers in pvc
-%% The identifier for all messages will always be the worker id,
-%% since these ids are never shared along more than one connection
--define(MSG_ID_GEN, fun({_, {WorkerId, _}}) -> WorkerId end).
-
 -record(state, {
     %% Id of this worker thread
     worker_id :: non_neg_integer(),
@@ -44,7 +39,9 @@ new(Id) ->
 
     RingInfo = ets:lookup_element(hook_pvc, ring, 2),
     Connections = hook_pvc:conns_for_worker(Id),
-    {ok, CoordState} = pvc:new(RingInfo, Connections),
+
+    %% Use our worker id to generate the messages for this coordinator
+    {ok, CoordState} = pvc:new(RingInfo, Connections, Id),
 
     State = #state{worker_id = Id,
                    transaction_count = 0,
@@ -56,9 +53,9 @@ new(Id) ->
 
     {ok, State}.
 
-run(ping, _, _, State = #state{worker_id=Id, coord_state=Conn}) ->
+run(ping, _, _, State = #state{worker_id=Id, coord_state=CoordState}) ->
     %% Hack to get raw socket field from connection
-    {coord_state, _, _, ConnectionsDict} = Conn,
+    {coord_state, _, _, ConnectionsDict} = CoordState,
 
     %% Get a node from the cluster at random
     RandomChoice = rand:uniform(orddict:size(ConnectionsDict)),
@@ -71,39 +68,41 @@ run(ping, _, _, State = #state{worker_id=Id, coord_state=Conn}) ->
             {ok, State}
     end;
 
-%% Concrete readonly 1 callback
-run(readonly, KeyGen, _, State = #state{keys_to_read = 1,
-                                        coord_state = Conn}) ->
+%% @doc Readonly of 1 key, without retries, performs timing
+run(readonly, KeyGen, _, State = #state{keys_to_read=1,
+                                        coord_state=CoordState}) ->
 
-    {ok, Tx} = pvc:start_transaction(Conn, next_tx_id(State), ?MSG_ID_GEN),
+    {ok, Tx} = pvc:start_transaction(CoordState, next_tx_id(State)),
     Sent = os:timestamp(),
-    case pvc:read(Conn, Tx, KeyGen()) of
+    case pvc:read(CoordState, Tx, KeyGen()) of
         {error, Reason} ->
             {error, Reason, incr_tx_id(State)};
+
         {abort, AbortReason} ->
             {error, AbortReason, incr_tx_id(State)};
+
         {ok, StampMap, Tx1} ->
             Received = os:timestamp(),
-            ok = pvc:commit(Conn, Tx1),
+            ok = pvc:commit(CoordState, Tx1),
             %% Return stamp map for further processing
             {ok, {Sent, Received, StampMap, incr_tx_id(State)}}
     end;
 
-run(readonly, KeyGen, _, State = #state{keys_to_read = KeysToRead,
-                                        abort_retries = Tries}) ->
+run(readonly, KeyGen, _, State = #state{keys_to_read=KeysToRead,
+                                        abort_retries=Tries}) ->
 
     Keys = gen_keys(KeysToRead, KeyGen),
     perform_readonly_tx(Keys, State, Tries);
 
-run(writeonly, KeyGen, ValueGen, State = #state{keys_to_write = KeysToWrite,
+run(writeonly, KeyGen, ValueGen, State = #state{keys_to_write=KeysToWrite,
                                                 abort_retries=Tries}) ->
 
     Keys = gen_keys(KeysToWrite, KeyGen),
     Updates = lists:map(fun(K) -> {K, ValueGen()} end, Keys),
     perform_write_tx(Keys, Updates, State, Tries);
 
-run(readwrite, KeyGen, ValueGen, State = #state{mixed_readwrite_ratio = {ToRead, ToWrite},
-                                                abort_retries = Tries}) ->
+run(readwrite, KeyGen, ValueGen, State = #state{mixed_readwrite_ratio={ToRead, ToWrite},
+                                                abort_retries=Tries}) ->
 
     %% If readwrite is {2, 1}, means we want to read 2 keys, update 1
     %% If it is {1, 2}, we need to read 2, then update 2 (no blind writes)
@@ -121,16 +120,16 @@ run(readwrite, KeyGen, ValueGen, State = #state{mixed_readwrite_ratio = {ToRead,
 perform_readonly_tx(_, State, 0) ->
     {error, too_many_retries, State};
 
-perform_readonly_tx(Keys, State=#state{coord_state=Conn}, N) ->
-    {ok, Tx} = pvc:start_transaction(Conn, next_tx_id(State), ?MSG_ID_GEN),
-    case pvc:read(Conn, Tx, Keys) of
+perform_readonly_tx(Keys, State=#state{coord_state=CoordState}, N) ->
+    {ok, Tx} = pvc:start_transaction(CoordState, next_tx_id(State)),
+    case pvc:read(CoordState, Tx, Keys) of
         {error, Reason} ->
             {error, Reason, incr_tx_id(State)};
         {abort, _AbortReason} ->
             perform_readonly_tx(Keys, incr_tx_id(State), N - 1);
         {ok, _, Tx1} ->
             %% Readonly transactions always commit
-            ok = pvc:commit(Conn, Tx1),
+            ok = pvc:commit(CoordState, Tx1),
             {ok, incr_tx_id(State)}
     end.
 
@@ -142,19 +141,23 @@ perform_write_tx(_, _, State, 0) ->
     {error, too_many_retries, State};
 
 perform_write_tx(Keys, Updates, State=#state{coord_state=Conn}, N) ->
-    {ok, Tx} = pvc:start_transaction(Conn, next_tx_id(State), ?MSG_ID_GEN),
+    {ok, Tx} = pvc:start_transaction(Conn, next_tx_id(State)),
     case pvc:read(Conn, Tx, Keys) of
         {error, Reason} ->
             {error, Reason, incr_tx_id(State)};
+
         {abort, _AbortReason} ->
             perform_write_tx(Keys, Updates, incr_tx_id(State), N - 1);
+
         {ok, _, Tx1} ->
             {ok, Tx2} = pvc:update(Conn, Tx1, Updates),
             case pvc:commit(Conn, Tx2) of
                 {error, Reason} ->
                     {error, Reason, incr_tx_id(State)};
+
                 {abort, _AbortReason} ->
                     perform_write_tx(Keys, Updates, incr_tx_id(State), N - 1);
+
                 ok ->
                     {ok, incr_tx_id(State)}
             end
@@ -178,9 +181,8 @@ gen_keys(0, _, Acc) ->
 gen_keys(N, K, Acc) ->
     gen_keys(N - 1, K, [integer_to_binary(K(), 36) | Acc]).
 
-%% FIXME(borja): Id should be a single integer, so we can serialize it
 -spec next_tx_id(#state{}) -> tx_id().
-next_tx_id(#state{worker_id = Id, transaction_count = N}) ->
+next_tx_id(#state{worker_id=Id, transaction_count=N}) ->
     {Id, N}.
 
 -spec incr_tx_id(#state{}) -> #state{}.
