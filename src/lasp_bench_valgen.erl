@@ -63,6 +63,9 @@ new({uniform_int, MaxVal}, _Id)
     fun() -> rand:uniform(MaxVal) end;
 new({uniform_int, MinVal, MaxVal}, _Id)
   when is_integer(MinVal), is_integer(MaxVal), MaxVal > MinVal ->
+    %% FIXME(borja): rand:uniform/2 doesn't exist
+    %% We could do crypto:rand_uniform/2 or
+    %% (MinVal - 1) + rand:uniform((MaxVal - MinVal -1 1))
     fun() -> rand:uniform(MinVal, MaxVal) end;
 new(Other, _Id) ->
     ?FAIL_MSG("Invalid value generator requested: ~p\n", [Other]).
