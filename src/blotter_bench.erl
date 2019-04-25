@@ -68,9 +68,7 @@ run(ping, _, _, State = #state{worker_id=Id, coord_state=CoordState}) ->
             {ok, State}
     end;
 
-run(readonly_track, KeyGen, _, State = #state{keys_to_read=1,
-                                              coord_state=CoordState}) ->
-
+run(readonly_track, KeyGen, _, State = #state{coord_state=CoordState}) ->
     {ok, Tx} = pvc:start_transaction(CoordState, next_tx_id(State)),
     Sent = os:timestamp(),
     case pvc:read(CoordState, Tx, KeyGen()) of
