@@ -317,7 +317,7 @@ worker_next_op(State) ->
             normal
     end.
 
-hack_preprocess_driver_state({_, readonly}=Op, {track_reads, Sent, Received, StampMap, State}) ->
+hack_preprocess_driver_state({_, readonly_track}=Op, {track_reads, Sent, Received, StampMap, State}) ->
     %% *Took times were measured on the server
     #{rcv := ServerRcv,
       read_took := ReadTook,

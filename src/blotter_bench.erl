@@ -27,9 +27,6 @@
     %% Ratio of read/writes in readwrite op
     mixed_readwrite_ratio :: {non_neg_integer(), non_neg_integer()},
 
-    %% Should track extra timing information for reads
-    track_reads :: boolean(),
-
     %% Number of retries on aborted transaction
     abort_retries :: non_neg_integer()
 }).
@@ -39,7 +36,6 @@ new(Id) ->
     KeysToWrite = lasp_bench_config:get(written_keys),
     ReadWriteRatio = lasp_bench_config:get(ratio),
     AbortTries = lasp_bench_config:get(abort_retries, 50),
-    TrackReads = lasp_bench_config:get(track_read_stamps, false),
 
     RingInfo = ets:lookup_element(hook_pvc, ring, 2),
     Connections = hook_pvc:conns_for_worker(Id),
@@ -53,7 +49,6 @@ new(Id) ->
                    keys_to_read = KeysToRead,
                    keys_to_write = KeysToWrite,
                    mixed_readwrite_ratio = ReadWriteRatio,
-                   track_reads = TrackReads,
                    abort_retries = AbortTries},
 
     {ok, State}.
@@ -73,9 +68,8 @@ run(ping, _, _, State = #state{worker_id=Id, coord_state=CoordState}) ->
             {ok, State}
     end;
 
-run(readonly, KeyGen, _, State = #state{keys_to_read=1,
-                                        track_reads=true,
-                                        coord_state=CoordState}) ->
+run(readonly_track, KeyGen, _, State = #state{keys_to_read=1,
+                                              coord_state=CoordState}) ->
 
     {ok, Tx} = pvc:start_transaction(CoordState, next_tx_id(State)),
     Sent = os:timestamp(),
@@ -93,9 +87,7 @@ run(readonly, KeyGen, _, State = #state{keys_to_read=1,
             {ok, {track_reads, Sent, Received, StampMap, incr_tx_id(State)}}
     end;
 
-run(readonly, KeyGen, _, State = #state{keys_to_read=1,
-                                        track_reads=false}) ->
-
+run(readonly, KeyGen, _, State = #state{keys_to_read=1}) ->
     perform_readonly_tx(KeyGen(), State, 1);
 
 run(readonly, KeyGen, _, State = #state{keys_to_read=KeysToRead,

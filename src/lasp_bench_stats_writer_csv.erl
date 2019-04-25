@@ -62,7 +62,7 @@ terminate({SummaryFile, ErrorsFile}) ->
     ?INFO("module=~s event=stop stats_sink=csv\n", [?MODULE]),
     [begin
          case Op of
-             {_, readonly} ->
+             {_, readonly_track} ->
                  ok = lists:foreach(fun file:close/1, F);
              _ ->
                  ok = file:close(F)
@@ -88,7 +88,7 @@ report_error({_SummaryFile, ErrorsFile},
                io_lib:format("\"~w\",\"~w\"\n",
                              [Key, Count])).
 
-report_latency(_, Elapsed, Window, Op={_, readonly}, Payload, Errors, Units) ->
+report_latency(_, Elapsed, Window, Op={_, readonly_track}, Payload, Errors, Units) ->
     Fds = erlang:get({csv_file, Op}),
     lists:foreach(fun({StatLabel, Stat}) ->
         Fd = proplists:get_value(StatLabel, Fds),
@@ -124,12 +124,12 @@ get_line_from_stats(Op, Elapsed, Window, Stats, Errors, Units) ->
 %% Internal functions
 %% ====================================================================
 
-op_csv_file({_, readonly}) ->
-    Names = [{default, "readonly_latencies.csv"},
-             {send, "readonly_send_latencies.csv"},
-             {rcv, "readonly_rcv_latencies.csv"},
-             {read_took, "readonly_read_took_latencies.csv"},
-             {wait_took, "readonly_wait_took_latencies.csv"}],
+op_csv_file({_, readonly_track}) ->
+    Names = [{default, "readonly_track_latencies.csv"},
+             {send, "readonly_track_send_latencies.csv"},
+             {rcv, "readonly_track_rcv_latencies.csv"},
+             {read_took, "readonly_track_read_took_latencies.csv"},
+             {wait_took, "readonly_track_wait_took_latencies.csv"}],
 
     lists:map(fun({Type, Fname}) ->
         {ok, F} = file:open(Fname, [raw, binary, write]),

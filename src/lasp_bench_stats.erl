@@ -67,7 +67,7 @@ run() ->
 op_complete(Op, ok, ElapsedUs) ->
     op_complete(Op, {ok, 1}, ElapsedUs);
 
-op_complete({_, readonly}=Op, {ok, Units}, Payload) ->
+op_complete({_, readonly_track}=Op, {ok, Units}, Payload) ->
     case get_distributed() of
         true ->
             gen_server:cast({global, ?MODULE}, {Op, {ok, Units}, Payload});
@@ -160,7 +160,7 @@ build_folsom_tables(Ops) ->
     Interval = lasp_bench_config:get(report_interval),
     lists:foreach(fun(Op) ->
         case Op of
-            {_, readonly} ->
+            {_, readonly_track} ->
                 %% Send and receive times, async read execution and wait time
                 ?HISTOGRAMS(Op, [send, rcv, read_took, wait_took], Interval);
             _ ->
@@ -312,7 +312,7 @@ process_stats(Now, #state{stats_writer=Module}=State) ->
 %% Write latency info for a given op to the appropriate CSV. Returns the
 %% number of successful and failed ops in this window of time.
 %%
-report_latency(State, Elapsed, Window, Op={_, readonly}) ->
+report_latency(State, Elapsed, Window, Op={_, readonly_track}) ->
     Stats = folsom_metrics:get_histogram_statistics({latencies, Op}),
     Errors = error_counter(Op),
     Units = folsom_metrics:get_metric_value({units, Op}),
