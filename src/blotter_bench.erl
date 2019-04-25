@@ -27,6 +27,9 @@
     %% Ratio of read/writes in readwrite op
     mixed_readwrite_ratio :: {non_neg_integer(), non_neg_integer()},
 
+    %% Should track extra timing information for reads
+    track_reads :: boolean(),
+
     %% Number of retries on aborted transaction
     abort_retries :: non_neg_integer()
 }).
@@ -36,6 +39,7 @@ new(Id) ->
     KeysToWrite = lasp_bench_config:get(written_keys),
     ReadWriteRatio = lasp_bench_config:get(ratio),
     AbortTries = lasp_bench_config:get(abort_retries, 50),
+    TrackReads = lasp_bench_config:get(track_read_stamps, false),
 
     RingInfo = ets:lookup_element(hook_pvc, ring, 2),
     Connections = hook_pvc:conns_for_worker(Id),
@@ -49,6 +53,7 @@ new(Id) ->
                    keys_to_read = KeysToRead,
                    keys_to_write = KeysToWrite,
                    mixed_readwrite_ratio = ReadWriteRatio,
+                   track_reads = TrackReads,
                    abort_retries = AbortTries},
 
     {ok, State}.
@@ -68,8 +73,8 @@ run(ping, _, _, State = #state{worker_id=Id, coord_state=CoordState}) ->
             {ok, State}
     end;
 
-%% @doc Readonly of 1 key, without retries, performs timing
 run(readonly, KeyGen, _, State = #state{keys_to_read=1,
+                                        track_reads=true,
                                         coord_state=CoordState}) ->
 
     {ok, Tx} = pvc:start_transaction(CoordState, next_tx_id(State)),
@@ -85,8 +90,13 @@ run(readonly, KeyGen, _, State = #state{keys_to_read=1,
             Received = os:timestamp(),
             ok = pvc:commit(CoordState, Tx1),
             %% Return stamp map for further processing
-            {ok, {Sent, Received, StampMap, incr_tx_id(State)}}
+            {ok, {track_reads, Sent, Received, StampMap, incr_tx_id(State)}}
     end;
+
+run(readonly, KeyGen, _, State = #state{keys_to_read=1,
+                                        track_reads=false}) ->
+
+    perform_readonly_tx(KeyGen(), State, 1);
 
 run(readonly, KeyGen, _, State = #state{keys_to_read=KeysToRead,
                                         abort_retries=Tries}) ->
