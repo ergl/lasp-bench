@@ -29,11 +29,24 @@ start(HookOpts) ->
         {bootstrap_node_ip, NodeIp} ->
             NodeIp
     end,
+
+    ConnectionOpts0 = case lists:keyfind(connection_cork_ms, 1, HookOpts) of
+        {connection_cork_ms, CorkMs} -> #{cork_len => CorkMs};
+        false -> #{}
+    end,
+
+    ConnectionOpts1 = case lists:keyfind(connection_buff_wm, 1, HookOpts) of
+        {connection_buff_wm, BuffWatermark} ->
+            maps:put(buf_watermark, BuffWatermark, ConnectionOpts0);
+        false ->
+            ConnectionOpts0
+    end,
+
     {ok, Ring, UniqueNodes} = pvc_ring:partition_info(BootstrapIp, Port),
     ets:insert(?MODULE, {ring, Ring}),
     ets:insert(?MODULE, {nodes, UniqueNodes}),
     ok = lists:foreach(fun(NodeIp) ->
-        Connections = spawn_pool(NodeIp, ConnectionPort, PoolSize),
+        Connections = spawn_pool(NodeIp, ConnectionPort, ConnectionOpts1, PoolSize),
         ets:insert(?MODULE, {NodeIp, PoolSize, Connections}),
         ok
     end, UniqueNodes).
@@ -69,14 +82,14 @@ get_bootstrap_ip(Name) ->
     BootstrapIp.
 
 %% Create a pool of connections to `NodeIp:ConnectionPort` of size `PoolSize`
-spawn_pool(NodeIp, ConnectionPort, PoolSize) ->
-    spawn_pool(NodeIp, ConnectionPort, PoolSize, []).
+spawn_pool(NodeIp, ConnectionPort, ConnectionOpts, PoolSize) ->
+    spawn_pool(NodeIp, ConnectionPort, ConnectionOpts, PoolSize, []).
 
-spawn_pool(_, _, 0, Acc) ->
+spawn_pool(_, _, _, 0, Acc) ->
     Acc;
 
-spawn_pool(Ip, Port, N, Acc) ->
-    {ok, Connection} = pvc_connection:new(Ip, Port),
+spawn_pool(Ip, Port, Opts, N, Acc) ->
+    {ok, Connection} = pvc_connection:new(Ip, Port, Opts),
     spawn_pool(Ip, Port, N - 1, [Connection | Acc]).
 
 %% Close all the pvc connections
