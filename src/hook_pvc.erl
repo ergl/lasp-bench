@@ -90,7 +90,7 @@ spawn_pool(_, _, _, 0, Acc) ->
 
 spawn_pool(Ip, Port, Opts, N, Acc) ->
     {ok, Connection} = pvc_connection:new(Ip, Port, Opts),
-    spawn_pool(Ip, Port, N - 1, [Connection | Acc]).
+    spawn_pool(Ip, Port, Opts, N - 1, [Connection | Acc]).
 
 %% Close all the pvc connections
 teardown_pool(NodeIp) ->
