@@ -2,7 +2,7 @@
 %%! -pa ../_build/default/lib/pvc_proto/ebin -Wall
 
 -define(CONN_OPTS, [binary, {active, false}, {packet, 4}]).
--define(VAL_SIZE, 1024).
+-define(VAL_SIZE, 256).
 
 main([BinHost, BinPort]) ->
     {Host, Port} = parse_args(BinHost, BinPort),
