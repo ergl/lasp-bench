@@ -175,6 +175,10 @@ handle_call(run, _From, State) ->
     Now = os:timestamp(),
     timer:send_interval(State#state.report_interval, report),
     {reply, ok, State#state { start_time = Now, last_write_time = Now}};
+
+%% Ok not to handle any result other than {error, Reason}, since
+%% results of the form {ok, _} are casted instead, and only in
+%% distributed mode
 handle_call({op, Op, {error, Reason}, _ElapsedUs}, _From, State) ->
     increment_error_counter(Op),
     increment_error_counter({Op, Reason}),
