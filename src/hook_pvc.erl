@@ -18,17 +18,16 @@ start(HookOpts) ->
     %% ETS table to share data with workers
     _ = ets:new(?MODULE, [set, named_table, protected]),
 
-    {bootstrap_node, Name} = lists:keyfind(bootstrap_node, 1, HookOpts),
+    NodeNameOpt = lists:keyfind(bootstrap_node, 1, HookOpts),
+    NodeIPOpt = lists:keyfind(bootstrap_node_ip, 1, HookOpts),
+    NodeClusterOpt = lists:keyfind(bootstrap_cluster, 1, HookOpts),
+
     {bootstrap_port, Port} = lists:keyfind(bootstrap_port, 1, HookOpts),
     {conn_pool_size, PoolSize} = lists:keyfind(conn_pool_size, 1, HookOpts),
     {connection_port, ConnectionPort} = lists:keyfind(connection_port, 1, HookOpts),
 
-    BootstrapIp = case lists:keyfind(bootstrap_node_ip, 1, HookOpts) of
-        false ->
-            get_bootstrap_ip(Name);
-        {bootstrap_node_ip, NodeIp} ->
-            NodeIp
-    end,
+    BootstrapIp = get_bootstrap_ip(NodeNameOpt, NodeClusterOpt, NodeIPOpt),
+    lager:info("Given bootstrap IP ~p~n", [BootstrapIp]),
 
     ConnectionOpts0 = case lists:keyfind(connection_cork_ms, 1, HookOpts) of
         {connection_cork_ms, CorkMs} -> #{cork_len => CorkMs};
@@ -69,17 +68,26 @@ conns_for_worker(WorkerId) ->
          {Node, lists:nth((WorkerId rem PoolSize) + 1, Connections)}
      end || Node <- Nodes].
 
-%% Parse /etc/hosts to find the IP address of the given
-%% hostname
-get_bootstrap_ip(Name) ->
-    NameB = atom_to_binary(Name, latin1),
+%% If Node IP option is present, override anything else
+-spec get_bootstrap_ip(tuple() | false, tuple() | false, tuple() | false) -> atom().
+get_bootstrap_ip(_, _, {bootstrap_node_ip, NodeIp}) ->
+    NodeIp;
+
+%% If node name is given, and we're on Emulab, parse /etc/hosts to get node IP
+get_bootstrap_ip({bootstrap_node, NodeName}, {bootstrap_cluster, emulab}, _) ->
+    NameB = atom_to_binary(NodeName, latin1),
     {ok, Raw} = file:read_file("/etc/hosts"),
     Lines = binary:split(Raw, <<"\n">>, [global, trim_all]),
     [BootstrapIp] = [begin
         [IP | _] = binary:split(L, <<"\t">>),
         binary_to_atom(IP, latin1)
     end || L <- Lines, binary:match(L, NameB) =/= nomatch],
-    BootstrapIp.
+    BootstrapIp;
+
+%% If we're on Apollo, just use inet
+get_bootstrap_ip({bootstrap_node, NodeName}, {bootstrap_cluster, apollo}, _) ->
+    {ok, Addr} = inet:getaddr(NodeName, inet),
+    list_to_atom(inet:ntoa(Addr)).
 
 %% Create a pool of connections to `NodeIp:ConnectionPort` of size `PoolSize`
 spawn_pool(NodeIp, ConnectionPort, ConnectionOpts, PoolSize) ->
