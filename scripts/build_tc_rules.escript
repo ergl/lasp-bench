@@ -40,7 +40,7 @@ main(_) ->
 
 run(ConfigFile) ->
     {ok, Config} = file:consult(ConfigFile),
-    ok = reset_tc_rules(),
+    true = reset_tc_rules(),
     ok = build_tc_rules(Config).
 
 -spec usage() -> ok.
@@ -48,11 +48,12 @@ usage() ->
     Name = filename:basename(escript:script_name()),
     ok = io:fwrite(standard_error, "~s <config_file>~n", [Name]).
 
+-spec reset_tc_rules() -> boolean().
 reset_tc_rules() ->
     already_default() orelse begin
         Cmd = io_lib:format("sudo tc qdisc del dev ~p root", [?IFACE]),
         _ = safe_cmd(Cmd),
-        ok
+        true
     end.
 
 -spec already_default() -> boolean().
@@ -119,7 +120,7 @@ config_get(Key, Config) ->
     end.
 
 safe_cmd(Cmd) ->
-    case get_default(dry_run, true) of
+    case get_default(dry_run, false) of
         true ->
             ok = io:format("~s~n", [Cmd]),
             "";
