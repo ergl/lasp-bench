@@ -5,48 +5,46 @@
 -define(NETEM_CMD_STR, "sudo tc qdisc add dev ~p parent 1:~b handle ~b: netem delay ~bms").
 -define(FILTER_CMD_STR, "sudo tc filter add dev ~p parent 1:0 protocol ip prio 1 u32 match ip dst ~s/32 flowid 1:~b").
 
-%% TODO(borja): Make sure to remove the current cluster definition from the config
-%% Config file is something like:
-%% {latencies, [{<latency>, [<cluster_name>. ....]}, ...]}
-%% {clusters, {<cluster_name>, [<node_name>, ...]}}
-%%
 %% Example configuration file:
 %% ```cluster.config:
-%% {latencies, [
-%%      {10, [cluster_a]},
-%%      {30, [cluster_c]},
-%%      {50, [cluster_d]},
-%%      {200, [cluster_b]}
-%% ]}.
+%% {latencies, #{
+%%     nancy => [{rennes, 10}, {tolouse, 20}],
+%%     rennes => [{nancy, 10}, {tolouse, 15}],
+%%     tolouse => [{rennes, 15}, {nancy, 20}]
+%% }}.
 %%
-%% {clusters, [
-%%      {cluster_a, ['apollo-1-1.imdea', 'apollo-2-1.imdea']},
-%%      {cluster_b, ['apollo-1-2.imdea', 'apollo-2-2.imdea']},
-%%      {cluster_c, ['apollo-1-3.imdea', 'apollo-2-3.imdea']},
-%%      {cluster_d, ['apollo-1-4.imdea', 'apollo-2-4.imdea']}
-%% ]}.
+%% {clusters, #{
+%%     nancy => ['apollo-1-1.imdea', 'apollo-1-2.imdea', 'apollo-1-3.imdea'],
+%%     rennes => ['apollo-1-4.imdea', 'apollo-1-5.imdea', 'apollo-1-6.imdea'],
+%%     tolouse => ['apollo-1-7.imdea', 'apollo-1-8.imdea', 'apollo-1-9.imdea']
+%% }}.
 %% ```
 
-main([ConfigFile]) ->
-    ok = run(ConfigFile);
-
-main(["-d", ConfigFile]) ->
-    erlang:put(dry_run, true),
-    ok = run(ConfigFile);
-
-main(_) ->
-    usage(),
-    halt(1).
-
-run(ConfigFile) ->
-    {ok, Config} = file:consult(ConfigFile),
-    true = reset_tc_rules(),
-    ok = build_tc_rules(Config).
+main(Args) ->
+    case parse_args(Args) of
+        {error, Reason} ->
+            io:fwrite("Wrong option, reason: ~p~n", [Reason]),
+            usage();
+        {ok, PropList} ->
+            DryRun = proplists:get_value(dry_run, PropList, false),
+            _ = erlang:put(dry_run, DryRun),
+            {ok, SelfCluster} = safe_get_value(cluster, PropList),
+            {ok, ConfigFile} = safe_get_value(config, PropList),
+            run(SelfCluster, ConfigFile)
+    end.
 
 -spec usage() -> ok.
 usage() ->
     Name = filename:basename(escript:script_name()),
-    ok = io:fwrite(standard_error, "~s <config_file>~n", [Name]).
+    ok = io:fwrite(standard_error, "~s [-d] -c <cluster-name> -f <config_file>~n", [Name]).
+
+run(Self, ConfigFile) ->
+    {ok, [{latencies, LatencyMap},
+          {clusters, ClusterDef}]} = file:consult(ConfigFile),
+
+    true = reset_tc_rules(),
+    Latencies = maps:get(Self, LatencyMap),
+    ok = build_tc_rules(Latencies, ClusterDef).
 
 -spec reset_tc_rules() -> boolean().
 reset_tc_rules() ->
@@ -62,41 +60,41 @@ already_default() ->
     DefaultRule = list_to_binary(io_lib:format("qdisc mq 0: dev ~p root", [?IFACE])),
     lists:member(DefaultRule, TCRules).
 
-build_tc_rules(Config) ->
-    {ok, Latencies} = config_get(latencies, Config),
-    Lanes = length(Latencies),
-    ok = setup_tc_root(Lanes),
+build_tc_rules(Latencies, ClusterDefs) ->
+    %% Get all the different target latencies. We might have duplicates, so remove them.
+    Millis = lists:usort([Latency || {_, Latency} <- Latencies]),
+    ok = setup_tc_root(length(Millis)),
+    HandleIds = setup_tc_qdiscs(Millis),
+    ok = setup_tc_filters(HandleIds, Latencies, ClusterDefs).
 
-    {ok, Clusters} = config_get(clusters, Config),
-    ok = setup_tc_qdiscs(Latencies, Clusters),
+setup_tc_qdiscs(Millis) ->
+    lists:zipwith(fun(DelayMs, RootMinor) ->
+        HandleId = RootMinor * 10,
+        RuleCmd = io_lib:format(?NETEM_CMD_STR, [?IFACE, RootMinor, HandleId, DelayMs]),
+        _ = safe_cmd(RuleCmd),
+        {DelayMs, RootMinor}
+    end, Millis, lists:seq(1, length(Millis))).
+
+%% Each qdisc must have the parent number, and a handle
+%% Handles must be globally unique, so pick a multiple of the parent minor number
+%% Parent 1:1 -> handle 10:
+%% Parent 1:2 -> handle 20:
+%% We made sure beforehand that there are enough parent bands to do this
+setup_tc_filters(HandleIds, Latencies, ClusterDefs) ->
+    [begin
+        RootMinor = proplists:get_value(Delay, HandleIds),
+        TargetNodes = maps:get(TargetCluster, ClusterDefs),
+        lists:foreach(fun(Node) ->
+            NodeIP = get_ip(Node),
+            FilterCmd = io_lib:format(?FILTER_CMD_STR, [?IFACE, NodeIP, RootMinor]),
+            _ = safe_cmd(FilterCmd)
+        end, TargetNodes)
+     end || {TargetCluster, Delay} <- Latencies],
     ok.
 
-setup_tc_qdiscs(Latencies, Clusters) ->
-    %% Each qdisc must have the parent number, and a handle
-    %% Handles must be globally unique, so pick a multiple of the parent minor number
-    %% Parent 1:1 -> handle 10:
-    %% Parent 1:2 -> handle 20:
-    %% We made sure beforehand that there are enough parent bands to do this
-    _ = lists:foldl(fun({Latency, ClusterMems}, ParentMinor) ->
-        ok = build_tc_rules_for_cluster(ParentMinor, Latency, ClusterMems, Clusters),
-        ParentMinor + 1
-    end, 1, Latencies),
-    ok.
-
-build_tc_rules_for_cluster(ParentId, Latency, ClusterNames, ClustersDefs) ->
-    HandleId = ParentId * 10,
-    RuleCmd = io_lib:format(?NETEM_CMD_STR, [?IFACE, ParentId, HandleId, Latency]),
-    _ = safe_cmd(RuleCmd),
-    NodeIPs = lists:flatten([get_cluster_ips(Name, ClustersDefs) || Name <- ClusterNames]),
-    lists:foreach(fun(NodeIP) ->
-        FilterCmd = io_lib:format(?FILTER_CMD_STR, [?IFACE, NodeIP, ParentId]),
-        _ = safe_cmd(FilterCmd)
-    end, NodeIPs),
-    ok.
-
-get_cluster_ips(ClusterName, Defs) ->
-    {ok, Nodes} = config_get(ClusterName, Defs),
-    lists:map(fun(N) -> {ok, Addr} = inet:getaddr(N, inet), list_to_atom(inet:ntoa(Addr)) end, Nodes).
+get_ip(NodeName) ->
+     {ok, Addr} = inet:getaddr(NodeName, inet),
+     list_to_atom(inet:ntoa(Addr)).
 
 %% Set up root qdisc, of type prio, with N+1 bands, and a priomap redirecting all
 %% traffic to the highes band (lowest priority). This way, only packets matching
@@ -111,13 +109,8 @@ setup_tc_root(Lanes) ->
 priomap(Lanes) when is_integer(Lanes) ->
     lists:join(" ", lists:duplicate(16, integer_to_list(Lanes))).
 
-%% @doc Wrapper over lists:keyfind/3
--spec config_get(atom(), [tuple(), ...]) -> {ok, any()} | error.
-config_get(Key, Config) ->
-    case lists:keyfind(Key, 1, Config) of
-        false -> error;
-        {Key, Value} -> {ok, Value}
-    end.
+
+%% Safety functions and wrappers
 
 safe_cmd(Cmd) ->
     case get_default(dry_run, false) of
@@ -128,6 +121,13 @@ safe_cmd(Cmd) ->
             os:cmd(Cmd)
     end.
 
+safe_get_value(Key, PropList) ->
+    case proplists:get_value(Key, PropList) of
+        undefined ->
+            error;
+        Val -> {ok, Val}
+    end.
+
 get_default(Key, Default) ->
     case erlang:get(Key) of
         undefined ->
@@ -135,3 +135,40 @@ get_default(Key, Default) ->
         Val ->
             Val
     end.
+
+%% Hacked-together getopt
+
+-spec parse_args([term()]) -> {ok, proplists:proplist()} | {error, Reason :: atom()}.
+parse_args([]) ->
+    {error, empty};
+
+parse_args(Args) ->
+    parse_args(Args, []).
+
+parse_args([], Acc) ->
+    {ok, Acc};
+
+parse_args([ [$- | Flag] | Args], Acc) ->
+    case Flag of
+        [$d] ->
+            parse_args(Args, [{dry_run, true} | Acc]);
+        [$c] ->
+            case Args of
+                [FlagArg | Rest] ->
+                    parse_args(Rest, [{cluster, list_to_atom(FlagArg)} | Acc]);
+                _ ->
+                    {error, {noarg, Flag}}
+            end;
+        [$f] ->
+            case Args of
+                [FlagArg | Rest] ->
+                    parse_args(Rest, [{config, FlagArg} | Acc]);
+                _ ->
+                    {error, {noarg, Flag}}
+            end;
+        _ ->
+            {error, {option, Flag}}
+    end;
+
+parse_args(_, _) ->
+    {error, noarg}.
