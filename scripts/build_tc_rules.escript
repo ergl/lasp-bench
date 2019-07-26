@@ -49,7 +49,7 @@ run(Self, ConfigFile) ->
 -spec reset_tc_rules() -> boolean().
 reset_tc_rules() ->
     already_default() orelse begin
-        Cmd = io_lib:format("sudo tc qdisc del dev ~p root", [?IFACE]),
+        Cmd = io_lib:format("sudo tc qdisc del dev ~p root", [default_iface()]),
         _ = safe_cmd(Cmd),
         true
     end.
@@ -57,7 +57,7 @@ reset_tc_rules() ->
 -spec already_default() -> boolean().
 already_default() ->
     TCRules = binary:split(list_to_binary(safe_cmd("tc qdisc ls")), [<<"\n">>, <<" \n">>], [global, trim_all]),
-    DefaultRule = list_to_binary(io_lib:format("qdisc mq 0: dev ~p root", [?IFACE])),
+    DefaultRule = list_to_binary(io_lib:format("qdisc mq 0: dev ~p root", [default_iface()])),
     lists:member(DefaultRule, TCRules).
 
 build_tc_rules(Latencies, ClusterDefs) ->
@@ -70,7 +70,7 @@ build_tc_rules(Latencies, ClusterDefs) ->
 setup_tc_qdiscs(Millis) ->
     lists:zipwith(fun(DelayMs, RootMinor) ->
         HandleId = RootMinor * 10,
-        RuleCmd = io_lib:format(?NETEM_CMD_STR, [?IFACE, RootMinor, HandleId, DelayMs]),
+        RuleCmd = io_lib:format(?NETEM_CMD_STR, [default_iface(), RootMinor, HandleId, DelayMs]),
         _ = safe_cmd(RuleCmd),
         {DelayMs, RootMinor}
     end, Millis, lists:seq(1, length(Millis))).
@@ -86,7 +86,7 @@ setup_tc_filters(HandleIds, Latencies, ClusterDefs) ->
         TargetNodes = maps:get(TargetCluster, ClusterDefs),
         lists:foreach(fun(Node) ->
             NodeIP = get_ip(Node),
-            FilterCmd = io_lib:format(?FILTER_CMD_STR, [?IFACE, NodeIP, RootMinor]),
+            FilterCmd = io_lib:format(?FILTER_CMD_STR, [default_iface(), NodeIP, RootMinor]),
             _ = safe_cmd(FilterCmd)
         end, TargetNodes)
      end || {TargetCluster, Delay} <- Latencies],
@@ -101,7 +101,7 @@ get_ip(NodeName) ->
 %% filters will go through netem qdiscs.
 -spec setup_tc_root(non_neg_integer()) -> ok.
 setup_tc_root(Lanes) ->
-    RootCmd = io_lib:format(?ROOT_CMD_STR, [?IFACE, Lanes + 1, priomap(Lanes)]),
+    RootCmd = io_lib:format(?ROOT_CMD_STR, [default_iface(), Lanes + 1, priomap(Lanes)]),
     _ = safe_cmd(RootCmd),
     ok.
 
@@ -172,3 +172,12 @@ parse_args([ [$- | Flag] | Args], Acc) ->
 
 parse_args(_, _) ->
     {error, noarg}.
+
+-spec default_iface() -> atom().
+default_iface() ->
+    case inet:gethostname() of
+        {ok, "apollo-2-4"} ->
+            eth0;
+        _ ->
+            ?IFACE
+    end.
