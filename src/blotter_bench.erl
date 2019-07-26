@@ -169,10 +169,7 @@ perform_write_tx(Keys, Updates, State=#state{coord_state=Conn}, N) ->
 
 %% @doc Generate N random keys
 -spec gen_keys(non_neg_integer(), key_gen(non_neg_integer())) -> binary() | [binary()].
-gen_keys(1, K) ->
-    K();
-
-gen_keys(N, K) when N > 1 ->
+gen_keys(N, K) ->
     gen_keys(N, K, []).
 
 gen_keys(0, _, Acc) ->
