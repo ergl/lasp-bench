@@ -72,9 +72,6 @@ run(readonly_track, KeyGen, _, State = #state{coord_state=CoordState}) ->
     {ok, Tx} = pvc:start_transaction(CoordState, next_tx_id(State)),
     Sent = os:timestamp(),
     case pvc:read(CoordState, Tx, KeyGen()) of
-        {error, Reason} ->
-            {error, Reason, incr_tx_id(State)};
-
         {abort, AbortReason} ->
             {error, AbortReason, incr_tx_id(State)};
 
@@ -123,8 +120,6 @@ perform_readonly_tx(_, State, 0) ->
 perform_readonly_tx(Keys, State=#state{coord_state=CoordState}, N) ->
     {ok, Tx} = pvc:start_transaction(CoordState, next_tx_id(State)),
     case pvc:read(CoordState, Tx, Keys) of
-        {error, Reason} ->
-            {error, Reason, incr_tx_id(State)};
         {abort, _AbortReason} ->
             perform_readonly_tx(Keys, incr_tx_id(State), N - 1);
         {ok, _, Tx1} ->
@@ -143,9 +138,6 @@ perform_write_tx(_, _, State, 0) ->
 perform_write_tx(Keys, Updates, State=#state{coord_state=Conn}, N) ->
     {ok, Tx} = pvc:start_transaction(Conn, next_tx_id(State)),
     case pvc:read(Conn, Tx, Keys) of
-        {error, Reason} ->
-            {error, Reason, incr_tx_id(State)};
-
         {abort, _AbortReason} ->
             perform_write_tx(Keys, Updates, incr_tx_id(State), N - 1);
 
