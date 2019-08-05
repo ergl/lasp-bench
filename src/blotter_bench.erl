@@ -10,6 +10,7 @@
 
 -type tx_id() :: {non_neg_integer(), non_neg_integer()}.
 -type key_gen(T) :: fun(() -> T).
+-type abort_retries() :: non_neg_integer() | infinity.
 
 -record(state, {
     %% Id of this worker thread
@@ -28,14 +29,14 @@
     mixed_readwrite_ratio :: {non_neg_integer(), non_neg_integer()},
 
     %% Number of retries on aborted transaction
-    abort_retries :: non_neg_integer()
+    abort_retries :: abort_retries()
 }).
 
 new(Id) ->
     KeysToRead = lasp_bench_config:get(read_keys),
     KeysToWrite = lasp_bench_config:get(written_keys),
     ReadWriteRatio = lasp_bench_config:get(ratio),
-    AbortTries = lasp_bench_config:get(abort_retries, 50),
+    AbortTries = lasp_bench_config:get(abort_retries, infinity),
 
     RingInfo = ets:lookup_element(hook_pvc, ring, 2),
     Connections = hook_pvc:conns_for_worker(Id),
@@ -117,11 +118,11 @@ run(readwrite, KeyGen, ValueGen, State = #state{mixed_readwrite_ratio={ToRead, T
 perform_readonly_tx(_, State, 0) ->
     {error, too_many_retries, State};
 
-perform_readonly_tx(Keys, State=#state{coord_state=CoordState}, N) ->
+perform_readonly_tx(Keys, State=#state{coord_state=CoordState}, Tries) ->
     {ok, Tx} = pvc:start_transaction(CoordState, next_tx_id(State)),
     case pvc:read(CoordState, Tx, Keys) of
         {abort, _AbortReason} ->
-            perform_readonly_tx(Keys, incr_tx_id(State), N - 1);
+            perform_readonly_tx(Keys, incr_tx_id(State), next_try(Tries));
         {ok, _, Tx1} ->
             %% Readonly transactions always commit
             ok = pvc:commit(CoordState, Tx1),
@@ -135,20 +136,21 @@ perform_readonly_tx(Keys, State=#state{coord_state=CoordState}, N) ->
 perform_write_tx(_, _, State, 0) ->
     {error, too_many_retries, State};
 
-perform_write_tx(Keys, Updates, State=#state{coord_state=Conn}, N) ->
+perform_write_tx(Keys, Updates, State=#state{coord_state=Conn}, Tries) ->
     {ok, Tx} = pvc:start_transaction(Conn, next_tx_id(State)),
     case pvc:read(Conn, Tx, Keys) of
         {abort, _AbortReason} ->
-            perform_write_tx(Keys, Updates, incr_tx_id(State), N - 1);
+            perform_write_tx(Keys, Updates, incr_tx_id(State), next_try(Tries));
 
         {ok, _, Tx1} ->
             {ok, Tx2} = pvc:update(Conn, Tx1, Updates),
             case pvc:commit(Conn, Tx2) of
                 {error, Reason} ->
+                    %% TODO(borja): Can this error happen?
                     {error, Reason, incr_tx_id(State)};
 
                 {abort, _AbortReason} ->
-                    perform_write_tx(Keys, Updates, incr_tx_id(State), N - 1);
+                    perform_write_tx(Keys, Updates, incr_tx_id(State), next_try(Tries));
 
                 ok ->
                     {ok, incr_tx_id(State)}
@@ -177,3 +179,7 @@ next_tx_id(#state{worker_id=Id, transaction_count=N}) ->
 -spec incr_tx_id(#state{}) -> #state{}.
 incr_tx_id(State=#state{transaction_count=N}) ->
     State#state{transaction_count = N + 1}.
+
+-spec next_try(abort_retries()) -> abort_retries().
+next_try(infinity) -> infinity;
+next_try(N) -> N - 1.
