@@ -14,7 +14,7 @@
   1},
  {<<"pvc">>,
   {git,"https://github.com/ergl/pvc.git",
-       {ref,"ff53f86a5761327aec9992d8d5cd3cf0274a8d4c"}},
+       {ref,"280ef521a1b9aff00f93dacbeb096d93fa989cc1"}},
   0},
  {<<"pvc_proto">>,
   {git,"https://github.com/ergl/pvc_proto.git",
@@ -22,7 +22,7 @@
   0},
  {<<"pvc_types">>,
   {git,"https://github.com/ergl/pvc_types.git",
-       {ref,"9e21098f8f67ec72510077abcc6570613d6c6c37"}},
+       {ref,"906740bf29b973eca4539a3e166bbf0870786769"}},
   1}]}.
 [
 {pkg_hash,[
