@@ -126,6 +126,7 @@ perform_readonly_tx(Keys, State=#state{coord_state=CoordState}, Tries) ->
             perform_readonly_tx(Keys, incr_tx_id(State), next_try(Tries));
         {ok, _, Tx1} ->
             %% Readonly transactions always commit
+            %% TODO(borja): It might abort while using serializability (check)
             ok = pvc:commit(CoordState, Tx1),
             {ok, incr_tx_id(State)}
     end.
