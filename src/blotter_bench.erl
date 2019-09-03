@@ -38,11 +38,12 @@ new(Id) ->
     ReadWriteRatio = lasp_bench_config:get(ratio),
     AbortTries = lasp_bench_config:get(abort_retries, infinity),
 
+    Protocol = lasp_bench_config:get(client_protocol, psi),
     RingInfo = ets:lookup_element(hook_pvc, ring, 2),
     Connections = hook_pvc:conns_for_worker(Id),
 
     %% Use our worker id to generate the messages for this coordinator
-    {ok, CoordState} = pvc:new(RingInfo, Connections, Id),
+    {ok, CoordState} = pvc:new(RingInfo, Connections, Id, Protocol),
 
     State = #state{worker_id = Id,
                    transaction_count = 0,
