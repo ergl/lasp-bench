@@ -140,35 +140,24 @@ perform_write_tx(_, _, State, 0) ->
 
 perform_write_tx(Keys, Updates, State=#state{coord_state=Conn}, Tries) ->
     {ok, Tx} = pvc:start_transaction(Conn, next_tx_id(State)),
-    TxId = tx_id(Tx),
-    lager:info("[~p] read_start", [TxId]),
     case pvc:read(Conn, Tx, Keys) of
         {abort, _AbortReason} ->
-            lager:info("[~p] read_abort", [TxId]),
             perform_write_tx(Keys, Updates, incr_tx_id(State), next_try(Tries));
 
         {ok, _, Tx1} ->
-            lager:info("[~p] read_end", [TxId]),
             {ok, Tx2} = pvc:update(Conn, Tx1, Updates),
-            lager:info("[~p] commit_start", [TxId]),
             case pvc:commit(Conn, Tx2) of
                 {error, Reason} ->
-                    lager:info("[~p] commit_error", [TxId]),
                     %% TODO(borja): Can this error happen?
                     {error, Reason, incr_tx_id(State)};
 
                 {abort, _AbortReason} ->
-                    lager:info("[~p] commit_abort", [TxId]),
                     perform_write_tx(Keys, Updates, incr_tx_id(State), next_try(Tries));
 
                 ok ->
-                    lager:info("[~p] commit_ok", [TxId]),
                     {ok, incr_tx_id(State)}
             end
     end.
-
-tx_id(Tx) when element(1, Tx) =:= tx_state ->
-    element(2, Tx).
 
 %%====================================================================
 %% Util functions
