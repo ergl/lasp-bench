@@ -1,6 +1,6 @@
 #!/usr/bin/env escript
 %% -*- erlang -*-
-%%! -smp enable -name report_version_misses@127.0.0.1 -setcookie antidote
+%%! -smp enable -name stats_report@127.0.0.1 -setcookie antidote
 
 -mode(compile).
 
