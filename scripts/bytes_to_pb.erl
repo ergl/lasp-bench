@@ -1,5 +1,5 @@
 #!/usr/bin/env escript
-%%! -pa /Users/ryan/dev/imdea/code/lasp-bench/_build/default/lib/pvc_proto/ebin -Wall
+%%! -pa ../_build/default/lib/pvc_proto/ebin -Wall
 
 -mode(compile).
 
