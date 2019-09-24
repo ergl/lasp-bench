@@ -13,6 +13,7 @@
 -mode(compile).
 
 -define(REST_TABLE, rest_data_table).
+-define(DEFAULT_PB_PORT, 7878).
 
 -record(pcap_header, {
     endianess :: big | little,
@@ -29,7 +30,7 @@
 
 usage() ->
     Name = filename:basename(escript:script_name()),
-    ok = io:fwrite(standard_error, "Usage: ~s [-dve] [--id msg_id] [--type msg_type] [--src-ip ip] [--dst-ip ip] [--src-port port] [--dst-port port] -f trace.pcap~n", [Name]).
+    ok = io:fwrite(standard_error, "Usage: ~s [-dve] [-p pb_port] [--id msg_id] [--type msg_type] [--src-ip ip] [--dst-ip ip] [--src-port port] [--dst-port port] -f trace.pcap~n", [Name]).
 
 main(Args) ->
     case parse_args(Args) of
@@ -144,17 +145,24 @@ parse_ethernet_ip_level(Packet, Opts, PacketInfo) ->
         true -> parse_tcp_level(TCP_Packet, Opts, PacketInfo#{src_ip => SrcIp, dst_ip => DstIp})
     end.
 
-parse_tcp_level(Packet, Opts, PacketInfo=#{src_ip:=SrcIp, dst_ip:=DstIp}) ->
+parse_tcp_level(Packet, Opts, PacketInfo=#{src_ip := SrcIp, dst_ip := DstIp}) ->
     <<SrcPort:16, DstPort:16, Seq:32, ACK:32, OffsetWords:4, _:3, Flags:9/bits, _/bits>> = Packet,
     case match_tcp_level(Opts, SrcPort, DstPort) of
         false -> skip;
         true ->
             Offset = OffsetWords * 4 * 8,
             <<_:Offset, RawData/binary>> = Packet,
-            ACKSet = is_ack_set(Flags),
             Conn = make_tcp_id(SrcIp, SrcPort, DstIp, DstPort),
-            NewPacketInfo = PacketInfo#{tcp_id => Conn, src_port => SrcPort, dst_port => DstPort, seq => rel_seq(Seq, Conn), ack => rel_ack(ACKSet, ACK, Conn)},
-            parse_app_level(RawData, Opts, NewPacketInfo)
+            ACKSet = is_ack_set(Flags),
+            NewPacketInfo = PacketInfo#{tcp_id => Conn, src_port => SrcPort, dst_port => DstPort,
+                                        seq => rel_seq(Seq, Conn), ack => rel_ack(ACKSet, ACK, Conn)},
+            case valid_protocol(Conn, Opts) of
+                false ->
+                    skip_on_error(Opts, NewPacketInfo, {error, bad_protocol});
+
+                true ->
+                    parse_app_level(RawData, Opts, NewPacketInfo)
+            end
     end.
 
 parse_app_level(<<>>, _, _) -> skip;
@@ -215,6 +223,12 @@ match_app_level(Opts, Msgs) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Protocol Parsing (Ethernet, IP, TCP)
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%% @doc Does this TCP flow match an application connection?
+-spec valid_protocol(flow_id(), #{}) -> boolean().
+valid_protocol({_, SrcPort, _, DstPort}, Opts) ->
+    DefaultPBPort = maps:get(pb_port, Opts, ?DEFAULT_PB_PORT),
+    (SrcPort =:= DefaultPBPort) orelse (DstPort =:= DefaultPBPort).
 
 valid_data(Msgs) ->
     not lists:any(fun(<<>>) -> true; (_) -> false end, Msgs).
@@ -288,6 +302,8 @@ parse_args([ [$- | Flag] | Args], Acc) ->
             parse_args(Args, Acc#{data_errors => true});
         [$d] ->
             parse_args(Args, Acc#{print_data => true});
+        [$p] ->
+            parse_flag(Flag, Args, fun(Arg) -> Acc#{pb_port => list_to_integer(Arg)} end);
         [$f] ->
             parse_flag(Flag, Args, fun(Arg) -> Acc#{file => Arg} end);
         "-id" ->
