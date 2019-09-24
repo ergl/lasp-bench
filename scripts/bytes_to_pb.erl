@@ -27,6 +27,11 @@ parse_data(server, Len, Data) ->
             halt(1);
         {ok, Msgs, Rest} ->
             [begin
+                 case Msg of
+                     <<>> ->
+                         io:format("Got weird data ~w~n", [Data]);
+                     _ -> ok
+                 end,
                  <<Id:Len, Content/binary>> = Msg,
                  Decoded = pvc_proto:decode_client_req(Content) ,
                  io:format("msg id := ~p, data := ~p~n", [Id, Decoded])
@@ -45,7 +50,7 @@ parse_data(client, Len, Data) ->
 print_rest(<<>>) ->
     ok;
 print_rest(Rest) ->
-    io:format("With rest ~s~n", [Rest]).
+    io:format("With rest ~s~n", [bin_to_hexstr(Rest)]).
 
 usage() ->
     Name = filename:basename(escript:script_name()),
@@ -152,3 +157,7 @@ hexstr_to_bin([X,Y|T], Acc) ->
 hexstr_to_bin([X|T], Acc) ->
     {ok, [V], []} = io_lib:fread("~16u", lists:flatten([X,"0"])),
     hexstr_to_bin(T, [V | Acc]).
+
+bin_to_hexstr(Bin) ->
+    lists:flatten([io_lib:format("~2.16.0B", [X]) ||
+        X <- binary_to_list(Bin)]).
