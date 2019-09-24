@@ -59,7 +59,7 @@ print_packet(PacketInfo, Verbose, ShowData) ->
             Verbose andalso print_extra(PacketInfo);
         _ ->
             [begin
-                io:format("~s:~p \t~s:~p \t~b \t~p~n", [inet:ntoa(SrcIp), SrcPort, inet:ntoa(DstIp), DstPort, Id, Type]),
+                io:format("~s:~p \t~s:~p \tid=~b \t~p~n", [inet:ntoa(SrcIp), SrcPort, inet:ntoa(DstIp), DstPort, Id, Type]),
                 Verbose andalso print_extra(PacketInfo),
                 ShowData andalso io:format("~n~w~n~n", [Data])
              end || #{id := Id, pb_type := Type, pb_payload := Data} <- Msgs]
