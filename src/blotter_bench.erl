@@ -123,12 +123,19 @@ perform_readonly_tx(Keys, State=#state{coord_state=CoordState}, Tries) ->
     {ok, Tx} = pvc:start_transaction(CoordState, next_tx_id(State)),
     case pvc:read(CoordState, Tx, Keys) of
         {abort, _AbortReason} ->
+            %% Will only abort under PSI or SER
             perform_readonly_tx(Keys, incr_tx_id(State), next_try(Tries));
         {ok, _, Tx1} ->
-            %% Readonly transactions always commit
-            %% TODO(borja): It might abort while using serializability (check)
-            ok = pvc:commit(CoordState, Tx1),
-            {ok, incr_tx_id(State)}
+            case pvc:commit(CoordState, Tx1) of
+                {error, Reason} ->
+                    %% Will this ever happen?
+                    {error, Reason, incr_tx_id(State)};
+                {abort, _AbortReason} ->
+                    %% Can only abort under SER
+                    perform_readonly_tx(Keys, incr_tx_id(State), next_try(Tries));
+                ok ->
+                    {ok, incr_tx_id(State)}
+            end
     end.
 
 %% @doc Try a writeonly transaction N times before giving up
