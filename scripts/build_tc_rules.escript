@@ -14,9 +14,12 @@
 %% }}.
 %%
 %% {clusters, #{
-%%     nancy => ['apollo-1-1.imdea', 'apollo-1-2.imdea', 'apollo-1-3.imdea'],
-%%     rennes => ['apollo-1-4.imdea', 'apollo-1-5.imdea', 'apollo-1-6.imdea'],
-%%     tolouse => ['apollo-1-7.imdea', 'apollo-1-8.imdea', 'apollo-1-9.imdea']
+%%     nancy => #{servers => ['apollo-1-1.imdea', ...],
+%%                clients => ['apollo-2-1.imdea', ...]},
+%%     rennes => #{servers => ['apollo-1-4.imdea', ...],
+%%                 clients => ['apollo-2-4.imdea', ...]},
+%%     tolouse => #{servers => ['apollo-1-7.imdea', ...],
+%%                  clients => ['apollo-2-7.imdea', ...]}
 %% }}.
 %% ```
 
@@ -83,7 +86,7 @@ setup_tc_qdiscs(Millis) ->
 setup_tc_filters(HandleIds, Latencies, ClusterDefs) ->
     [begin
         RootMinor = proplists:get_value(Delay, HandleIds),
-        TargetNodes = maps:get(TargetCluster, ClusterDefs),
+        #{servers := TargetNodes} = maps:get(TargetCluster, ClusterDefs),
         lists:foreach(fun(Node) ->
             NodeIP = get_ip(Node),
             FilterCmd = io_lib:format(?FILTER_CMD_STR, [default_iface(), NodeIP, RootMinor]),
