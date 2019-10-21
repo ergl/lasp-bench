@@ -2,9 +2,38 @@
 
 -ignore_xref([start/1, stop/0]).
 
+-define(TRACE_TABLE, hook_pvc_trace_table).
+-define(TRACE_INDEX, hook_pvc_trace_index).
+-define(CURRENT_INDEX, event_index).
+
+-type tx_id() :: {term(), {non_neg_integer(), non_neg_integer()}}.
+-type vc() :: #{non_neg_integer() => non_neg_integer()}.
+
+-record(read_event, {
+    partition :: non_neg_integer(),
+    incoming_vc :: vc(),
+    resulting_vc :: vc() | {abort, vc()},
+    log :: [{tx_id(), vc()}, ...],
+    queue :: [{tx_id(), vc() | pending | abort}, ...]
+}).
+
+-record(write_event, {
+    partition :: non_neg_integer()
+}).
+
+-record(event, {
+    %% This event number
+    event_num :: non_neg_integer(),
+    %% Transaction id issuing this event
+    tx_id :: tx_id(),
+    event :: #read_event{} | #write_event{}
+}).
+
 %% API
 -export([start/1,
          stop/0]).
+
+-export([trace_r/6, trace_w/2]).
 
 %% Worker API
 -export([conns_for_worker/1]).
@@ -17,6 +46,16 @@ start(HookOpts) ->
 
     %% ETS table to share data with workers
     _ = ets:new(?MODULE, [set, named_table, protected]),
+
+    %% ETS table to trace events
+    _ = ets:new(?TRACE_TABLE, [ordered_set,
+                               named_table,
+                               public,
+                               {write_concurrency, true},
+                               {keypos, #event.event_num}]),
+
+    %% ETS table marking the index of traces
+    _ = ets:new(?TRACE_INDEX, [set, named_table, public, {write_concurrency, true}]),
 
     NodeNameOpt = lists:keyfind(bootstrap_node, 1, HookOpts),
     NodeIPOpt = lists:keyfind(bootstrap_node_ip, 1, HookOpts),
@@ -57,7 +96,23 @@ stop() ->
         teardown_pool(NodeIp)
     end, UniqueNodes),
     ets:delete(?MODULE),
+    lager:info("Dumping trace table...", []),
+    ok = ets:tab2file(?TRACE_TABLE, "/tmp/trace.dump", [{sync, true}]),
+    lager:info("Trace dumping complete", []),
+    ets:delete(?TRACE_TABLE),
+    ets:delete(?TRACE_INDEX),
     ok = pvc:stop(),
+    ok.
+
+trace_r(Id, Partition, InVC, OutVC, Log, Queue) ->
+    EventIdx = ets:update_counter(?TRACE_INDEX, ?CURRENT_INDEX, {2, 1}, {?CURRENT_INDEX, 0}),
+    Event = #read_event{partition=Partition, incoming_vc=InVC, resulting_vc=OutVC, log=Log, queue=Queue},
+    true = ets:insert(?TRACE_TABLE, #event{event_num=EventIdx, tx_id=Id, event=Event}),
+    ok.
+
+trace_w(Id, Partition) ->
+    EventIdx = ets:update_counter(?TRACE_INDEX, ?CURRENT_INDEX, {2, 1}, {?CURRENT_INDEX, 0}),
+    true = ets:insert(?TRACE_TABLE, #event{event_num=EventIdx, tx_id=Id, event=#write_event{partition=Partition}}),
     ok.
 
 -spec conns_for_worker(non_neg_integer()) -> pvc:cluster_conns().

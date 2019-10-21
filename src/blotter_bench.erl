@@ -38,7 +38,8 @@ new(Id) ->
     Connections = hook_pvc:conns_for_worker(Id),
 
     %% Use our worker id to generate the messages for this coordinator
-    {ok, CoordState} = pvc:new(RingInfo, Connections, Id, Protocol),
+    Traces = #{r => fun hook_pvc:trace_r/6, w => fun hook_pvc:trace_w/2},
+    {ok, CoordState} = pvc:new(RingInfo, Connections, Id, Protocol, Traces),
 
     State = #state{worker_id = Id,
                    transaction_count = 0,
@@ -95,7 +96,12 @@ run(readwrite, KeyGen, ValueGen, State = #state{mixed_readwrite_ratio={ToRead, T
 
     %% We pick the max of read and write to read all the keys we need
     Total = erlang:max(ToRead, ToWrite),
-    Keys = gen_keys(Total, KeyGen),
+
+    %% Generate keys that are always aligned to the first N partitions, as much as the number of keys being asked
+    %% Note: the 8 comes from the number of partitions in the ring. Should change if Antidote changes.
+    Keys = element(1, lists:foldl(fun(_, {Acc, N}) ->
+        { [ ((KeyGen() * 8) + N) | Acc], N + 1}
+    end, {[], 0}, lists:seq(1, Total))),
 
     %% Then perform updates on the sublist of total keys (ToWrite)
     Updates = lists:map(fun(K) -> {K, ValueGen()} end, lists:sublist(Keys, ToWrite)),
