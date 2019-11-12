@@ -39,7 +39,6 @@ build_erlang_node_names(NodeNames) ->
 validate(error) ->
     usage();
 validate({ok, Nodes}) when is_list(Nodes) ->
-    io:format("Getting stats reports for nodes ~p~n", [Nodes]),
     [ erlang:set_cookie(N, antidote) || N <- Nodes],
     {Results, BadNodes} = rpc:multicall(Nodes, antidote_stats_collector, report_stats, [], infinity),
 
@@ -48,8 +47,17 @@ validate({ok, Nodes}) when is_list(Nodes) ->
         true
     end,
 
-    io:fwrite(standard_io, "Misses~n~p~n", [lists:zip(Nodes, Results)]),
+    Averages = calc(lists:flatten(Results)),
+    io:fwrite(standard_io, "~p~n", [Averages]),
     halt(0).
+
+calc([]) -> #{clog => 0, vlog => 0, tries => 0};
+calc(Results) ->
+    {Len, CT, VT, TT} = lists:foldl(fun(Map, {N, AccClog, AccVlog, AccTries}) ->
+        #{clog_misses := C, vlog_misses := V, not_ready_tries := T} = Map,
+        {N + 1, AccClog + C, AccVlog + V, T + AccTries}
+    end, {0, 0, 0, 0}, Results),
+    #{clog => CT / Len, vlog => VT / Len, tries => TT / Len}.
 
 -spec usage() -> no_return().
 usage() ->
