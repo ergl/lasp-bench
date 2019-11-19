@@ -51,13 +51,14 @@ validate({ok, Nodes}) when is_list(Nodes) ->
     io:fwrite(standard_io, "~p~n", [Averages]),
     halt(0).
 
-calc([]) -> #{clog => 0, vlog => 0, tries => 0};
+calc([]) -> #{clog => 0, vlog => 0, tries => 0, fix_vlog => 0};
 calc(Results) ->
-    {Len, CT, VT, TT} = lists:foldl(fun(Map, {N, AccClog, AccVlog, AccTries}) ->
+    {Len, CT, VT, TT, VCT} = lists:foldl(fun(Map, {N, AccClog, AccVlog, AccTries, AccVC}) ->
         #{clog_misses := C, vlog_misses := V, not_ready_tries := T} = Map,
-        {N + 1, AccClog + C, AccVlog + V, T + AccTries}
-    end, {0, 0, 0, 0}, Results),
-    #{clog => CT / Len, vlog => VT / Len, tries => TT / Len}.
+        VC = maps:get(fix_vc_misses, Map, 0),
+        {N + 1, AccClog + C, AccVlog + V, T + AccTries, VC + AccVC}
+    end, {0, 0, 0, 0, 0}, Results),
+    #{clog => CT / Len, vlog => VT / Len, tries => TT / Len, fix_vlog => VCT / Len}.
 
 -spec usage() -> no_return().
 usage() ->
