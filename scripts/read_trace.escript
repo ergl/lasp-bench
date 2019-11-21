@@ -2,6 +2,9 @@
 
 -mode(compile).
 
+%% API
+-export([main/1]).
+
 %% Copy-pasted from hook_pvc
 
 -define(NOT(Var), {'not', Var}).
@@ -41,6 +44,9 @@ do_if_option(Opts, Flag, Fun) ->
         Other -> Fun(Other), halt(0)
     end.
 
+ratio(_, 0) -> 0.0;
+ratio(A, B) -> A / B.
+
 main(Args) ->
     case parse_args(Args) of
         {error, Reason} ->
@@ -56,7 +62,7 @@ main(Args) ->
                 All = count_aborts(TraceTable),
                 NonGC = count_non_gc(TraceTable),
                 GC = count_gc_incidents(TraceTable),
-                io:format("~b aborts total. ~b due to GC (ratio ~f), ~b due to unknown causes (ratio ~f)~n", [All, GC, (GC/All), NonGC, (NonGC/All)])
+                io:format("~b aborts total. ~b due to GC (ratio ~f), ~b due to unknown causes (ratio ~f)~n", [All, GC, ratio(GC, All), NonGC, ratio(NonGC, All)])
             end),
 
             do_if_option(Opts, walk_aborts, fun(_) ->
@@ -66,7 +72,7 @@ main(Args) ->
             do_if_option(Opts, show_non_gc, fun(_) ->
                 All = count_aborts(TraceTable),
                 Match = count_non_gc(TraceTable),
-                io:format("~b aborts due to unknow reasons out of ~b total (ratio ~f)~n", [Match, All, (Match / All)]),
+                io:format("~b aborts due to unknow reasons out of ~b total (ratio ~f)~n", [Match, All, ratio(Match, All)]),
                 case confirm_show_trace() of
                     true ->
                         walk_aborts(non_gc_aborts(TraceTable), Opts, TraceTable);
@@ -78,7 +84,7 @@ main(Args) ->
             do_if_option(Opts, show_gc, fun(_) ->
                 All = count_aborts(TraceTable),
                 Match = count_gc_incidents(TraceTable),
-                io:format("~b aborts due to gc out of ~b total (ratio ~f)~n", [Match, All, (Match / All)]),
+                io:format("~b aborts due to gc out of ~b total (ratio ~f)~n", [Match, All, ratio(Match, All)]),
                 case confirm_show_trace() of
                     true ->
                         walk_aborts(gc_aborts(TraceTable), Opts, TraceTable);
