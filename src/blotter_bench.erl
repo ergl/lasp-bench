@@ -78,6 +78,32 @@ run(readonly_track, KeyGen, _, State = #state{coord_state=CoordState}) ->
             {ok, {track_reads, Sent, Received, StampMap, incr_tx_id(State)}}
     end;
 
+run(readwrite_track, KeyGen, ValueGen, State = #state{mixed_readwrite_ratio={ToRead, ToWrite},
+                                                      coord_state=Conn}) ->
+    Total = erlang:max(ToRead, ToWrite),
+    Keys = gen_keys(Total, KeyGen),
+    Updates = lists:map(fun(K) -> {K, ValueGen()} end, lists:sublist(Keys, ToWrite)),
+    {ok, Tx} = pvc:start_transaction(Conn, next_tx_id(State)),
+    case pvc:read(Conn, Tx, Keys) of
+        {abort, _AbortReason}=ReadErr ->
+            {error, ReadErr, incr_tx_id(State)};
+
+        {ok, _, Tx1} ->
+            {ok, Tx2} = pvc:update(Conn, Tx1, Updates),
+            {Took, Res} = timer:tc(pvc, commit, [Conn, Tx2]),
+            case Res of
+                {error, Reason} ->
+                    %% TODO(borja): Can this error happen?
+                    {error, Reason, incr_tx_id(State)};
+
+                {abort, _AbortReason}=CommitErr ->
+                    {error, CommitErr, incr_tx_id(State)};
+
+                ok ->
+                    {ok, {track_commits, Took, incr_tx_id(State)}}
+            end
+    end;
+
 run(readonly, KeyGen, _, State = #state{keys_to_read=1}) ->
     perform_readonly_tx(KeyGen(), State, 1);
 
