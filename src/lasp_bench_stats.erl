@@ -346,6 +346,15 @@ report_latency(State, Elapsed, Window, Op={_, readonly_track}) ->
 
     send_report(State, Elapsed, Window, Op, [{default, Stats} | ReadStats], Errors, Units);
 
+report_latency(State, Elapsed, Window, Op={_, readwrite_track}) ->
+    Stats = folsom_metrics:get_histogram_statistics({latencies, Op}),
+    Errors = error_counter(Op),
+    Units = folsom_metrics:get_metric_value({units, Op}),
+
+    UpdateStats = [{commit, folsom_metrics:get_histogram_statistics({commit, Op})}],
+
+    send_report(State, Elapsed, Window, Op, [{default, Stats} | UpdateStats], Errors, Units);
+
 report_latency(State, Elapsed, Window, Op) ->
     Stats = folsom_metrics:get_histogram_statistics({latencies, Op}),
     Errors = error_counter(Op),
