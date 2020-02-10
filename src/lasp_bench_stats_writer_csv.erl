@@ -64,6 +64,8 @@ terminate({SummaryFile, ErrorsFile}) ->
          case Op of
              {_, readonly_track} ->
                  ok = lists:foreach(fun file:close/1, F);
+             {_, readwrite_track} ->
+                 ok = lists:foreach(fun file:close/1, F);
              _ ->
                  ok = file:close(F)
          end
@@ -89,6 +91,13 @@ report_error({_SummaryFile, ErrorsFile},
                              [Key, Count])).
 
 report_latency(_, Elapsed, Window, Op={_, readonly_track}, Payload, Errors, Units) ->
+    Fds = erlang:get({csv_file, Op}),
+    lists:foreach(fun({StatLabel, Stat}) ->
+        Fd = proplists:get_value(StatLabel, Fds),
+        file:write(Fd, get_line_from_stats(Op, Elapsed, Window, Stat, Errors, Units))
+    end, Payload);
+
+report_latency(_, Elapsed, Window, Op={_, readwrite_track}, Payload, Errors, Units) ->
     Fds = erlang:get({csv_file, Op}),
     lists:foreach(fun({StatLabel, Stat}) ->
         Fd = proplists:get_value(StatLabel, Fds),
@@ -130,6 +139,16 @@ op_csv_file({_, readonly_track}) ->
              {rcv, "readonly_track_rcv_latencies.csv"},
              {read_took, "readonly_track_read_took_latencies.csv"},
              {wait_took, "readonly_track_wait_took_latencies.csv"}],
+
+    lists:map(fun({Type, Fname}) ->
+        {ok, F} = file:open(Fname, [raw, binary, write]),
+        ok = file:write(F, <<"elapsed, window, n, min, mean, median, 95th, 99th, 99_9th, max, errors\n">>),
+        {Type, F}
+    end, Names);
+
+op_csv_file({_, readwrite_track}) ->
+    Names = [{default, "readwrite_track_latencies.csv"},
+             {commit, "readwrite_track_commit_latencies.csv"}],
 
     lists:map(fun({Type, Fname}) ->
         {ok, F} = file:open(Fname, [raw, binary, write]),

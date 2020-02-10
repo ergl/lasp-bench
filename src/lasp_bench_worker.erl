@@ -334,6 +334,11 @@ hack_preprocess_driver_state({_, readonly_track}=Op, {track_reads, Sent, Receive
 
     State;
 
+hack_preprocess_driver_state({_, readwrite_track}=Op, {track_commits, CommitTime, State}) ->
+    ok = lasp_bench_stats:op_complete(Op, ok, {commit, CommitTime}),
+
+    State;
+
 hack_preprocess_driver_state(_, State) ->
     State.
 

@@ -82,6 +82,21 @@ op_complete({_, readonly_track}=Op, {ok, Units}, Payload) ->
             end
     end;
 
+op_complete({_, readwrite_track}=Op, {ok, Units}, Payload) ->
+    case get_distributed() of
+        true ->
+            gen_server:cast({global, ?MODULE}, {Op, {ok, Units}, Payload});
+        false ->
+            case Payload of
+                {TableTag, Us} ->
+                    folsom_metrics:notify({TableTag, Op}, Us);
+                ElapsedUs ->
+                    %% Same behaviour as before, increment normal latencies and units
+                    folsom_metrics:notify({latencies, Op}, ElapsedUs),
+                    folsom_metrics:notify({units, Op}, {inc, Units})
+            end
+    end;
+
 op_complete(Op, {ok, Units}, ElapsedUs) ->
     %% Update the histogram and units counter for the op in question
    % io:format("Get distributed: ~p~n", [get_distributed()]),
@@ -163,6 +178,9 @@ build_folsom_tables(Ops) ->
             {_, readonly_track} ->
                 %% Send and receive times, async read execution and wait time
                 ?HISTOGRAMS(Op, [send, rcv, read_took, wait_took], Interval);
+            {_, readwrite_track} ->
+                %% How much do we wait to commit?
+                ?HISTOGRAMS(Op, [commit], Interval);
             _ ->
                 ok
         end,
