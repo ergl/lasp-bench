@@ -45,9 +45,16 @@ run(Self, ConfigFile) ->
     {ok, [{latencies, LatencyMap},
           {clusters, ClusterDef}]} = file:consult(ConfigFile),
 
-    true = reset_tc_rules(),
-    Latencies = maps:get(Self, LatencyMap),
-    ok = build_tc_rules(Latencies, ClusterDef).
+    case maps:get(Self, LatencyMap, empty) of
+        empty ->
+            %% If we don't have a latency map for ourselves, it means we shouldn't
+            %% touch the latencies. We may only have a single cluster
+            ok;
+        [_|_]=Latencies ->
+            true = reset_tc_rules(),
+            Latencies = maps:get(Self, LatencyMap),
+            ok = build_tc_rules(Latencies, ClusterDef)
+    end.
 
 -spec reset_tc_rules() -> boolean().
 reset_tc_rules() ->
