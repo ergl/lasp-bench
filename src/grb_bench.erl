@@ -35,7 +35,7 @@ new(Id) ->
 
     ReplicaID = ets:lookup_element(hook_grb, replica_id, 2),
     RingInfo = ets:lookup_element(hook_grb, ring, 2),
-    Connections = hook_pvc:conns_for_worker(Id),
+    Connections = hook_grb:conns_for_worker(Id),
 
     {ok, CoordState} = pvc:grb_new(RingInfo, Connections, Id, ReplicaID),
     State = #state{worker_id=Id,
