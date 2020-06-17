@@ -1,24 +1,19 @@
 {"1.1.0",
-[{<<"bear">>,{pkg,<<"bear">>,<<"0.8.5">>},1},
- {<<"folsom">>,{pkg,<<"folsom">>,<<"0.8.5">>},0},
+[{<<"bear">>,{pkg,<<"bear">>,<<"0.8.7">>},1},
+ {<<"folsom">>,{pkg,<<"folsom">>,<<"0.8.8">>},0},
  {<<"getopt">>,{pkg,<<"getopt">>,<<"0.8.2">>},0},
- {<<"goldrush">>,{pkg,<<"goldrush">>,<<"0.1.9">>},1},
- {<<"jsx">>,
-  {git,"https://github.com/talentdeficit/jsx.git",
-       {ref,"d4b6d3dc5fd9e759ff7a0c476654ea5124f5bae9"}},
-  0},
- {<<"lager">>,{pkg,<<"lager">>,<<"3.5.1">>},0},
+ {<<"jsx">>,{pkg,<<"jsx">>,<<"2.11.0">>},0},
  {<<"pipesock">>,
   {git,"https://github.com/ergl/pipesock.git",
-       {ref,"91f966451767e95ed9894414955d0633f1790b79"}},
+       {ref,"98892db8916ae107139e3a65935fd0c8e2493a60"}},
   1},
  {<<"pvc">>,
   {git,"https://github.com/ergl/pvc.git",
-       {ref,"9bed5183b8a6d5b60cf569607c1e3ba37d53bf39"}},
+       {ref,"446d7f196fd9f4c9230921287dc3a3c4be784793"}},
   0},
  {<<"pvc_proto">>,
   {git,"https://github.com/ergl/pvc_proto.git",
-       {ref,"9362721dd70ed239c14d6e0319a8ecae761ae62b"}},
+       {ref,"eff6f2fb1c423be5ebf36db5fb24be90ba1d818f"}},
   0},
  {<<"pvc_types">>,
   {git,"https://github.com/ergl/pvc_types.git",
@@ -26,9 +21,8 @@
   1}]}.
 [
 {pkg_hash,[
- {<<"bear">>, <<"E95FCA1627CD9E15BAF93CE0A52AFF16917BAF325F0EE65B88CD715376CD2344">>},
- {<<"folsom">>, <<"94A027B56FE84FEED264F9B33CB4C6AC9A801FAD84B87DBDA0836CE83C3B8D69">>},
+ {<<"bear">>, <<"16264309AE5D005D03718A5C82641FCC259C9E8F09ADEB6FD79CA4271168656F">>},
+ {<<"folsom">>, <<"9A2B02010F6727CB1948EF34E21CB66F3554B63355C3A31E8BCB10FB172C3170">>},
  {<<"getopt">>, <<"B17556DB683000BA50370B16C0619DF1337E7AF7ECBF7D64FBF8D1D6BCE3109B">>},
- {<<"goldrush">>, <<"F06E5D5F1277DA5C413E84D5A2924174182FB108DABB39D5EC548B27424CD106">>},
- {<<"lager">>, <<"63897A61AF646C59BB928FEE9756CE8BDD02D5A1A2F3551D4A5E38386C2CC071">>}]}
+ {<<"jsx">>, <<"08154624050333919B4AC1B789667D5F4DB166DC50E190C4D778D1587F102EE0">>}]}
 ].

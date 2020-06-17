@@ -12,7 +12,7 @@
 %% Get ring information from Antidote,
 %% and spawn all the necessary connections
 start(HookOpts) ->
-    lager:info("~p:~p(~p)", [?MODULE, ?FUNCTION_NAME, HookOpts]),
+    logger:info("~p:~p(~p)", [?MODULE, ?FUNCTION_NAME, HookOpts]),
     ok = pvc:start(),
 
     %% ETS table to share data with workers
@@ -27,7 +27,7 @@ start(HookOpts) ->
     {connection_port, ConnectionPort} = lists:keyfind(connection_port, 1, HookOpts),
 
     BootstrapIp = get_bootstrap_ip(NodeNameOpt, NodeClusterOpt, NodeIPOpt),
-    lager:info("Given bootstrap IP ~p~n", [BootstrapIp]),
+    logger:info("Given bootstrap IP ~p~n", [BootstrapIp]),
 
     ConnectionOpts0 = case lists:keyfind(connection_cork_ms, 1, HookOpts) of
         {connection_cork_ms, CorkMs} -> #{cork_len => CorkMs};
@@ -51,7 +51,7 @@ start(HookOpts) ->
     end, UniqueNodes).
 
 stop() ->
-    lager:info("Unloading ~p", [?MODULE]),
+    logger:info("Unloading ~p", [?MODULE]),
     [{nodes, UniqueNodes}] = ets:take(?MODULE, nodes),
     lists:foreach(fun(NodeIp) ->
         teardown_pool(NodeIp)

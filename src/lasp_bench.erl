@@ -59,31 +59,11 @@ main(Args) ->
     {ok, _Pid} = lasp_bench_config:start_link(),
     lasp_bench_config:set(test_id, BenchName),
 
-    application:load(lager),
-    %% application:set_env(lasp_bench, log_level, [{level,debug}]),
-    ConsoleLagerLevel = lasp_bench_config:get(log_level, [{level,debug}]),
+    CustomLoggingLevel = lasp_bench_config:get(log_level, debug),
+    logger:set_application_level(lasp_bench, CustomLoggingLevel),
 
-    ErrorLog = filename:join([TestDir, "error.log"]),
-    ConsoleLog = filename:join([TestDir, "console.log"]),
-    CrashLog = filename:join([TestDir, "crash.log"]),
-    application:set_env(lager,
-                        handlers,
-                        [{lager_console_backend, ConsoleLagerLevel},
-                         {lager_file_backend, [{file, ErrorLog},   {level, error}, {size, 10485760}, {date, "$D0"}, {count, 5}]},
-                         {lager_file_backend, [{file, ConsoleLog}, {level, debug}, {size, 10485760}, {date, "$D0"}, {count, 5}]}
-                        ]),
-    application:set_env(lager, crash_log, CrashLog),
-    lager:start(),
-
-    %% Make sure this happens after starting lager or failures wont be shown.
+    %% Make sure this happens after starting logger or failures wont be shown.
     lasp_bench_config:load(Configs),
-
-    %% Log level can be overriden by the config files
-    CustomLagerLevel = lasp_bench_config:get(log_level),
-    [{level,LagerLevel}] = CustomLagerLevel,
-
-    lager:set_loglevel(lager_console_backend, LagerLevel),
-    lager:set_loglevel(lager_file_backend, ConsoleLog, LagerLevel),
 
     %% Init code path
     add_code_paths(lasp_bench_config:get(code_paths, [])),

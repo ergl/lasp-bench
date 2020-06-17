@@ -7,7 +7,7 @@
          stop/0]).
 
 start(HookOpts) ->
-    lager:info("Running pre hook, loading pipesock with args ~p", [HookOpts]),
+    logger:info("Running pre hook, loading pipesock with args ~p", [HookOpts]),
     ok = application:ensure_started(pipesock),
     _ = ets:new(prehook_ets, [set, named_table, protected]),
 
@@ -38,7 +38,7 @@ spawn_pool(Ip, Port, N, Acc) ->
     spawn_pool(Ip, Port, N - 1, [Connection | Acc]).
 
 stop() ->
-    lager:info("Running post hook, unloading pipesock"),
+    logger:info("Running post hook, unloading pipesock"),
     IPs = lasp_bench_config:get(ranch_ips),
     lists:foreach(fun(Ip) ->
         ok = teardown_pool(prehook_ets, Ip)

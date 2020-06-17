@@ -8,7 +8,6 @@
   {registered, [ lasp_bench_sup ]},
   {applications, [kernel,
                   stdlib,
-                  lager,
                   sasl,
                   bear]},
   {mod, {lasp_bench_app, []}},
