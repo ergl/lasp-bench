@@ -29,16 +29,9 @@ start(HookOpts) ->
     BootstrapIp = get_bootstrap_ip(NodeNameOpt, NodeClusterOpt, NodeIPOpt),
     logger:info("Given bootstrap IP ~p~n", [BootstrapIp]),
 
-    ConnectionOpts0 = case lists:keyfind(connection_cork_ms, 1, HookOpts) of
+    ConnectionOpts = case lists:keyfind(connection_cork_ms, 1, HookOpts) of
         {connection_cork_ms, CorkMs} -> #{cork_len => CorkMs};
         false -> #{}
-    end,
-
-    ConnectionOpts1 = case lists:keyfind(connection_buff_wm, 1, HookOpts) of
-        {connection_buff_wm, BuffWatermark} ->
-            maps:put(buf_watermark, BuffWatermark, ConnectionOpts0);
-        false ->
-            ConnectionOpts0
     end,
 
     {ok, ReplicaID, Ring, UniqueNodes} = pvc_ring:grb_replica_info(BootstrapIp, Port),
@@ -46,7 +39,7 @@ start(HookOpts) ->
     ets:insert(?MODULE, {ring, Ring}),
     ets:insert(?MODULE, {nodes, UniqueNodes}),
     ok = lists:foreach(fun(NodeIp) ->
-        Connections = spawn_pool(NodeIp, ConnectionPort, ConnectionOpts1, PoolSize),
+        Connections = spawn_pool(NodeIp, ConnectionPort, ConnectionOpts, PoolSize),
         ets:insert(?MODULE, {NodeIp, PoolSize, Connections}),
         ok
     end, UniqueNodes).
