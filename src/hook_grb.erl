@@ -2,6 +2,9 @@
 
 -ignore_xref([start/1, stop/0]).
 
+-define(BOOTSTRAP_NODE, "BOOTSTRAP_NODE").
+-define(BOOTSTRAP_PORT, "BOOTSTRAP_PORT").
+
 %% API
 -export([start/1,
          stop/0]).
@@ -18,21 +21,20 @@ start(HookOpts) ->
     %% ETS table to share data with workers
     _ = ets:new(?MODULE, [set, named_table, protected]),
 
-    NodeNameOpt = lists:keyfind(bootstrap_node, 1, HookOpts),
-    NodeIPOpt = lists:keyfind(bootstrap_node_ip, 1, HookOpts),
-    NodeClusterOpt = lists:keyfind(bootstrap_cluster, 1, HookOpts),
+    BootstrapNode = os:getenv(?BOOTSTRAP_NODE, "apollo-1-1.imdea"),
+    BootstrapPort = os:getenv(?BOOTSTRAP_PORT, "7878"),
+    logger:info("Given bootstrap node ~p~n", [BootstrapNode]),
 
-    {bootstrap_port, Port} = lists:keyfind(bootstrap_port, 1, HookOpts),
     {conn_pool_size, PoolSize} = lists:keyfind(conn_pool_size, 1, HookOpts),
     {connection_port, ConnectionPort} = lists:keyfind(connection_port, 1, HookOpts),
 
-    BootstrapIp = get_bootstrap_ip(NodeNameOpt, NodeClusterOpt, NodeIPOpt),
-    logger:info("Given bootstrap IP ~p~n", [BootstrapIp]),
+    BootstrapIp = get_bootstrap_ip(BootstrapNode),
+    logger:info("Bootstraping from ~p:~p~n", [BootstrapIp, BootstrapNode]),
 
     {conection_opts, ConnectionOpts} = lists:keyfind(conection_opts, 1, HookOpts),
     {connection_transport, ConnTransport} = lists:keyfind(connection_transport, 1, HookOpts),
 
-    {ok, ReplicaID, Ring, UniqueNodes} = pvc_ring:grb_replica_info(BootstrapIp, Port),
+    {ok, ReplicaID, Ring, UniqueNodes} = pvc_ring:grb_replica_info(BootstrapIp, BootstrapPort),
     true = ets:insert(?MODULE, {replica_id, ReplicaID}),
     true = ets:insert(?MODULE, {ring, Ring}),
     true = ets:insert(?MODULE, {nodes, UniqueNodes}),
@@ -61,24 +63,8 @@ conns_for_worker(WorkerId) ->
          {Node, lists:nth((WorkerId rem PoolSize) + 1, Connections)}
      end || Node <- Nodes].
 
-%% If Node IP option is present, override anything else
--spec get_bootstrap_ip(tuple() | false, tuple() | false, tuple() | false) -> atom().
-get_bootstrap_ip(_, _, {bootstrap_node_ip, NodeIp}) ->
-    NodeIp;
-
 %% If node name is given, and we're on Emulab, parse /etc/hosts to get node IP
-get_bootstrap_ip({bootstrap_node, NodeName}, {bootstrap_cluster, emulab}, _) ->
-    NameB = atom_to_binary(NodeName, latin1),
-    {ok, Raw} = file:read_file("/etc/hosts"),
-    Lines = binary:split(Raw, <<"\n">>, [global, trim_all]),
-    [BootstrapIp] = [begin
-                         [IP | _] = binary:split(L, <<"\t">>),
-                         binary_to_atom(IP, latin1)
-                     end || L <- Lines, binary:match(L, NameB) =/= nomatch],
-    BootstrapIp;
-
-%% If we're on Apollo, just use inet
-get_bootstrap_ip({bootstrap_node, NodeName}, {bootstrap_cluster, apollo}, _) ->
+get_bootstrap_ip(NodeName) ->
     {ok, Addr} = inet:getaddr(NodeName, inet),
     list_to_atom(inet:ntoa(Addr)).
 
