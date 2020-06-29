@@ -22,7 +22,7 @@ start(HookOpts) ->
     _ = ets:new(?MODULE, [set, named_table, protected]),
 
     BootstrapNode = os:getenv(?BOOTSTRAP_NODE, "apollo-1-1.imdea"),
-    BootstrapPort = os:getenv(?BOOTSTRAP_PORT, "7878"),
+    BootstrapPort = list_to_integer(os:getenv(?BOOTSTRAP_PORT, "7878")),
     logger:info("Given bootstrap node ~p~n", [BootstrapNode]),
 
     {conn_pool_size, PoolSize} = lists:keyfind(conn_pool_size, 1, HookOpts),
