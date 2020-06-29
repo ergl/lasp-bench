@@ -21,7 +21,7 @@ start(HookOpts) ->
     %% ETS table to share data with workers
     _ = ets:new(?MODULE, [set, named_table, protected]),
 
-    BootstrapNode = os:getenv(?BOOTSTRAP_NODE, "apollo-1-1.imdea"),
+    BootstrapNode = os:getenv(?BOOTSTRAP_NODE, "127.0.0.1"),
     BootstrapPort = list_to_integer(os:getenv(?BOOTSTRAP_PORT, "7878")),
     logger:info("Given bootstrap node ~p~n", [BootstrapNode]),
 
