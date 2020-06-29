@@ -33,11 +33,17 @@ new(Id) ->
     KeepCVC = lasp_bench_config:get(keep_cvc),
     RetryUntilCommit = lasp_bench_config:get(retry_aborts, true),
 
-    ReplicaID = ets:lookup_element(hook_grb, replica_id, 2),
+    ReplicaId = ets:lookup_element(hook_grb, replica_id, 2),
     RingInfo = ets:lookup_element(hook_grb, ring, 2),
+    Transport = ets:lookup_element(hook_grb, transport, 2),
     Connections = hook_grb:conns_for_worker(Id),
 
-    {ok, CoordState} = pvc:grb_new(RingInfo, Connections, Id, ReplicaID),
+    {ok, CoordState} = pvc:grb_new(#{ring => RingInfo,
+                                     transport => Transport,
+                                     connections => Connections,
+                                     coord_id => Id,
+                                     replica_id => ReplicaId}),
+
     State = #state{worker_id=Id,
                    transaction_count=0,
                    coord_state=CoordState,

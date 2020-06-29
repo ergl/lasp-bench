@@ -29,17 +29,16 @@ start(HookOpts) ->
     BootstrapIp = get_bootstrap_ip(NodeNameOpt, NodeClusterOpt, NodeIPOpt),
     logger:info("Given bootstrap IP ~p~n", [BootstrapIp]),
 
-    ConnectionOpts = case lists:keyfind(connection_cork_ms, 1, HookOpts) of
-        {connection_cork_ms, CorkMs} -> #{cork_len => CorkMs};
-        false -> #{}
-    end,
+    {conection_opts, ConnectionOpts} = lists:keyfind(conection_opts, 1, HookOpts),
+    {connection_transport, ConnTransport} = lists:keyfind(connection_transport, 1, HookOpts),
 
     {ok, ReplicaID, Ring, UniqueNodes} = pvc_ring:grb_replica_info(BootstrapIp, Port),
-    ets:insert(?MODULE, {replica_id, ReplicaID}),
-    ets:insert(?MODULE, {ring, Ring}),
-    ets:insert(?MODULE, {nodes, UniqueNodes}),
+    true = ets:insert(?MODULE, {replica_id, ReplicaID}),
+    true = ets:insert(?MODULE, {ring, Ring}),
+    true = ets:insert(?MODULE, {nodes, UniqueNodes}),
+    true = ets:insert(?MODULE, {transport, ConnTransport}),
     ok = lists:foreach(fun(NodeIp) ->
-        Connections = spawn_pool(NodeIp, ConnectionPort, ConnectionOpts, PoolSize),
+        Connections = spawn_pool(NodeIp, ConnectionPort, ConnTransport, ConnectionOpts, PoolSize),
         ets:insert(?MODULE, {NodeIp, PoolSize, Connections}),
         ok
     end, UniqueNodes).
@@ -84,15 +83,15 @@ get_bootstrap_ip({bootstrap_node, NodeName}, {bootstrap_cluster, apollo}, _) ->
     list_to_atom(inet:ntoa(Addr)).
 
 %% Create a pool of connections to `NodeIp:ConnectionPort` of size `PoolSize`
-spawn_pool(NodeIp, ConnectionPort, ConnectionOpts, PoolSize) ->
-    spawn_pool(NodeIp, ConnectionPort, ConnectionOpts, PoolSize, []).
+spawn_pool(NodeIp, ConnectionPort, Transport, ConnectionOpts, PoolSize) ->
+    spawn_pool(NodeIp, ConnectionPort, Transport, ConnectionOpts, PoolSize, []).
 
-spawn_pool(_, _, _, 0, Acc) ->
+spawn_pool(_, _, _, _, 0, Acc) ->
     Acc;
 
-spawn_pool(Ip, Port, Opts, N, Acc) ->
-    {ok, Connection} = pvc_connection:new(Ip, Port, Opts),
-    spawn_pool(Ip, Port, Opts, N - 1, [Connection | Acc]).
+spawn_pool(Ip, Port, Transport, Opts, N, Acc) ->
+    {ok, Connection} = Transport:new(Ip, Port, Opts),
+    spawn_pool(Ip, Port, Transport, Opts, N - 1, [Connection | Acc]).
 
 %% Close all the pvc connections
 teardown_pool(NodeIp) ->
