@@ -80,14 +80,14 @@ run(ping, KeyGen, _, State = #state{worker_id=Id, ring=RingInfo, sockets=Socks})
     Key = integer_to_binary(KeyGen(), 36),
     {Partition, Node} = pvc_ring:get_key_indexnode(RingInfo, Key),
     Socket = maps:get(Node, Socks),
-    Msg = <<0:16, (ppb_grb_driver:uniform_barrier(Partition, #{}))/binary>>,
+    Msg = <<0:16, (ppb_grb_driver:start_tx(Partition, #{}))/binary>>,
     ok = gen_tcp:send(Socket, Msg),
     case gen_tcp:recv(Socket, 0) of
         {error, Reason} ->
             logger:error("Worker ~p bad recv ~p", [Id, Reason]),
             {error, Reason, State};
         {ok, <<0:16, RawReply/binary>>} ->
-            ok = pvc_proto:decode_serv_reply(RawReply),
+            {ok, _SVC} = pvc_proto:decode_serv_reply(RawReply),
             {ok, State}
     end;
 
