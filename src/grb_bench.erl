@@ -17,8 +17,10 @@
     worker_id :: non_neg_integer(),
     %% Auto incremented counter to create unique transaction ids
     transaction_count :: non_neg_integer(),
-    %% Client coordinator state
-    coord_state :: pvc:coord_state(),
+
+    %% The connection mode, either use grb_client (sockets) or pvc (pvc_connection)
+    mode :: atom(),
+
     readonly_ops :: non_neg_integer(),
     writeonly_ops :: non_neg_integer(),
     mixed_ops_ration :: {non_neg_integer(), non_neg_integer()},
@@ -26,28 +28,11 @@
     last_cvc :: pvc_vclock:vc(),
     retry_until_commit :: boolean(),
 
-    sockets = undefined :: #{inet:ip_address() => inet:socket()} | undefined,
-    ring = undefined :: pvc_ring:ring() | undefined
+    %% Client coordinator state (pvc/grb_client, depending on mode)
+    coord_state :: pvc:coord_state() | grb_client:coord()
 }).
 
 new(Id) ->
-    Transport = ets:lookup_element(hook_grb, transport, 2),
-    new(Id, Transport).
-
-new(Id, socket) ->
-    RingInfo = ets:lookup_element(hook_grb, ring, 2),
-    Nodes = ets:lookup_element(hook_grb, nodes, 2),
-    Port = ets:lookup_element(hook_grb, port, 2),
-    Sockets = lists:foldl(fun(Node, Acc) ->
-        {ok, Socket} = gen_tcp:connect(Node, Port, [{active, false}, {packet, 4}, binary]),
-        Acc#{Node => Socket}
-    end, #{}, Nodes),
-    State = #state{worker_id=Id,
-                   ring=RingInfo,
-                   sockets=Sockets},
-    {ok, State};
-
-new(Id, Transport) ->
     RonlyOps = lasp_bench_config:get(readonly_ops),
     WonlyOps = lasp_bench_config:get(writeonly_ops),
     MixedOpsRatio = lasp_bench_config:get(ratio),
@@ -56,86 +41,116 @@ new(Id, Transport) ->
 
     ReplicaId = ets:lookup_element(hook_grb, replica_id, 2),
     RingInfo = ets:lookup_element(hook_grb, ring, 2),
-    Connections = hook_grb:conns_for_worker(Id),
+    Transport = ets:lookup_element(hook_grb, transport, 2),
 
-    {ok, CoordState} = pvc:grb_new(#{ring => RingInfo,
-                                     transport => Transport,
-                                     connections => Connections,
-                                     coord_id => Id,
-                                     replica_id => ReplicaId}),
+    {ok, CoordState} = case Transport of
+        socket ->
+            Nodes = ets:lookup_element(hook_grb, nodes, 2),
+            Port = ets:lookup_element(hook_grb, port, 2),
+            grb_client:new(ReplicaId, Id, RingInfo, Nodes, Port);
 
+        OtherTransport ->
+            Connections = hook_grb:conns_for_worker(Id),
+            pvc:grb_new(#{ring => RingInfo,
+                          transport => OtherTransport,
+                          connections => Connections,
+                          coord_id => Id,
+                          replica_id => ReplicaId})
+    end,
     State = #state{worker_id=Id,
                    transaction_count=0,
-                   coord_state=CoordState,
+                   mode=Transport,
                    readonly_ops=RonlyOps,
                    writeonly_ops=WonlyOps,
                    mixed_ops_ration=MixedOpsRatio,
                    keep_cvc=KeepCVC,
                    last_cvc=pvc_vclock:new(),
-                   retry_until_commit=RetryUntilCommit},
+                   retry_until_commit=RetryUntilCommit,
+                   coord_state=CoordState},
 
     {ok, State}.
 
-run(ping, KeyGen, _, State = #state{worker_id=Id, ring=RingInfo, sockets=Socks}) ->
-    Key = integer_to_binary(KeyGen(), 36),
-    {Partition, Node} = pvc_ring:get_key_indexnode(RingInfo, Key),
-    Socket = maps:get(Node, Socks),
-    Msg = <<0:16, (ppb_grb_driver:start_tx(Partition, #{}))/binary>>,
-    ok = gen_tcp:send(Socket, Msg),
-    case gen_tcp:recv(Socket, 0) of
-        {error, Reason} ->
-            logger:error("Worker ~p bad recv ~p", [Id, Reason]),
-            {error, Reason, State};
-        {ok, <<0:16, RawReply/binary>>} ->
-            {ok, _SVC} = pvc_proto:decode_serv_reply(RawReply),
-            {ok, State}
-    end;
+run(ping, _, _, State = #state{mode=socket, coord_state=Coord}) ->
+    ok = grb_client:uniform_barrier(Coord, pvc_vclock:new()),
+    {ok, State};
 
-run(readonly_blue, KeyGen, _, State = #state{readonly_ops=N}) ->
+run(ping, _, _, State = #state{coord_state=Coord}) ->
+    ok = pvc:grb_uniform_barrier(Coord, pvc_vclock:new()),
+    {ok, State};
+
+run(readonly_blue, KeyGen, _, State = #state{readonly_ops=N, mode=Mode, coord_state=Coord}) ->
     Keys = gen_keys(N, KeyGen),
-    perform_readonly_blue(Keys, State);
+    {ok, Tx} = maybe_start_with_clock(State),
+    CVC = perform_readonly_blue(Mode, Coord, Tx, Keys),
+    {ok, maybe_keep_clock(State, CVC)};
 
-run(writeonly_blue, KeyGen, ValueGen, State = #state{writeonly_ops=N}) ->
+run(writeonly_blue, KeyGen, ValueGen, State = #state{writeonly_ops=N, mode=Mode, coord_state=Coord}) ->
     Keys = gen_keys(N, KeyGen),
     Ops = [ {K, ValueGen()} || K <- Keys],
-    perform_writeonly_blue(Ops, State);
+    {ok, Tx} = maybe_start_with_clock(State),
+    CVC = perform_writeonly_blue(Mode, Coord, Tx, Ops),
+    {ok, maybe_keep_clock(State, CVC)};
 
-run(read_write_blue, KeyGen, ValueGen, State = #state{mixed_ops_ration={RN, WN}}) ->
+run(read_write_blue, KeyGen, ValueGen, State = #state{mixed_ops_ration={RN, WN}, mode=Mode, coord_state=Coord}) ->
     ReadKeys = gen_keys(RN, KeyGen),
     WriteKeys = gen_keys(WN, KeyGen),
     Updates = [ {K, ValueGen()} || K <- WriteKeys],
-    perform_read_write_blue(ReadKeys, Updates, State).
+    {ok, Tx} = maybe_start_with_clock(State),
+    CVC = perform_read_write_blue(Mode, Coord, Tx, ReadKeys, Updates),
+    {ok, maybe_keep_clock(State, CVC)}.
 
-terminate(_Reason, #state{sockets=Socks}) when is_map(Socks) ->
-    _ = [ gen_tcp:close(S) || {_, S} <- maps:to_list(Socks)],
+terminate(_Reason, #state{mode=socket, coord_state=CoordState}) ->
+    grb_client:close(CoordState),
     ok;
 
 terminate(_Reason, _State) ->
     ok.
 
-perform_readonly_blue(Keys, State=#state{coord_state=CoordState}) ->
-    {ok, Tx} = maybe_start_with_clock(State),
-    %% todo(borja): Implement multi-key read
+%% todo(borja): Implement multi-key read
+perform_readonly_blue(socket, CoordState, Tx, Keys) ->
+    Tx1 = lists:foldl(fun(K, AccTx) ->
+        {ok, _, NextTx} = grb_client:read_op(CoordState, AccTx, K),
+        NextTx
+    end, Tx, Keys),
+    grb_client:commit(CoordState, Tx1);
+
+perform_readonly_blue(_, CoordState, Tx, Keys) ->
     Tx1 = lists:foldl(fun(K, AccTx) ->
         {ok, _, NextTx} = pvc:grb_ronly_op(CoordState, AccTx, K),
         NextTx
     end, Tx, Keys),
-    CVC = pvc:grb_blue_commit(CoordState, Tx1),
-    {ok, maybe_keep_clock(State, CVC)}.
+    pvc:grb_blue_commit(CoordState, Tx1).
 
-perform_writeonly_blue(Updates, State=#state{coord_state=CoordState}) ->
-    {ok, Tx} = maybe_start_with_clock(State),
-    %% todo(borja): Implement multi-key update
+%% todo(borja): Implement multi-key update
+perform_writeonly_blue(socket, CoordState, Tx, Updates) ->
+    Tx1 = lists:foldl(fun({K, V}, AccTx) ->
+        {ok, _, NextTx} = grb_client:update_op(CoordState, AccTx, K, V),
+        NextTx
+    end, Tx, Updates),
+    grb_client:commit(CoordState, Tx1);
+
+perform_writeonly_blue(_, CoordState, Tx, Updates) ->
     Tx1 = lists:foldl(fun({K, V}, AccTx) ->
         {ok, _, NextTx} = pvc:grb_op(CoordState, AccTx, K, V),
         NextTx
     end, Tx, Updates),
-    CVC = pvc:grb_blue_commit(CoordState, Tx1),
-    {ok, maybe_keep_clock(State, CVC)}.
+    pvc:grb_blue_commit(CoordState, Tx1).
 
-perform_read_write_blue(Keys, Updates, State=#state{coord_state=CoordState}) ->
-    {ok, Tx} = maybe_start_with_clock(State),
-    %% todo(borja): Implement multi-key read and update
+%% todo(borja): Implement multi-key read and update
+perform_read_write_blue(socket, CoordState, Tx, Keys, Updates) ->
+    Tx1 = lists:foldl(fun(K, AccTx) ->
+        {ok, _, NextTx} = grb_client:read_op(CoordState, AccTx, K),
+        NextTx
+    end, Tx, Keys),
+
+    Tx2 = lists:foldl(fun({K, V}, AccTx) ->
+        {ok, _, NextTx} = grb_client:update_op(CoordState, AccTx, K, V),
+        NextTx
+    end, Tx1, Updates),
+
+    grb_client:commit(CoordState, Tx2);
+
+perform_read_write_blue(_, CoordState, Tx, Keys, Updates) ->
     Tx1 = lists:foldl(fun(K, AccTx) ->
         {ok, _, NextTx} = pvc:grb_ronly_op(CoordState, AccTx, K),
         NextTx
@@ -145,20 +160,27 @@ perform_read_write_blue(Keys, Updates, State=#state{coord_state=CoordState}) ->
         {ok, _, NextTx} = pvc:grb_op(CoordState, AccTx, K, V),
         NextTx
     end, Tx1, Updates),
-    CVC = pvc:grb_blue_commit(CoordState, Tx2),
-    {ok, maybe_keep_clock(State, CVC)}.
+    pvc:grb_blue_commit(CoordState, Tx2).
 
 %%====================================================================
 %% Util functions
 %%====================================================================
 
+maybe_start_with_clock(S=#state{mode=socket, coord_state=CoordState, keep_cvc=true, last_cvc=VC}) ->
+    grb_client:start_transaction(CoordState, next_tx_id(S), VC);
+
+maybe_start_with_clock(S=#state{mode=socket, coord_state=CoordState, keep_cvc=false}) ->
+    grb_client:start_transaction(CoordState, next_tx_id(S));
+
 maybe_start_with_clock(S=#state{coord_state=CoordState, keep_cvc=true, last_cvc=VC}) ->
     pvc:grb_start_tx(CoordState, next_tx_id(S), VC);
+
 maybe_start_with_clock(S=#state{coord_state=CoordState, keep_cvc=false}) ->
     pvc:grb_start_tx(CoordState, next_tx_id(S)).
 
 maybe_keep_clock(S=#state{keep_cvc=true}, CVC) ->
     incr_tx_id(S#state{last_cvc=CVC});
+
 maybe_keep_clock(S=#state{keep_cvc=false}, _) ->
     incr_tx_id(S).
 
@@ -174,8 +196,8 @@ gen_keys(N, K, Acc) ->
     gen_keys(N - 1, K, [integer_to_binary(K(), 36) | Acc]).
 
 -spec next_tx_id(#state{}) -> tx_id().
-next_tx_id(#state{worker_id=Id, transaction_count=N}) ->
-    {Id, N}.
+next_tx_id(#state{mode=socket, transaction_count=N}) -> N;
+next_tx_id(#state{worker_id=Id, transaction_count=N}) -> {Id, N}.
 
 -spec incr_tx_id(#state{}) -> #state{}.
 incr_tx_id(State=#state{transaction_count=N}) ->
