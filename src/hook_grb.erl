@@ -39,18 +39,30 @@ start(HookOpts) ->
     true = ets:insert(?MODULE, {ring, Ring}),
     true = ets:insert(?MODULE, {nodes, UniqueNodes}),
     true = ets:insert(?MODULE, {transport, ConnTransport}),
-    ok = lists:foreach(fun(NodeIp) ->
-        Connections = spawn_pool(NodeIp, ConnectionPort, ConnTransport, ConnectionOpts, PoolSize),
-        ets:insert(?MODULE, {NodeIp, PoolSize, Connections}),
-        ok
-    end, UniqueNodes).
+    case ConnTransport of
+        socket ->
+            true = ets:insert(?MODULE, {port, ConnectionPort}),
+            ok;
+
+        OtherTransport ->
+            ok = lists:foreach(fun(NodeIp) ->
+                Connections = spawn_pool(NodeIp, ConnectionPort, OtherTransport, ConnectionOpts, PoolSize),
+                ets:insert(?MODULE, {NodeIp, PoolSize, Connections}),
+                ok
+            end, UniqueNodes)
+    end.
 
 stop() ->
     logger:info("Unloading ~p", [?MODULE]),
-    [{nodes, UniqueNodes}] = ets:take(?MODULE, nodes),
-    lists:foreach(fun(NodeIp) ->
-        teardown_pool(NodeIp)
-    end, UniqueNodes),
+    [{transport, Transport}] = ets:take(?MODULE, transport),
+    case Transport of
+        socket -> ok;
+        _ ->
+            [{nodes, UniqueNodes}] = ets:take(?MODULE, nodes),
+            lists:foreach(fun(NodeIp) ->
+                teardown_pool(NodeIp)
+            end, UniqueNodes)
+    end,
     ets:delete(?MODULE),
     ok = pvc:stop(),
     ok.

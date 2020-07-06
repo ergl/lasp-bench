@@ -4,7 +4,8 @@
 -ignore_xref([new/1, run/4]).
 
 -export([new/1,
-         run/4]).
+         run/4,
+         terminate/2]).
 
 -include("lasp_bench.hrl").
 
@@ -23,10 +24,30 @@
     mixed_ops_ration :: {non_neg_integer(), non_neg_integer()},
     keep_cvc :: boolean(),
     last_cvc :: pvc_vclock:vc(),
-    retry_until_commit :: boolean()
+    retry_until_commit :: boolean(),
+
+    sockets = undefined :: #{inet:ip_address() => inet:socket()} | undefined,
+    ring = undefined :: pvc_ring:ring() | undefined
 }).
 
 new(Id) ->
+    Transport = ets:lookup_element(hook_grb, transport, 2),
+    new(Id, Transport).
+
+new(Id, socket) ->
+    RingInfo = ets:lookup_element(hook_grb, ring, 2),
+    Nodes = ets:lookup_element(hook_grb, nodes, 2),
+    Port = ets:lookup_element(hook_grb, port, 2),
+    Sockets = lists:foldl(fun(Node, Acc) ->
+        {ok, Socket} = gen_tcp:connect(Node, Port, [{active, false}, {packet, 4}, binary]),
+        Acc#{Node => Socket}
+    end, #{}, Nodes),
+    State = #state{worker_id=Id,
+                   ring=RingInfo,
+                   sockets=Sockets},
+    {ok, State};
+
+new(Id, Transport) ->
     RonlyOps = lasp_bench_config:get(readonly_ops),
     WonlyOps = lasp_bench_config:get(writeonly_ops),
     MixedOpsRatio = lasp_bench_config:get(ratio),
@@ -35,7 +56,6 @@ new(Id) ->
 
     ReplicaId = ets:lookup_element(hook_grb, replica_id, 2),
     RingInfo = ets:lookup_element(hook_grb, ring, 2),
-    Transport = ets:lookup_element(hook_grb, transport, 2),
     Connections = hook_grb:conns_for_worker(Id),
 
     {ok, CoordState} = pvc:grb_new(#{ring => RingInfo,
@@ -56,6 +76,21 @@ new(Id) ->
 
     {ok, State}.
 
+run(ping, KeyGen, _, State = #state{worker_id=Id, ring=RingInfo, sockets=Socks}) ->
+    Key = integer_to_binary(KeyGen(), 36),
+    {Partition, Node} = pvc_ring:get_key_indexnode(RingInfo, Key),
+    Socket = maps:get(Node, Socks),
+    Msg = <<0:16, (ppb_grb_driver:uniform_barrier(Partition, #{}))/binary>>,
+    ok = gen_tcp:send(Socket, Msg),
+    case gen_tcp:recv(Socket, 0) of
+        {error, Reason} ->
+            logger:error("Worker ~p bad recv ~p", [Id, Reason]),
+            {error, Reason, State};
+        {ok, <<0:16, RawReply/binary>>} ->
+            ok = pvc_proto:decode_serv_reply(RawReply),
+            {ok, State}
+    end;
+
 run(readonly_blue, KeyGen, _, State = #state{readonly_ops=N}) ->
     Keys = gen_keys(N, KeyGen),
     perform_readonly_blue(Keys, State);
@@ -70,6 +105,13 @@ run(read_write_blue, KeyGen, ValueGen, State = #state{mixed_ops_ration={RN, WN}}
     WriteKeys = gen_keys(WN, KeyGen),
     Updates = [ {K, ValueGen()} || K <- WriteKeys],
     perform_read_write_blue(ReadKeys, Updates, State).
+
+terminate(_Reason, #state{sockets=Socks}) when is_map(Socks) ->
+    _ = [ gen_tcp:close(S) || {_, S} <- maps:to_list(Socks)],
+    ok;
+
+terminate(_Reason, _State) ->
+    ok.
 
 perform_readonly_blue(Keys, State=#state{coord_state=CoordState}) ->
     {ok, Tx} = maybe_start_with_clock(State),
