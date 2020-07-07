@@ -63,7 +63,7 @@ new({uniform_int, MaxVal}, _Id)
     fun() -> rand:uniform(MaxVal) end;
 new({uniform_int, MinVal, MaxVal}, _Id)
   when is_integer(MinVal), is_integer(MaxVal), MaxVal > MinVal ->
-    fun() -> rand:uniform(MinVal, MaxVal) end;
+    fun() -> crypto:rand_uniform(MinVal, MaxVal) end;
 new(Other, _Id) ->
     ?FAIL_MSG("Invalid value generator requested: ~p\n", [Other]).
 
@@ -87,15 +87,11 @@ init_source(1, undefined) ->
     SourceSz = lasp_bench_config:get(?VAL_GEN_SRC_SIZE, 96*1048576),
     ?INFO("Random source: calling crypto:rand_bytes(~w) (override with the '~w' config option\n", [SourceSz, ?VAL_GEN_SRC_SIZE]),
     Bytes = crypto:strong_rand_bytes(SourceSz),
-    try
-        ?TAB = ets:new(?TAB, [public, named_table]),
-        true = ets:insert(?TAB, {x, Bytes})
-    catch _:_ -> rerunning_id_1_init_source_table_already_exists
-    end,
+    ok = persistent_term:put({?MODULE, ?TAB}, Bytes),
     ?INFO("Random source: finished crypto:rand_bytes(~w)\n", [SourceSz]),
     {?VAL_GEN_SRC_SIZE, SourceSz, Bytes};
 init_source(_Id, undefined) ->
-    [{_, Bytes}] = ets:lookup(?TAB, x),
+    Bytes = persistent_term:get({?MODULE, ?TAB}),
     {?VAL_GEN_SRC_SIZE, size(Bytes), Bytes};
 init_source(Id, Path) ->
     {Path, {ok, Bin}} = {Path, file:read_file(Path)},
