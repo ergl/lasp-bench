@@ -37,6 +37,9 @@ bench:
 results:
 	Rscript --vanilla priv/summary.r -x 1500 -y 2500 -i tests/current
 
+clean_results:
+	rm -rf tests/*
+	touch tests/.keepme
 
 TARGETS := $(shell ls tests/ | grep -v current)
 JOBS := $(addprefix job,${TARGETS})
