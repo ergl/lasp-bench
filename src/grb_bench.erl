@@ -24,7 +24,7 @@
     readonly_ops :: non_neg_integer(),
     writeonly_ops :: non_neg_integer(),
     mixed_ops_ration :: {non_neg_integer(), non_neg_integer()},
-    keep_cvc :: boolean(),
+    reuse_cvc :: boolean(),
     last_cvc :: pvc_vclock:vc(),
     retry_until_commit :: boolean(),
 
@@ -36,7 +36,7 @@ new(Id) ->
     RonlyOps = lasp_bench_config:get(readonly_ops),
     WonlyOps = lasp_bench_config:get(writeonly_ops),
     MixedOpsRatio = lasp_bench_config:get(ratio),
-    KeepCVC = lasp_bench_config:get(keep_cvc),
+    ReuseCVC = lasp_bench_config:get(reuse_cvc),
     RetryUntilCommit = lasp_bench_config:get(retry_aborts, true),
 
     ReplicaId = ets:lookup_element(hook_grb, replica_id, 2),
@@ -63,7 +63,7 @@ new(Id) ->
                    readonly_ops=RonlyOps,
                    writeonly_ops=WonlyOps,
                    mixed_ops_ration=MixedOpsRatio,
-                   keep_cvc=KeepCVC,
+                   reuse_cvc=ReuseCVC,
                    last_cvc=pvc_vclock:new(),
                    retry_until_commit=RetryUntilCommit,
                    coord_state=CoordState},
@@ -78,18 +78,26 @@ run(ping, _, _, State = #state{coord_state=Coord}) ->
     ok = pvc:grb_uniform_barrier(Coord, pvc_vclock:new()),
     {ok, State};
 
+run(uniform_barrier, _, _, State = #state{mode=socket, coord_state=Coord, last_cvc=CVC}) ->
+    ok = grb_client:uniform_barrier(Coord, CVC),
+    {ok, State};
+
+run(uniform_barrier, _, _, State = #state{coord_state=Coord, last_cvc=CVC}) ->
+    ok = pvc:grb_uniform_barrier(Coord, CVC),
+    {ok, State};
+
 run(readonly_blue, KeyGen, _, State = #state{readonly_ops=N, mode=Mode, coord_state=Coord}) ->
     Keys = gen_keys(N, KeyGen),
     {ok, Tx} = maybe_start_with_clock(State),
     CVC = perform_readonly_blue(Mode, Coord, Tx, Keys),
-    {ok, maybe_keep_clock(State, CVC)};
+    {ok, incr_tx_id(State#state{last_cvc=CVC})};
 
 run(writeonly_blue, KeyGen, ValueGen, State = #state{writeonly_ops=N, mode=Mode, coord_state=Coord}) ->
     Keys = gen_keys(N, KeyGen),
     Ops = [ {K, ValueGen()} || K <- Keys],
     {ok, Tx} = maybe_start_with_clock(State),
     CVC = perform_writeonly_blue(Mode, Coord, Tx, Ops),
-    {ok, maybe_keep_clock(State, CVC)};
+    {ok, incr_tx_id(State#state{last_cvc=CVC})};
 
 run(read_write_blue, KeyGen, ValueGen, State = #state{mixed_ops_ration={RN, WN}, mode=Mode, coord_state=Coord}) ->
     ReadKeys = gen_keys(RN, KeyGen),
@@ -97,7 +105,7 @@ run(read_write_blue, KeyGen, ValueGen, State = #state{mixed_ops_ration={RN, WN},
     Updates = [ {K, ValueGen()} || K <- WriteKeys],
     {ok, Tx} = maybe_start_with_clock(State),
     CVC = perform_read_write_blue(Mode, Coord, Tx, ReadKeys, Updates),
-    {ok, maybe_keep_clock(State, CVC)}.
+    {ok, incr_tx_id(State#state{last_cvc=CVC})}.
 
 terminate(_Reason, #state{mode=socket, coord_state=CoordState}) ->
     grb_client:close(CoordState),
@@ -166,23 +174,18 @@ perform_read_write_blue(_, CoordState, Tx, Keys, Updates) ->
 %% Util functions
 %%====================================================================
 
-maybe_start_with_clock(S=#state{mode=socket, coord_state=CoordState, keep_cvc=true, last_cvc=VC}) ->
+-spec maybe_start_with_clock(#state{}) -> {ok, grb_client:tx() | pvc:grb_transaction()}.
+maybe_start_with_clock(S=#state{mode=socket, coord_state=CoordState, reuse_cvc=true, last_cvc=VC}) ->
     grb_client:start_transaction(CoordState, next_tx_id(S), VC);
 
-maybe_start_with_clock(S=#state{mode=socket, coord_state=CoordState, keep_cvc=false}) ->
+maybe_start_with_clock(S=#state{mode=socket, coord_state=CoordState, reuse_cvc=false}) ->
     grb_client:start_transaction(CoordState, next_tx_id(S));
 
-maybe_start_with_clock(S=#state{coord_state=CoordState, keep_cvc=true, last_cvc=VC}) ->
+maybe_start_with_clock(S=#state{coord_state=CoordState, reuse_cvc=true, last_cvc=VC}) ->
     pvc:grb_start_tx(CoordState, next_tx_id(S), VC);
 
-maybe_start_with_clock(S=#state{coord_state=CoordState, keep_cvc=false}) ->
+maybe_start_with_clock(S=#state{coord_state=CoordState, reuse_cvc=false}) ->
     pvc:grb_start_tx(CoordState, next_tx_id(S)).
-
-maybe_keep_clock(S=#state{keep_cvc=true}, CVC) ->
-    incr_tx_id(S#state{last_cvc=CVC});
-
-maybe_keep_clock(S=#state{keep_cvc=false}, _) ->
-    incr_tx_id(S).
 
 %% @doc Generate N random keys
 -spec gen_keys(non_neg_integer(), key_gen(non_neg_integer())) -> binary() | [binary()].
