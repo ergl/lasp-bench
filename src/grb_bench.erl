@@ -105,6 +105,30 @@ run(read_write_blue, KeyGen, ValueGen, State = #state{mixed_ops_ration={RN, WN},
     Updates = [ {K, ValueGen()} || K <- WriteKeys],
     {ok, Tx} = maybe_start_with_clock(State),
     CVC = perform_read_write_blue(Mode, Coord, Tx, ReadKeys, Updates),
+    {ok, incr_tx_id(State#state{last_cvc=CVC})};
+
+run(readonly_blue_barrier, KeyGen, _, State = #state{readonly_ops=N, mode=Mode, coord_state=Coord}) ->
+    Keys = gen_keys(N, KeyGen),
+    {ok, Tx} = maybe_start_with_clock(State),
+    CVC = perform_readonly_blue(Mode, Coord, Tx, Keys),
+    ok = perform_uniform_barrier(Mode, Coord, CVC),
+    {ok, incr_tx_id(State#state{last_cvc=CVC})};
+
+run(writeonly_blue_barrier, KeyGen, ValueGen, State = #state{writeonly_ops=N, mode=Mode, coord_state=Coord}) ->
+    Keys = gen_keys(N, KeyGen),
+    Ops = [ {K, ValueGen()} || K <- Keys],
+    {ok, Tx} = maybe_start_with_clock(State),
+    CVC = perform_writeonly_blue(Mode, Coord, Tx, Ops),
+    ok = perform_uniform_barrier(Mode, Coord, CVC),
+    {ok, incr_tx_id(State#state{last_cvc=CVC})};
+
+run(read_write_blue_barrier, KeyGen, ValueGen, State = #state{mixed_ops_ration={RN, WN}, mode=Mode, coord_state=Coord}) ->
+    ReadKeys = gen_keys(RN, KeyGen),
+    WriteKeys = gen_keys(WN, KeyGen),
+    Updates = [ {K, ValueGen()} || K <- WriteKeys],
+    {ok, Tx} = maybe_start_with_clock(State),
+    CVC = perform_read_write_blue(Mode, Coord, Tx, ReadKeys, Updates),
+    ok = perform_uniform_barrier(Mode, Coord, CVC),
     {ok, incr_tx_id(State#state{last_cvc=CVC})}.
 
 terminate(_Reason, #state{mode=socket, coord_state=CoordState}) ->
@@ -113,6 +137,12 @@ terminate(_Reason, #state{mode=socket, coord_state=CoordState}) ->
 
 terminate(_Reason, _State) ->
     ok.
+
+perform_uniform_barrier(socket, CoordState, CVC) ->
+    ok = grb_client:uniform_barrier(CoordState, CVC);
+
+perform_uniform_barrier(_, CoordState, CVC) ->
+    ok = pvc:grb_uniform_barrier(CoordState, CVC).
 
 %% todo(borja): Implement multi-key read
 perform_readonly_blue(socket, CoordState, Tx, Keys) ->
