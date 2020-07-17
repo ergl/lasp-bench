@@ -18,7 +18,7 @@
     %% Auto incremented counter to create unique transaction ids
     transaction_count :: non_neg_integer(),
 
-    %% The connection mode, either use grb_client (sockets) or pvc (pvc_connection)
+    %% The connection mode, either use grb_client (shackle) or pvc (pvc_connection)
     mode :: atom(),
 
     readonly_ops :: non_neg_integer(),
@@ -44,10 +44,10 @@ new(Id) ->
     Transport = ets:lookup_element(hook_grb, transport, 2),
 
     {ok, CoordState} = case Transport of
-        socket ->
-            Nodes = ets:lookup_element(hook_grb, nodes, 2),
-            Port = ets:lookup_element(hook_grb, port, 2),
-            grb_client:new(ReplicaId, Id, RingInfo, Nodes, Port);
+        shackle ->
+            LocalIP = ets:lookup_element(hook_grb, local_ip, 2),
+            ConnPools = ets:lookup_element(hook_grb, shackle_pools, 2),
+            grb_client:new(ReplicaId, LocalIP, Id, RingInfo, ConnPools);
 
         OtherTransport ->
             Connections = hook_grb:conns_for_worker(Id),
@@ -57,6 +57,7 @@ new(Id) ->
                           coord_id => Id,
                           replica_id => ReplicaId})
     end,
+
     State = #state{worker_id=Id,
                    transaction_count=0,
                    mode=Transport,
@@ -70,7 +71,7 @@ new(Id) ->
 
     {ok, State}.
 
-run(ping, _, _, State = #state{mode=socket, coord_state=Coord}) ->
+run(ping, _, _, State = #state{mode=shackle, coord_state=Coord}) ->
     ok = grb_client:uniform_barrier(Coord, pvc_vclock:new()),
     {ok, State};
 
@@ -78,7 +79,7 @@ run(ping, _, _, State = #state{coord_state=Coord}) ->
     ok = pvc:grb_uniform_barrier(Coord, pvc_vclock:new()),
     {ok, State};
 
-run(uniform_barrier, _, _, State = #state{mode=socket, coord_state=Coord, last_cvc=CVC}) ->
+run(uniform_barrier, _, _, State = #state{mode=shackle, coord_state=Coord, last_cvc=CVC}) ->
     ok = grb_client:uniform_barrier(Coord, CVC),
     {ok, State};
 
@@ -131,21 +132,18 @@ run(read_write_blue_barrier, KeyGen, ValueGen, State = #state{mixed_ops_ration={
     ok = perform_uniform_barrier(Mode, Coord, CVC),
     {ok, incr_tx_id(State#state{last_cvc=CVC})}.
 
-terminate(_Reason, #state{mode=socket, coord_state=CoordState}) ->
-    grb_client:close(CoordState),
-    ok;
-
 terminate(_Reason, _State) ->
+    hook_grb:stop(),
     ok.
 
-perform_uniform_barrier(socket, CoordState, CVC) ->
+perform_uniform_barrier(shackle, CoordState, CVC) ->
     ok = grb_client:uniform_barrier(CoordState, CVC);
 
 perform_uniform_barrier(_, CoordState, CVC) ->
     ok = pvc:grb_uniform_barrier(CoordState, CVC).
 
 %% todo(borja): Implement multi-key read
-perform_readonly_blue(socket, CoordState, Tx, Keys) ->
+perform_readonly_blue(shackle, CoordState, Tx, Keys) ->
     Tx1 = lists:foldl(fun(K, AccTx) ->
         {ok, _, NextTx} = grb_client:read_op(CoordState, AccTx, K),
         NextTx
@@ -160,7 +158,7 @@ perform_readonly_blue(_, CoordState, Tx, Keys) ->
     pvc:grb_blue_commit(CoordState, Tx1).
 
 %% todo(borja): Implement multi-key update
-perform_writeonly_blue(socket, CoordState, Tx, Updates) ->
+perform_writeonly_blue(shackle, CoordState, Tx, Updates) ->
     Tx1 = lists:foldl(fun({K, V}, AccTx) ->
         {ok, _, NextTx} = grb_client:update_op(CoordState, AccTx, K, V),
         NextTx
@@ -175,7 +173,7 @@ perform_writeonly_blue(_, CoordState, Tx, Updates) ->
     pvc:grb_blue_commit(CoordState, Tx1).
 
 %% todo(borja): Implement multi-key read and update
-perform_read_write_blue(socket, CoordState, Tx, Keys, Updates) ->
+perform_read_write_blue(shackle, CoordState, Tx, Keys, Updates) ->
     Tx1 = lists:foldl(fun(K, AccTx) ->
         {ok, _, NextTx} = grb_client:read_op(CoordState, AccTx, K),
         NextTx
@@ -205,10 +203,10 @@ perform_read_write_blue(_, CoordState, Tx, Keys, Updates) ->
 %%====================================================================
 
 -spec maybe_start_with_clock(#state{}) -> {ok, grb_client:tx() | pvc:grb_transaction()}.
-maybe_start_with_clock(S=#state{mode=socket, coord_state=CoordState, reuse_cvc=true, last_cvc=VC}) ->
+maybe_start_with_clock(S=#state{mode=shackle, coord_state=CoordState, reuse_cvc=true, last_cvc=VC}) ->
     grb_client:start_transaction(CoordState, next_tx_id(S), VC);
 
-maybe_start_with_clock(S=#state{mode=socket, coord_state=CoordState, reuse_cvc=false}) ->
+maybe_start_with_clock(S=#state{mode=shackle, coord_state=CoordState, reuse_cvc=false}) ->
     grb_client:start_transaction(CoordState, next_tx_id(S));
 
 maybe_start_with_clock(S=#state{coord_state=CoordState, reuse_cvc=true, last_cvc=VC}) ->
@@ -229,7 +227,7 @@ gen_keys(N, K, Acc) ->
     gen_keys(N - 1, K, [integer_to_binary(K(), 36) | Acc]).
 
 -spec next_tx_id(#state{}) -> tx_id().
-next_tx_id(#state{mode=socket, transaction_count=N}) -> N;
+next_tx_id(#state{mode=shackle, transaction_count=N}) -> N;
 next_tx_id(#state{worker_id=Id, transaction_count=N}) -> {Id, N}.
 
 -spec incr_tx_id(#state{}) -> #state{}.

@@ -34,14 +34,24 @@ start(HookOpts) ->
     {conection_opts, ConnectionOpts} = lists:keyfind(conection_opts, 1, HookOpts),
     {connection_transport, ConnTransport} = lists:keyfind(connection_transport, 1, HookOpts),
 
-    {ok, ReplicaID, Ring, UniqueNodes} = pvc_ring:grb_replica_info(BootstrapIp, BootstrapPort),
+    {ok, LocalIP, ReplicaID, Ring, UniqueNodes} = pvc_ring:grb_replica_info(BootstrapIp, BootstrapPort),
+    true = ets:insert(?MODULE, {local_ip, LocalIP}),
     true = ets:insert(?MODULE, {replica_id, ReplicaID}),
     true = ets:insert(?MODULE, {ring, Ring}),
     true = ets:insert(?MODULE, {nodes, UniqueNodes}),
     true = ets:insert(?MODULE, {transport, ConnTransport}),
     case ConnTransport of
-        socket ->
-            true = ets:insert(?MODULE, {port, ConnectionPort}),
+        shackle ->
+            Pools = lists:foldl(fun(NodeIp, PoolAcc) ->
+                PoolName = pool_name(NodeIp),
+                shackle_pool:start(PoolName, pvc_shackle_transport,
+                                  [{address, NodeIp}, {port, ConnectionPort}, {reconnect, false},
+                                   {socket_options, [{packet, 4}, binary]},
+                                   {init_options, ConnectionOpts}],
+                                  [{pool_size, PoolSize}]),
+                PoolAcc#{NodeIp => PoolName}
+            end, #{}, UniqueNodes),
+            true = ets:insert(?MODULE, {shackle_pools, Pools}),
             ok;
 
         OtherTransport ->
@@ -52,11 +62,17 @@ start(HookOpts) ->
             end, UniqueNodes)
     end.
 
+pool_name(NodeIp) ->
+    list_to_atom(atom_to_list(NodeIp) ++ "_shackle_pool").
+
 stop() ->
     logger:info("Unloading ~p", [?MODULE]),
     [{transport, Transport}] = ets:take(?MODULE, transport),
     case Transport of
-        socket -> ok;
+        shackle ->
+            [{shackle_pools, Pools}] = ets:take(?MODULE, shackle_pools),
+            [ shackle_pool:stop(Pool) || {_, Pool} <- maps:to_list(Pools)],
+            ok;
         _ ->
             [{nodes, UniqueNodes}] = ets:take(?MODULE, nodes),
             lists:foreach(fun(NodeIp) ->

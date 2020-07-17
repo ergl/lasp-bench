@@ -1,15 +1,17 @@
 {"1.1.0",
 [{<<"bear">>,{pkg,<<"bear">>,<<"0.8.7">>},1},
+ {<<"foil">>,{pkg,<<"foil">>,<<"0.1.1">>},2},
  {<<"folsom">>,{pkg,<<"folsom">>,<<"0.8.8">>},0},
  {<<"getopt">>,{pkg,<<"getopt">>,<<"0.8.2">>},0},
  {<<"jsx">>,{pkg,<<"jsx">>,<<"2.11.0">>},0},
+ {<<"metal">>,{pkg,<<"metal">>,<<"0.1.1">>},2},
  {<<"pipesock">>,
   {git,"https://github.com/ergl/pipesock.git",
        {ref,"0bde8134bf0152dca714b4de1f248c9dc73a1d34"}},
   1},
  {<<"pvc">>,
   {git,"https://github.com/ergl/pvc.git",
-       {ref,"92d4a03097cd0d29e35ec3d2f1cddd86682c2049"}},
+       {ref,"d7d537f4eb958a423554ddb8aa7e721be0de9b47"}},
   0},
  {<<"pvc_proto">>,
   {git,"https://github.com/ergl/pvc_proto.git",
@@ -18,11 +20,21 @@
  {<<"pvc_types">>,
   {git,"https://github.com/ergl/pvc_types.git",
        {ref,"f9f34cca44273e0de791e0bbceb0806eaadc71ca"}},
+  1},
+ {<<"quickrand">>,
+  {git,"https://github.com/okeuday/quickrand.git",
+       {ref,"b189accc1686a95b0ff1478521b21a65e372a614"}},
+  2},
+ {<<"shackle">>,
+  {git,"https://github.com/ergl/shackle.git",
+       {ref,"8dfb2fcab9539ede2bf288f0c28965385f0393ff"}},
   1}]}.
 [
 {pkg_hash,[
  {<<"bear">>, <<"16264309AE5D005D03718A5C82641FCC259C9E8F09ADEB6FD79CA4271168656F">>},
+ {<<"foil">>, <<"4D07B62C114636BBC3EEBD5CEE04B23A7AAB1262B0F68AA79005A6FBC3790472">>},
  {<<"folsom">>, <<"9A2B02010F6727CB1948EF34E21CB66F3554B63355C3A31E8BCB10FB172C3170">>},
  {<<"getopt">>, <<"B17556DB683000BA50370B16C0619DF1337E7AF7ECBF7D64FBF8D1D6BCE3109B">>},
- {<<"jsx">>, <<"08154624050333919B4AC1B789667D5F4DB166DC50E190C4D778D1587F102EE0">>}]}
+ {<<"jsx">>, <<"08154624050333919B4AC1B789667D5F4DB166DC50E190C4D778D1587F102EE0">>},
+ {<<"metal">>, <<"5D3D1322DA7BCD34B94FED5486F577973685298883954F7A3E517EF5EF6953F5">>}]}
 ].
