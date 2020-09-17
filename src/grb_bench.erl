@@ -114,7 +114,7 @@ run(readonly_red, KeyGen, _, State = #state{readonly_ops=N}) ->
     Keys = gen_keys(N, KeyGen),
     case perform_readonly_red(State, Keys) of
         {ok, CVC} -> {ok, incr_tx_id(State#state{last_cvc=CVC})};
-        Err -> {error, Err, State}
+        Err -> {error, Err, incr_tx_id(State)}
     end;
 
 run(writeonly_red, KeyGen, ValueGen, State = #state{writeonly_ops=N}) ->
@@ -122,7 +122,7 @@ run(writeonly_red, KeyGen, ValueGen, State = #state{writeonly_ops=N}) ->
     Ops = [ {K, ValueGen()} || K <- Keys],
     case perform_writeonly_red(State, Ops) of
         {ok, CVC} -> {ok, incr_tx_id(State#state{last_cvc=CVC})};
-        Err -> {error, Err, State}
+        Err -> {error, Err, incr_tx_id(State)}
     end;
 
 run(read_write_red, KeyGen, ValueGen, State = #state{mixed_ops_ration={RN, WN}}) ->
@@ -131,7 +131,7 @@ run(read_write_red, KeyGen, ValueGen, State = #state{mixed_ops_ration={RN, WN}})
     Updates = [ {K, ValueGen()} || K <- WriteKeys],
     case perform_read_write_red(State, ReadKeys, Updates) of
         {ok, CVC} -> {ok, incr_tx_id(State#state{last_cvc=CVC})};
-        Err -> {error, Err, State}
+        Err -> {error, Err, incr_tx_id(State)}
     end;
 
 run(readonly_red_barrier, KeyGen, _, State = #state{readonly_ops=N, coord_state=Coord}) ->
@@ -150,7 +150,7 @@ run(writeonly_red_barrier, KeyGen, ValueGen, State = #state{writeonly_ops=N, coo
         {ok, CVC} ->
             ok = perform_uniform_barrier(Coord, CVC),
             {ok, incr_tx_id(State#state{last_cvc=CVC})};
-        Err -> {error, Err, State}
+        Err -> {error, Err, incr_tx_id(State)}
     end;
 
 run(read_write_red_barrier, KeyGen, ValueGen, State = #state{mixed_ops_ration={RN, WN}, coord_state=Coord}) ->
@@ -161,7 +161,7 @@ run(read_write_red_barrier, KeyGen, ValueGen, State = #state{mixed_ops_ration={R
         {ok, CVC} ->
             ok = perform_uniform_barrier(Coord, CVC),
             {ok, incr_tx_id(State#state{last_cvc=CVC})};
-        Err -> {error, Err, State}
+        Err -> {error, Err, incr_tx_id(State)}
     end.
 
 terminate(_Reason, _State) ->
