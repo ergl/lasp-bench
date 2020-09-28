@@ -67,45 +67,21 @@ run() ->
 op_complete(Op, ok, ElapsedUs) ->
     op_complete(Op, {ok, 1}, ElapsedUs);
 
-op_complete({_, readonly_track}=Op, {ok, Units}, Payload) ->
-    case get_distributed() of
-        true ->
-            gen_server:cast({global, ?MODULE}, {Op, {ok, Units}, Payload});
-        false ->
-            case Payload of
-                {TableTag, Us} ->
-                    folsom_metrics:notify({TableTag, Op}, Us);
-                ElapsedUs ->
-                    %% Same behaviour as before, increment normal latencies and units
-                    folsom_metrics:notify({latencies, Op}, ElapsedUs),
-                    folsom_metrics:notify({units, Op}, {inc, Units})
-            end
-    end;
-
-op_complete({_, readwrite_track}=Op, {ok, Units}, Payload) ->
-    case get_distributed() of
-        true ->
-            gen_server:cast({global, ?MODULE}, {Op, {ok, Units}, Payload});
-        false ->
-            case Payload of
-                {TableTag, Us} ->
-                    folsom_metrics:notify({TableTag, Op}, Us);
-                ElapsedUs ->
-                    %% Same behaviour as before, increment normal latencies and units
-                    folsom_metrics:notify({latencies, Op}, ElapsedUs),
-                    folsom_metrics:notify({units, Op}, {inc, Units})
-            end
-    end;
-
-op_complete(Op, {ok, Units}, ElapsedUs) ->
+op_complete(Op, {ok, Units}, Payload) ->
     %% Update the histogram and units counter for the op in question
    % io:format("Get distributed: ~p~n", [get_distributed()]),
     case get_distributed() of
         true ->
-            gen_server:cast({global, ?MODULE}, {Op, {ok, Units}, ElapsedUs});
+            gen_server:cast({global, ?MODULE}, {Op, {ok, Units}, Payload});
         false ->
-            folsom_metrics:notify({latencies, Op}, ElapsedUs),
-            folsom_metrics:notify({units, Op}, {inc, Units})
+            case Payload of
+                {TableTag, Us} ->
+                    folsom_metrics:notify({TableTag, Op}, Us);
+                ElapsedUs ->
+                    %% Same behaviour as before, increment normal latencies and units
+                    folsom_metrics:notify({latencies, Op}, ElapsedUs),
+                    folsom_metrics:notify({units, Op}, {inc, Units})
+            end
     end,
     ok;
 
@@ -175,6 +151,8 @@ build_folsom_tables(Ops) ->
     Interval = lasp_bench_config:get(report_interval),
     lists:foreach(fun(Op) ->
         case Op of
+            {_, readonly_red_track} ->
+                ?HISTOGRAMS(Op, [red_commit], Interval);
             {_, readonly_track} ->
                 %% Send and receive times, async read execution and wait time
                 ?HISTOGRAMS(Op, [send, rcv, read_took, wait_took], Interval);
@@ -334,6 +312,13 @@ process_stats(Now, #state{stats_writer=Module}=State) ->
 %% Write latency info for a given op to the appropriate CSV. Returns the
 %% number of successful and failed ops in this window of time.
 %%
+report_latency(State, Elapsed, Window, Op={_, readonly_red_track}) ->
+    Stats = folsom_metrics:get_histogram_statistics({latencies, Op}),
+    Errors = error_counter(Op),
+    Units = folsom_metrics:get_metric_value({units, Op}),
+    UpdateStats = [{red_commit, folsom_metrics:get_histogram_statistics({red_commit, Op})}],
+    send_report(State, Elapsed, Window, Op, [{default, Stats} | UpdateStats], Errors, Units);
+
 report_latency(State, Elapsed, Window, Op={_, readonly_track}) ->
     Stats = folsom_metrics:get_histogram_statistics({latencies, Op}),
     Errors = error_counter(Op),
