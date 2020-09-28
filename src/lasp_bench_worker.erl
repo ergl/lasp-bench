@@ -260,10 +260,17 @@ worker_next_op(State) ->
     ElapsedUs = erlang:max(0, timer:now_diff(os:timestamp(), Start)),
     case Result of
         {Res, DriverState} when Res == ok orelse element(1, Res) == ok ->
-            lasp_bench_stats:op_complete(Next, Res, ElapsedUs),
             %% TODO(borja): Remove this
-            NewDriverState = hack_preprocess_driver_state(Next, DriverState),
-            {ok, State#state{driver_state = NewDriverState}};
+            NewDriverState = case DriverState of
+                {readonly_red_single, DriverState1, Took} ->
+                    lasp_bench_stats:op_complete(Next, Res, Took),
+                    DriverState1;
+                _ ->
+                    lasp_bench_stats:op_complete(Next, Res, ElapsedUs),
+                    DriverState
+            end,
+%%            lasp_bench_stats:op_complete(Next, Res, ElapsedUs),
+            {ok, State#state{driver_state = hack_preprocess_driver_state(Next, NewDriverState)}};
 
         {Res, DriverState} when Res == silent orelse element(1, Res) == silent ->
             {ok, State#state { driver_state = DriverState}};

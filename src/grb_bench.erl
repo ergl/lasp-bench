@@ -110,6 +110,16 @@ run(read_write_blue_barrier, KeyGen, ValueGen, State = #state{mixed_ops_ration={
 %% Red operations
 %%====================================================================
 
+run(readonly_red_single, KeyGen, _, State = #state{coord_state=CoordState}) ->
+    [Key] = gen_keys(1, KeyGen),
+    {ok, Tx} = maybe_start_with_clock(State),
+    {ok, _, NextTx} = grb_client:read_op(CoordState, Tx, Key),
+    {Took, Result} = timer:tc(grb_client, commit_red, [CoordState, NextTx]),
+    case Result of
+        {abort, _}=Err -> {error, Err, incr_tx_id(State)};
+        {ok, CVC} -> {ok, {readonly_red_single, incr_tx_id(State#state{last_cvc=CVC}), Took}}
+    end;
+
 run(readonly_red, KeyGen, _, State = #state{readonly_ops=N}) ->
     Keys = gen_keys(N, KeyGen),
     case perform_readonly_red(State, Keys) of
