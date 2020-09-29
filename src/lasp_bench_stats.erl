@@ -152,7 +152,7 @@ build_folsom_tables(Ops) ->
     lists:foreach(fun(Op) ->
         case Op of
             {_, readonly_red_track} ->
-                ?HISTOGRAMS(Op, [red_commit], Interval);
+                ?HISTOGRAMS(Op, [red_start, red_read, red_commit], Interval);
             {_, readonly_track} ->
                 %% Send and receive times, async read execution and wait time
                 ?HISTOGRAMS(Op, [send, rcv, read_took, wait_took], Interval);
@@ -316,8 +316,10 @@ report_latency(State, Elapsed, Window, Op={_, readonly_red_track}) ->
     Stats = folsom_metrics:get_histogram_statistics({latencies, Op}),
     Errors = error_counter(Op),
     Units = folsom_metrics:get_metric_value({units, Op}),
-    UpdateStats = [{red_commit, folsom_metrics:get_histogram_statistics({red_commit, Op})}],
-    send_report(State, Elapsed, Window, Op, [{default, Stats} | UpdateStats], Errors, Units);
+    ExtraStats = [  {red_start, folsom_metrics:get_histogram_statistics({red_start, Op})},
+                    {red_read, folsom_metrics:get_histogram_statistics({red_read, Op})},
+                    {red_commit, folsom_metrics:get_histogram_statistics({red_commit, Op})}],
+    send_report(State, Elapsed, Window, Op, [{default, Stats} | ExtraStats], Errors, Units);
 
 report_latency(State, Elapsed, Window, Op={_, readonly_track}) ->
     Stats = folsom_metrics:get_histogram_statistics({latencies, Op}),

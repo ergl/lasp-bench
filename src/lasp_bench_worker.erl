@@ -315,8 +315,10 @@ worker_next_op(State) ->
             normal
     end.
 
-hack_preprocess_driver_state({_, readonly_red_track}=Op, {track_red_commit, State, CommitTook}) ->
-    ok = lasp_bench_stats:op_complete(Op, ok, {red_commit, CommitTook}),
+hack_preprocess_driver_state({_, readonly_red_track}=Op, {track_red_commit, State, Start, Read, Commit}) ->
+    ok = lasp_bench_stats:op_complete(Op, ok, {red_start, Start}),
+    ok = lasp_bench_stats:op_complete(Op, ok, {red_read, Read}),
+    ok = lasp_bench_stats:op_complete(Op, ok, {red_commit, Commit}),
     State;
 
 hack_preprocess_driver_state({_, readonly_track}=Op, {track_reads, Sent, Received, StampMap, State}) ->

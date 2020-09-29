@@ -112,12 +112,12 @@ run(read_write_blue_barrier, KeyGen, ValueGen, State = #state{mixed_ops_ration={
 
 run(readonly_red_track, KeyGen, _, State = #state{coord_state=CoordState}) ->
     [Key] = gen_keys(1, KeyGen),
-    {ok, Tx} = maybe_start_with_clock(State),
-    {ok, _, NextTx} = grb_client:read_op(CoordState, Tx, Key),
-    {Took, Result} = timer:tc(grb_client, commit_red, [CoordState, NextTx]),
+    {StartTook, {ok, Tx}} = timer:tc(fun maybe_start_with_clock/1, [State]),
+    {ReadTook, {ok, _, NextTx}} = timer:tc(grb_client, read_op, [CoordState, Tx, Key]),
+    {CommitTook, Result} = timer:tc(grb_client, commit_red, [CoordState, NextTx]),
     case Result of
         {abort, _}=Err -> {error, Err, incr_tx_id(State)};
-        {ok, CVC} -> {ok, {track_red_commit, incr_tx_id(State#state{last_cvc=CVC}), Took}}
+        {ok, CVC} -> {ok, {track_red_commit, incr_tx_id(State#state{last_cvc=CVC}), StartTook, ReadTook, CommitTook}}
     end;
 
 run(readonly_red, KeyGen, _, State = #state{readonly_ops=N}) ->

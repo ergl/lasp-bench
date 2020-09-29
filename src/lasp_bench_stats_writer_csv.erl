@@ -144,6 +144,8 @@ get_line_from_stats(Op, Elapsed, Window, Stats, Errors, Units) ->
 
 op_csv_file({_, readonly_red_track}) ->
     Names = [{default, "readonly-red-track_latencies.csv"},
+             {red_start,"readonly-red-track_start_latencies.csv"},
+             {red_read, "readonly-red-track_read_latencies.csv"},
              {red_commit, "readonly-red-track_commit_latencies.csv"}],
     lists:map(fun({Type, Fname}) ->
         {ok, F} = file:open(Fname, [raw, binary, write]),
