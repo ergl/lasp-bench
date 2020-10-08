@@ -317,20 +317,22 @@ worker_next_op(State) ->
 
 hack_preprocess_driver_state({_, readonly_red_track}=Op, {track_red_commit, State, Start, Read, Commit, CommitTimings}) ->
     PrepareTook = maps:get(prepare, CommitTimings, 0),
-    AcceptAvg = case maps:get(accept_acc, CommitTimings, undefined) of
-        undefined -> 0;
-        Accepts -> lists:sum(Accepts) / length(Accepts)
-    end,
-    VnodeAvg = case maps:get(vnode_acc, CommitTimings, undefined) of
-        undefined -> 0;
-        Times -> lists:sum(Times) / length(Times)
-    end,
     ok = lasp_bench_stats:op_complete(Op, ok, {red_start, Start}),
     ok = lasp_bench_stats:op_complete(Op, ok, {red_read, Read}),
     ok = lasp_bench_stats:op_complete(Op, ok, {red_commit, Commit}),
     ok = lasp_bench_stats:op_complete(Op, ok, {red_prepare, PrepareTook}),
-    ok = lasp_bench_stats:op_complete(Op, ok, {red_accept, AcceptAvg}),
-    ok = lasp_bench_stats:op_complete(Op, ok, {red_vnode, VnodeAvg}),
+    case maps:get(accept_acc, CommitTimings, undefined) of
+        Accepts when is_list(Accepts) andalso length(Accepts) > 0 ->
+            AcceptAvg = lists:sum(Accepts) / length(Accepts),
+            ok = lasp_bench_stats:op_complete(Op, ok, {red_accept, AcceptAvg});
+        _ -> ok
+    end,
+    case maps:get(vnode_acc, CommitTimings, undefined) of
+        Times when is_list(Times) andalso length(Times) > 0 ->
+            VnodeAvg = lists:sum(Times) / length(Times),
+            ok = lasp_bench_stats:op_complete(Op, ok, {red_vnode, VnodeAvg});
+        _ -> ok
+    end,
     State;
 
 hack_preprocess_driver_state({_, readonly_track}=Op, {track_reads, Sent, Received, StampMap, State}) ->
