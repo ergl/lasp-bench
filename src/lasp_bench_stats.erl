@@ -154,7 +154,7 @@ build_folsom_tables(Ops) ->
     lists:foreach(fun(Op) ->
         case Op of
             {_, readonly_red_track} ->
-                ?HISTOGRAMS(Op, [red_start, red_read, red_commit, red_prepare, red_accept], Interval);
+                ?HISTOGRAMS(Op, [red_start, red_read, red_commit, red_prepare, red_accept, red_vnode], Interval);
             {_, readonly_track} ->
                 %% Send and receive times, async read execution and wait time
                 ?HISTOGRAMS(Op, [send, rcv, read_took, wait_took], Interval);
@@ -321,7 +321,8 @@ report_latency(State, Elapsed, Window, Op={_, readonly_red_track}) ->
                     ?HISTOGRAM_LINE(red_read, Op),
                     ?HISTOGRAM_LINE(red_commit, Op),
                     ?HISTOGRAM_LINE(red_prepare, Op),
-                    ?HISTOGRAM_LINE(red_accept, Op) ],
+                    ?HISTOGRAM_LINE(red_accept, Op),
+                    ?HISTOGRAM_LINE(red_vnode, Op)],
     send_report(State, Elapsed, Window, Op, [{default, Stats} | ExtraStats], Errors, Units);
 
 report_latency(State, Elapsed, Window, Op={_, readonly_track}) ->
