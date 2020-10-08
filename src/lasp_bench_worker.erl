@@ -316,8 +316,11 @@ worker_next_op(State) ->
     end.
 
 hack_preprocess_driver_state({_, readonly_red_track}=Op, {track_red_commit, State, Start, Read, Commit, CommitTimings}) ->
-    #{prepare := PrepareTook, accept_acc := Accepts} = CommitTimings,
-    AcceptAvg = lists:sum(Accepts) / length(Accepts),
+    PrepareTook = maps:get(prepare, CommitTimings, 0),
+    AcceptAvg = case maps:get(accept_acc, CommitTimings, undefined) of
+        undefined -> 0;
+        Accepts -> lists:sum(Accepts) / length(Accepts)
+    end,
     ok = lasp_bench_stats:op_complete(Op, ok, {red_start, Start}),
     ok = lasp_bench_stats:op_complete(Op, ok, {red_read, Read}),
     ok = lasp_bench_stats:op_complete(Op, ok, {red_commit, Commit}),
