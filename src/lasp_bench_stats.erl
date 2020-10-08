@@ -51,6 +51,8 @@
         folsom_metrics:new_histogram({Name, Op}, slide, Interval)
     end, Names)).
 
+-define(HISTOGRAM_LINE(Tag, Op), {Tag, folsom_metrics:get_histogram_statistics({Tag, Op})}).
+
 %% ====================================================================
 %% API
 %% ====================================================================
@@ -152,7 +154,7 @@ build_folsom_tables(Ops) ->
     lists:foreach(fun(Op) ->
         case Op of
             {_, readonly_red_track} ->
-                ?HISTOGRAMS(Op, [red_start, red_read, red_commit], Interval);
+                ?HISTOGRAMS(Op, [red_start, red_read, red_commit, red_prepare, red_accept], Interval);
             {_, readonly_track} ->
                 %% Send and receive times, async read execution and wait time
                 ?HISTOGRAMS(Op, [send, rcv, read_took, wait_took], Interval);
@@ -307,7 +309,6 @@ process_stats(Now, #state{stats_writer=Module}=State) ->
         false ->
             ok
     end.
-
 %%
 %% Write latency info for a given op to the appropriate CSV. Returns the
 %% number of successful and failed ops in this window of time.
@@ -316,9 +317,11 @@ report_latency(State, Elapsed, Window, Op={_, readonly_red_track}) ->
     Stats = folsom_metrics:get_histogram_statistics({latencies, Op}),
     Errors = error_counter(Op),
     Units = folsom_metrics:get_metric_value({units, Op}),
-    ExtraStats = [  {red_start, folsom_metrics:get_histogram_statistics({red_start, Op})},
-                    {red_read, folsom_metrics:get_histogram_statistics({red_read, Op})},
-                    {red_commit, folsom_metrics:get_histogram_statistics({red_commit, Op})}],
+    ExtraStats = [  ?HISTOGRAM_LINE(red_start, Op),
+                    ?HISTOGRAM_LINE(red_read, Op),
+                    ?HISTOGRAM_LINE(red_commit, Op),
+                    ?HISTOGRAM_LINE(red_prepare, Op),
+                    ?HISTOGRAM_LINE(red_accept, Op) ],
     send_report(State, Elapsed, Window, Op, [{default, Stats} | ExtraStats], Errors, Units);
 
 report_latency(State, Elapsed, Window, Op={_, readonly_track}) ->

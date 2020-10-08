@@ -116,8 +116,11 @@ run(readonly_red_track, KeyGen, _, State = #state{coord_state=CoordState}) ->
     {ReadTook, {ok, _, NextTx}} = timer:tc(grb_client, read_op, [CoordState, Tx, Key]),
     {CommitTook, Result} = timer:tc(grb_client, commit_red, [CoordState, NextTx]),
     case Result of
-        {abort, _}=Err -> {error, Err, incr_tx_id(State)};
-        {ok, CVC} -> {ok, {track_red_commit, incr_tx_id(State#state{last_cvc=CVC}), StartTook, ReadTook, CommitTook}}
+        {abort, _}=Err ->
+            {error, Err, incr_tx_id(State)};
+        {ok, {CVC, CommitTimings}} ->
+            {ok, {track_red_commit, incr_tx_id(State#state{last_cvc=CVC}),
+                  StartTook, ReadTook, CommitTook, CommitTimings}}
     end;
 
 run(readonly_red, KeyGen, _, State = #state{readonly_ops=N}) ->
