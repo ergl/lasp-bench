@@ -148,10 +148,7 @@ op_csv_file({_, readonly_red_track}) ->
              {red_read, "readonly-red-track_read_latencies.csv"},
              {red_commit, "readonly-red-track_commit_latencies.csv"},
              {red_prepare, "readonly-red-track_prepare_latencies.csv"},
-             {red_accept, "readonly-red-track_accept_latencies.csv"},
-             {red_vnode, "readonly-red-track_vnode_latencies.csv"},
-             {leader_q_len, "readonly-red-track_leader_q_len_measurements.csv"},
-             {follower_q_len, "readonly-red-track_follower_q_len_measurements.csv"}],
+             {red_accept, "readonly-red-track_accept_latencies.csv"}],
     lists:map(fun({Type, Fname}) ->
         {ok, F} = file:open(Fname, [raw, binary, write]),
         ok = file:write(F, <<"elapsed, window, n, min, mean, median, 95th, 99th, 99_9th, max, errors\n">>),

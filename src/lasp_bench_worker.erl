@@ -321,27 +321,11 @@ hack_preprocess_driver_state({_, readonly_red_track}=Op, {track_red_commit, Stat
     ok = lasp_bench_stats:op_complete(Op, ok, {red_read, Read}),
     ok = lasp_bench_stats:op_complete(Op, ok, {red_commit, Commit}),
     ok = lasp_bench_stats:op_complete(Op, ok, {red_prepare, PrepareTook}),
-    case maps:get(accept_acc, CommitTimings, undefined) of
-        Accepts when is_list(Accepts) andalso length(Accepts) > 0 ->
-            AcceptAvg = lists:sum(Accepts) / length(Accepts),
-            ok = lasp_bench_stats:op_complete(Op, ok, {red_accept, AcceptAvg});
-        _ -> ok
+    AcceptAvg = case maps:get(accept_acc, CommitTimings, undefined) of
+        Accepts when is_list(Accepts) andalso length(Accepts) > 0 -> lists:sum(Accepts) / length(Accepts);
+        _ -> 0
     end,
-    case maps:get(vnode_acc, CommitTimings, undefined) of
-        Times when is_list(Times) andalso length(Times) > 0 ->
-            VnodeAvg = lists:sum(Times) / length(Times),
-            ok = lasp_bench_stats:op_complete(Op, ok, {red_vnode, VnodeAvg});
-        _ -> ok
-    end,
-
-    LeaderQLen = maps:get(leader_qlen, CommitTimings, 0),
-    ok = lasp_bench_stats:op_complete(Op, ok, {leader_q_len, LeaderQLen}),
-    case maps:get(follower_qlen_acc, CommitTimings, undefined) of
-        Lens when is_list(Lens) andalso length(Lens) > 0 ->
-            LenAvg = lists:sum(Lens) / length(Lens),
-            ok = lasp_bench_stats:op_complete(Op, ok, {follower_q_len, LenAvg});
-        _ -> ok
-    end,
+    ok = lasp_bench_stats:op_complete(Op, ok, {red_accept, AcceptAvg}),
     State;
 
 hack_preprocess_driver_state({_, readonly_track}=Op, {track_reads, Sent, Received, StampMap, State}) ->
