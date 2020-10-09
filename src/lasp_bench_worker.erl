@@ -333,6 +333,15 @@ hack_preprocess_driver_state({_, readonly_red_track}=Op, {track_red_commit, Stat
             ok = lasp_bench_stats:op_complete(Op, ok, {red_vnode, VnodeAvg});
         _ -> ok
     end,
+
+    LeaderQLen = maps:get(leader_qlen, CommitTimings, 0),
+    ok = lasp_bench_stats:op_complete(Op, ok, {leader_q_len, LeaderQLen}),
+    case maps:get(follower_qlen_acc, CommitTimings, undefined) of
+        Lens when is_list(Lens) andalso length(Lens) > 0 ->
+            LenAvg = lists:sum(Lens) / length(Lens),
+            ok = lasp_bench_stats:op_complete(Op, ok, {follower_q_len, LenAvg});
+        _ -> ok
+    end,
     State;
 
 hack_preprocess_driver_state({_, readonly_track}=Op, {track_reads, Sent, Received, StampMap, State}) ->
