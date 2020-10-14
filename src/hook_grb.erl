@@ -24,17 +24,18 @@ start(HookOpts) ->
 
     {conn_pool_size, PoolSize} = lists:keyfind(conn_pool_size, 1, HookOpts),
     {connection_port, ConnectionPort} = lists:keyfind(connection_port, 1, HookOpts),
+    {conection_opts, ConnectionOpts} = lists:keyfind(conection_opts, 1, HookOpts),
 
     BootstrapIp = get_bootstrap_ip(BootstrapNode),
     logger:info("Bootstraping from ~p:~p~n", [BootstrapIp, BootstrapNode]),
 
-    {ok, LocalIP, ReplicaID, Ring, UniqueNodes} = pvc_ring:grb_replica_info(BootstrapIp, BootstrapPort),
+    IdLen = maps:get(id_len, ConnectionOpts, 16),
+    {ok, LocalIP, ReplicaID, Ring, UniqueNodes} = pvc_ring:grb_replica_info(BootstrapIp, BootstrapPort, IdLen),
     true = ets:insert(?MODULE, {local_ip, LocalIP}),
     true = ets:insert(?MODULE, {replica_id, ReplicaID}),
     true = ets:insert(?MODULE, {ring, Ring}),
     true = ets:insert(?MODULE, {nodes, UniqueNodes}),
 
-    {conection_opts, ConnectionOpts} = lists:keyfind(conection_opts, 1, HookOpts),
     Pools = lists:foldl(fun(NodeIp, PoolAcc) ->
         PoolName = pool_name(NodeIp),
         shackle_pool:start(PoolName, pvc_shackle_transport,
