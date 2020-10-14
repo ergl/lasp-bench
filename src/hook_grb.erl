@@ -36,16 +36,21 @@ start(HookOpts) ->
     true = ets:insert(?MODULE, {ring, Ring}),
     true = ets:insert(?MODULE, {nodes, UniqueNodes}),
 
-    Pools = lists:foldl(fun(NodeIp, PoolAcc) ->
+    {Pools, RedConns} = lists:foldl(fun(NodeIp, {PoolAcc, RedConAcc}) ->
         PoolName = pool_name(NodeIp),
         shackle_pool:start(PoolName, pvc_shackle_transport,
                           [{address, NodeIp}, {port, ConnectionPort}, {reconnect, false},
                            {socket_options, [{packet, 4}, binary]},
                            {init_options, ConnectionOpts}],
                           [{pool_size, PoolSize}]),
-        PoolAcc#{NodeIp => PoolName}
-    end, #{}, UniqueNodes),
+        {ok, RedHandler} = pvc_red_connection:start_connection(NodeIp, ConnectionPort, IdLen),
+        {
+            PoolAcc#{NodeIp => PoolName},
+            RedConAcc#{NodeIp => RedHandler}
+        }
+    end, {#{}, #{}}, UniqueNodes),
     true = ets:insert(?MODULE, {shackle_pools, Pools}),
+    true = ets:insert(?MODULE, {red_conns, RedConns}),
     ok.
 
 pool_name(NodeIp) ->

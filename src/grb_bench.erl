@@ -41,7 +41,8 @@ new(Id) ->
 
     LocalIP = ets:lookup_element(hook_grb, local_ip, 2),
     ConnPools = ets:lookup_element(hook_grb, shackle_pools, 2),
-    {ok, CoordState} = grb_client:new(ReplicaId, LocalIP, Id, RingInfo, ConnPools),
+    RedConnections = ets:lookup_element(hook_grb, red_conns, 2),
+    {ok, CoordState} = grb_client:new(ReplicaId, LocalIP, Id, RingInfo, ConnPools, RedConnections),
 
     State = #state{worker_id=Id,
                    transaction_count=0,
