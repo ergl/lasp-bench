@@ -158,7 +158,8 @@ build_folsom_tables(Ops) ->
                                  red_read,
                                  red_commit,
                                  red_prepare,
-                                 red_accept], Interval);
+                                 red_accept,
+                                 red_coordinator_commit], Interval);
             {_, readonly_track} ->
                 %% Send and receive times, async read execution and wait time
                 ?HISTOGRAMS(Op, [send, rcv, read_took, wait_took], Interval);
@@ -325,7 +326,8 @@ report_latency(State, Elapsed, Window, Op={_, readonly_red_track}) ->
                     ?HISTOGRAM_LINE(red_read, Op),
                     ?HISTOGRAM_LINE(red_commit, Op),
                     ?HISTOGRAM_LINE(red_prepare, Op),
-                    ?HISTOGRAM_LINE(red_accept, Op)],
+                    ?HISTOGRAM_LINE(red_accept, Op),
+                    ?HISTOGRAM_LINE(red_coordinator_commit, Op)],
     send_report(State, Elapsed, Window, Op, [{default, Stats} | ExtraStats], Errors, Units);
 
 report_latency(State, Elapsed, Window, Op={_, readonly_track}) ->

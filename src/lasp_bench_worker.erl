@@ -317,6 +317,7 @@ worker_next_op(State) ->
 
 hack_preprocess_driver_state({_, readonly_red_track}=Op, {track_red_commit, State, Start, Read, Commit, CommitTimings}) ->
     PrepareTook = maps:get(prepare, CommitTimings, 0),
+    CoordinatorCommit = maps:get(coordinator_commit, CommitTimings, 0),
     ok = lasp_bench_stats:op_complete(Op, ok, {red_start, Start}),
     ok = lasp_bench_stats:op_complete(Op, ok, {red_read, Read}),
     ok = lasp_bench_stats:op_complete(Op, ok, {red_commit, Commit}),
@@ -326,6 +327,7 @@ hack_preprocess_driver_state({_, readonly_red_track}=Op, {track_red_commit, Stat
         _ -> 0
     end,
     ok = lasp_bench_stats:op_complete(Op, ok, {red_accept, AcceptAvg}),
+    ok = lasp_bench_stats:op_complete(Op, ok, {red_coordinator_commit, CoordinatorCommit}),
     State;
 
 hack_preprocess_driver_state({_, readonly_track}=Op, {track_reads, Sent, Received, StampMap, State}) ->
