@@ -149,7 +149,8 @@ op_csv_file({_, readonly_red_track}) ->
              {red_commit, "readonly-red-track_commit_latencies.csv"},
              {red_prepare, "readonly-red-track_prepare_latencies.csv"},
              {red_accept, "readonly-red-track_accept_latencies.csv"},
-             {red_coordinator_commit, "readonly-red-track_coordinator_commit_latencies.csv"}],
+             {red_coordinator_commit, "readonly-red-track_coordinator_commit_latencies.csv"},
+             {red_coordinator_barrier, "readonly-red-track_coordinator_commit_barrier_latencies.csv"}],
     lists:map(fun({Type, Fname}) ->
         {ok, F} = file:open(Fname, [raw, binary, write]),
         ok = file:write(F, <<"elapsed, window, n, min, mean, median, 95th, 99th, 99_9th, max, errors\n">>),

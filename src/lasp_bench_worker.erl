@@ -328,6 +328,12 @@ hack_preprocess_driver_state({_, readonly_red_track}=Op, {track_red_commit, Stat
     end,
     ok = lasp_bench_stats:op_complete(Op, ok, {red_accept, AcceptAvg}),
     ok = lasp_bench_stats:op_complete(Op, ok, {red_coordinator_commit, CoordinatorCommit}),
+    case maps:get(coordinator_barrier, CommitTimings, undefined) of
+        undefined ->
+            ok;
+        Value ->
+            ok = lasp_bench_stats:op_complete(Op, ok, {red_coordinator_barrier, Value})
+    end,
     State;
 
 hack_preprocess_driver_state({_, readonly_track}=Op, {track_reads, Sent, Received, StampMap, State}) ->
