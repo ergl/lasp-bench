@@ -110,6 +110,9 @@ new({uniform_int, MaxKey}, _Id)
 new({uniform_int, StartKey, NumKeys}, _Id)
   when is_integer(StartKey), is_integer(NumKeys), NumKeys > 0 ->
     fun() -> rand:uniform(NumKeys) + StartKey - 1 end;
+new({uniform_int_to_binary, Base, MaxKey}, _Id)
+    when is_integer(MaxKey), MaxKey > 0 ->
+    fun() -> integer_to_binary(rand:uniform(MaxKey), Base) end;
 new({pareto_int, MaxKey}, _Id)
   when is_integer(MaxKey), MaxKey > 0 ->
     pareto(trunc(MaxKey * 0.2), ?PARETO_SHAPE);
@@ -204,6 +207,8 @@ dimension({sequential_int, MaxKey}) ->
 dimension({partitioned_sequential_int, MaxKey}) ->
     MaxKey;
 dimension({uniform_int, MaxKey}) ->
+    MaxKey;
+dimension({uniform_int_to_binary, _, MaxKey}) ->
     MaxKey;
 dimension({truncated_pareto_int, MaxKey}) ->
     MaxKey;

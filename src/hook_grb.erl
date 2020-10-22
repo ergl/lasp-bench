@@ -9,6 +9,10 @@
 -export([start/1,
          stop/0]).
 
+-export([get_config/1,
+         generator/2,
+         make_coordinator/1]).
+
 %% Get ring information from Antidote,
 %% and spawn all the necessary connections
 start(HookOpts) ->
@@ -68,3 +72,47 @@ stop() ->
 get_bootstrap_ip(NodeName) ->
     {ok, Addr} = inet:getaddr(NodeName, inet),
     list_to_atom(inet:ntoa(Addr)).
+
+get_config(Key) ->
+    ets:lookup_element(?MODULE, Key, 2).
+
+-spec make_coordinator(non_neg_integer()) -> {ok, grb_client:coord()}.
+make_coordinator(WorkerId) ->
+    ReplicaId = get_config(replica_id),
+    RingInfo = get_config(ring),
+    LocalIP = get_config(local_ip),
+    ConnPools = get_config(shackle_pools),
+    RedConnections = get_config(red_conns),
+    grb_client:new(ReplicaId, LocalIP, WorkerId, RingInfo, ConnPools, RedConnections).
+
+-spec generator(non_neg_integer(), #{}) -> fun(() -> binary()).
+generator(Id, Opts=#{shared_key := SharedKey, conflict_ratio := Ratio}) ->
+    GeneratorOpts = maps:get(generator, Opts, undefined),
+    LocalIP = get_config(local_ip),
+    WorkerKey = make_worker_key(LocalIP, Id),
+    case GeneratorOpts of
+        undefined ->
+            fun() ->
+                Rand = rand:uniform_real(),
+                if
+                    Rand =< Ratio -> SharedKey;
+                    true -> WorkerKey
+                end
+            end;
+        GenDesc ->
+            InnerGen = lasp_bench_keygen:new(GenDesc, Id),
+            fun() ->
+                Rand = rand:uniform_real(),
+                if
+                    Rand =< Ratio ->
+                        SharedKey;
+                    true ->
+                        NextKey = InnerGen(),
+                        <<WorkerKey/binary, "_", NextKey/binary>>
+                end
+            end
+    end.
+
+-spec make_worker_key(inet:ip_address(), non_neg_integer()) -> binary().
+make_worker_key(IP, WorkerId) ->
+    <<(list_to_binary(inet:ntoa(IP)))/binary, "_",  (integer_to_binary(WorkerId, 36))/binary>>.

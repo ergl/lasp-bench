@@ -15,43 +15,43 @@
 -record(state, {
     %% Id of this worker thread
     worker_id :: non_neg_integer(),
+
     %% Auto incremented counter to create unique transaction ids
     transaction_count :: non_neg_integer(),
 
     readonly_ops :: non_neg_integer(),
     writeonly_ops :: non_neg_integer(),
-    mixed_ops_ration :: {non_neg_integer(), non_neg_integer()},
+    mixed_ops_ratio :: {non_neg_integer(), non_neg_integer()},
+
     reuse_cvc :: boolean(),
     last_cvc :: pvc_vclock:vc(),
     retry_until_commit :: boolean(),
 
-    %% Client coordinator state (pvc/grb_client, depending on mode)
-    coord_state :: pvc:coord_state() | grb_client:coord()
+    %% Client coordinator state
+    coord_state :: grb_client:coord()
 }).
 
-new(Id) ->
+new(WorkerId) ->
+    {ok, CoordState} = hook_grb:make_coordinator(WorkerId),
+
     RonlyOps = lasp_bench_config:get(readonly_ops),
     WonlyOps = lasp_bench_config:get(writeonly_ops),
     MixedOpsRatio = lasp_bench_config:get(ratio),
+
     ReuseCVC = lasp_bench_config:get(reuse_cvc),
     RetryUntilCommit = lasp_bench_config:get(retry_aborts, true),
 
-    ReplicaId = ets:lookup_element(hook_grb, replica_id, 2),
-    RingInfo = ets:lookup_element(hook_grb, ring, 2),
-
-    LocalIP = ets:lookup_element(hook_grb, local_ip, 2),
-    ConnPools = ets:lookup_element(hook_grb, shackle_pools, 2),
-    RedConnections = ets:lookup_element(hook_grb, red_conns, 2),
-    {ok, CoordState} = grb_client:new(ReplicaId, LocalIP, Id, RingInfo, ConnPools, RedConnections),
-
-    State = #state{worker_id=Id,
+    State = #state{worker_id=WorkerId,
                    transaction_count=0,
+
                    readonly_ops=RonlyOps,
                    writeonly_ops=WonlyOps,
-                   mixed_ops_ration=MixedOpsRatio,
+                   mixed_ops_ratio=MixedOpsRatio,
+
                    reuse_cvc=ReuseCVC,
                    last_cvc=pvc_vclock:new(),
                    retry_until_commit=RetryUntilCommit,
+
                    coord_state=CoordState},
 
     {ok, State}.
@@ -79,7 +79,7 @@ run(writeonly_blue, KeyGen, ValueGen, State = #state{writeonly_ops=N}) ->
     CVC = perform_writeonly_blue(State, Ops),
     {ok, incr_tx_id(State#state{last_cvc=CVC})};
 
-run(read_write_blue, KeyGen, ValueGen, State = #state{mixed_ops_ration={RN, WN}}) ->
+run(read_write_blue, KeyGen, ValueGen, State = #state{mixed_ops_ratio={RN, WN}}) ->
     ReadKeys = gen_keys(RN, KeyGen),
     WriteKeys = gen_keys(WN, KeyGen),
     Updates = [ {K, ValueGen()} || K <- WriteKeys],
@@ -99,7 +99,7 @@ run(writeonly_blue_barrier, KeyGen, ValueGen, State = #state{writeonly_ops=N, co
     ok = perform_uniform_barrier(Coord, CVC),
     {ok, incr_tx_id(State#state{last_cvc=CVC})};
 
-run(read_write_blue_barrier, KeyGen, ValueGen, State = #state{mixed_ops_ration={RN, WN}, coord_state=Coord}) ->
+run(read_write_blue_barrier, KeyGen, ValueGen, State = #state{mixed_ops_ratio={RN, WN}, coord_state=Coord}) ->
     ReadKeys = gen_keys(RN, KeyGen),
     WriteKeys = gen_keys(WN, KeyGen),
     Updates = [ {K, ValueGen()} || K <- WriteKeys],
@@ -139,7 +139,7 @@ run(writeonly_red, KeyGen, ValueGen, State = #state{writeonly_ops=N}) ->
         Err -> {error, Err, incr_tx_id(State)}
     end;
 
-run(read_write_red, KeyGen, ValueGen, State = #state{mixed_ops_ration={RN, WN}}) ->
+run(read_write_red, KeyGen, ValueGen, State = #state{mixed_ops_ratio={RN, WN}}) ->
     ReadKeys = gen_keys(RN, KeyGen),
     WriteKeys = gen_keys(WN, KeyGen),
     Updates = [ {K, ValueGen()} || K <- WriteKeys],
@@ -167,7 +167,7 @@ run(writeonly_red_barrier, KeyGen, ValueGen, State = #state{writeonly_ops=N, coo
         Err -> {error, Err, incr_tx_id(State)}
     end;
 
-run(read_write_red_barrier, KeyGen, ValueGen, State = #state{mixed_ops_ration={RN, WN}, coord_state=Coord}) ->
+run(read_write_red_barrier, KeyGen, ValueGen, State = #state{mixed_ops_ratio={RN, WN}, coord_state=Coord}) ->
     ReadKeys = gen_keys(RN, KeyGen),
     WriteKeys = gen_keys(WN, KeyGen),
     Updates = [ {K, ValueGen()} || K <- WriteKeys],
@@ -266,11 +266,12 @@ perform_read_write_red(S=#state{coord_state=CoordState}, Keys, Updates) ->
         {abort, _}=Err -> maybe_retry_read_write(S, Keys, Updates, Err);
         Other -> Other
     end.
+
 %%====================================================================
 %% Util functions
 %%====================================================================
 
--spec maybe_start_with_clock(#state{}) -> {ok, grb_client:tx() | pvc:grb_transaction()}.
+-spec maybe_start_with_clock(#state{}) -> {ok, grb_client:tx()}.
 maybe_start_with_clock(S=#state{coord_state=CoordState, reuse_cvc=true, last_cvc=VC}) ->
     grb_client:start_transaction(CoordState, next_tx_id(S), VC);
 
@@ -287,15 +288,11 @@ maybe_retry_read_write(#state{retry_until_commit=false}, _, _, Err) -> Err;
 maybe_retry_read_write(S, Keys, Updates, _) -> perform_read_write_red(incr_tx_id(S), Keys, Updates).
 
 %% @doc Generate N random keys
--spec gen_keys(non_neg_integer(), key_gen(non_neg_integer())) -> binary() | [binary()].
-gen_keys(N, K) ->
-    gen_keys(N, K, []).
+-spec gen_keys(non_neg_integer(), key_gen(binary())) -> [binary()].
+gen_keys(N, K) -> gen_keys(N, K, []).
 
-gen_keys(0, _, Acc) ->
-    Acc;
-
-gen_keys(N, K, Acc) ->
-    gen_keys(N - 1, K, [integer_to_binary(K(), 36) | Acc]).
+gen_keys(0, _, Acc) -> Acc;
+gen_keys(N, K, Acc) -> gen_keys(N - 1, K, [K() | Acc]).
 
 -spec next_tx_id(#state{}) -> tx_id().
 next_tx_id(#state{transaction_count=N}) -> N.
