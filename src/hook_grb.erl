@@ -28,12 +28,12 @@ start(HookOpts) ->
 
     {conn_pool_size, PoolSize} = lists:keyfind(conn_pool_size, 1, HookOpts),
     {connection_port, ConnectionPort} = lists:keyfind(connection_port, 1, HookOpts),
-    {conection_opts, ConnectionOpts} = lists:keyfind(conection_opts, 1, HookOpts),
+    {conection_opts, ConnModuleOpts} = lists:keyfind(conection_opts, 1, HookOpts),
 
     BootstrapIp = get_bootstrap_ip(BootstrapNode),
     logger:info("Bootstraping from ~p:~p~n", [BootstrapIp, BootstrapNode]),
 
-    IdLen = maps:get(id_len, ConnectionOpts, 16),
+    IdLen = maps:get(id_len, ConnModuleOpts, 16),
     {ok, LocalIP, ReplicaID, Ring, UniqueNodes} = pvc_ring:grb_replica_info(BootstrapIp, BootstrapPort, IdLen),
     true = ets:insert(?MODULE, {local_ip, LocalIP}),
     true = ets:insert(?MODULE, {replica_id, ReplicaID}),
@@ -42,10 +42,11 @@ start(HookOpts) ->
 
     {Pools, RedConns} = lists:foldl(fun(NodeIp, {PoolAcc, RedConAcc}) ->
         PoolName = pool_name(NodeIp),
+        %% todo(borja): Add config for socket opts?
         shackle_pool:start(PoolName, pvc_shackle_transport,
                           [{address, NodeIp}, {port, ConnectionPort}, {reconnect, false},
                            {socket_options, [{packet, 4}, binary, {nodelay, true}]},
-                           {init_options, ConnectionOpts}],
+                           {init_options, ConnModuleOpts}],
                           [{pool_size, PoolSize}]),
         {ok, RedHandler} = pvc_red_connection:start_connection(NodeIp, ConnectionPort, IdLen),
         {
