@@ -21,7 +21,10 @@
 
     readonly_ops :: non_neg_integer(),
     writeonly_ops :: non_neg_integer(),
-    mixed_ops_ratio :: {non_neg_integer(), non_neg_integer()},
+
+    %% Read / Update ops to use in mixed workloads
+    rw_reads :: non_neg_integer(),
+    rw_updates :: non_neg_integer(),
 
     reuse_cvc :: boolean(),
     last_cvc :: pvc_vclock:vc(),
@@ -36,7 +39,7 @@ new(WorkerId) ->
 
     RonlyOps = lasp_bench_config:get(readonly_ops),
     WonlyOps = lasp_bench_config:get(writeonly_ops),
-    MixedOpsRatio = lasp_bench_config:get(ratio),
+    {RWReads, RWUpdates} = lasp_bench_config:get(mixed_read_write),
 
     ReuseCVC = lasp_bench_config:get(reuse_cvc),
     RetryUntilCommit = lasp_bench_config:get(retry_aborts, true),
@@ -46,7 +49,9 @@ new(WorkerId) ->
 
                    readonly_ops=RonlyOps,
                    writeonly_ops=WonlyOps,
-                   mixed_ops_ratio=MixedOpsRatio,
+
+                   rw_reads=RWReads,
+                   rw_updates=RWUpdates,
 
                    reuse_cvc=ReuseCVC,
                    last_cvc=pvc_vclock:new(),
@@ -69,41 +74,29 @@ run(uniform_barrier, _, _, State = #state{coord_state=Coord, last_cvc=CVC}) ->
 %%====================================================================
 
 run(readonly_blue, KeyGen, _, State = #state{readonly_ops=N}) ->
-    Keys = gen_keys(N, KeyGen),
-    CVC = perform_readonly_blue(State, Keys),
+    CVC = perform_readonly_blue(State, gen_keys(N, KeyGen)),
     {ok, incr_tx_id(State#state{last_cvc=CVC})};
 
 run(writeonly_blue, KeyGen, ValueGen, State = #state{writeonly_ops=N}) ->
-    Keys = gen_keys(N, KeyGen),
-    Ops = [ {K, ValueGen()} || K <- Keys],
-    CVC = perform_writeonly_blue(State, Ops),
+    CVC = perform_writeonly_blue(State, gen_updates(N, KeyGen, ValueGen)),
     {ok, incr_tx_id(State#state{last_cvc=CVC})};
 
-run(read_write_blue, KeyGen, ValueGen, State = #state{mixed_ops_ratio={RN, WN}}) ->
-    ReadKeys = gen_keys(RN, KeyGen),
-    WriteKeys = gen_keys(WN, KeyGen),
-    Updates = [ {K, ValueGen()} || K <- WriteKeys],
-    CVC = perform_read_write_blue(State, ReadKeys, Updates),
+run(read_write_blue, KeyGen, ValueGen, State = #state{rw_reads=RN, rw_updates=WN}) ->
+    CVC = perform_read_write_blue(State, gen_keys(RN, KeyGen), gen_updates(WN, KeyGen, ValueGen)),
     {ok, incr_tx_id(State#state{last_cvc=CVC})};
 
 run(readonly_blue_barrier, KeyGen, _, State = #state{readonly_ops=N, coord_state=Coord}) ->
-    Keys = gen_keys(N, KeyGen),
-    CVC = perform_readonly_blue(State, Keys),
+    CVC = perform_readonly_blue(State, gen_keys(N, KeyGen)),
     ok = perform_uniform_barrier(Coord, CVC),
     {ok, incr_tx_id(State#state{last_cvc=CVC})};
 
 run(writeonly_blue_barrier, KeyGen, ValueGen, State = #state{writeonly_ops=N, coord_state=Coord}) ->
-    Keys = gen_keys(N, KeyGen),
-    Ops = [ {K, ValueGen()} || K <- Keys],
-    CVC = perform_writeonly_blue(State, Ops),
+    CVC = perform_writeonly_blue(State, gen_updates(N, KeyGen, ValueGen)),
     ok = perform_uniform_barrier(Coord, CVC),
     {ok, incr_tx_id(State#state{last_cvc=CVC})};
 
-run(read_write_blue_barrier, KeyGen, ValueGen, State = #state{mixed_ops_ratio={RN, WN}, coord_state=Coord}) ->
-    ReadKeys = gen_keys(RN, KeyGen),
-    WriteKeys = gen_keys(WN, KeyGen),
-    Updates = [ {K, ValueGen()} || K <- WriteKeys],
-    CVC = perform_read_write_blue(State, ReadKeys, Updates),
+run(read_write_blue_barrier, KeyGen, ValueGen, State = #state{rw_reads=RN, rw_updates=WN, coord_state=Coord}) ->
+    CVC = perform_read_write_blue(State, gen_keys(RN, KeyGen), gen_updates(WN, KeyGen, ValueGen)),
     ok = perform_uniform_barrier(Coord, CVC),
     {ok, incr_tx_id(State#state{last_cvc=CVC})};
 
@@ -112,9 +105,8 @@ run(read_write_blue_barrier, KeyGen, ValueGen, State = #state{mixed_ops_ratio={R
 %%====================================================================
 
 run(readonly_red_track, KeyGen, _, State = #state{coord_state=CoordState}) ->
-    [Key] = gen_keys(1, KeyGen),
     {StartTook, {ok, Tx}} = timer:tc(fun maybe_start_with_clock/1, [State]),
-    {ReadTook, {ok, _, NextTx}} = timer:tc(grb_client, read_op, [CoordState, Tx, Key]),
+    {ReadTook, {ok, _, NextTx}} = timer:tc(grb_client, read_op, [CoordState, Tx, KeyGen()]),
     {CommitTook, Result} = timer:tc(grb_client, commit_red, [CoordState, NextTx]),
     case Result of
         {abort, _}=Err ->
@@ -125,32 +117,25 @@ run(readonly_red_track, KeyGen, _, State = #state{coord_state=CoordState}) ->
     end;
 
 run(readonly_red, KeyGen, _, State = #state{readonly_ops=N}) ->
-    Keys = gen_keys(N, KeyGen),
-    case perform_readonly_red(State, Keys) of
+    case perform_readonly_red(State, gen_keys(N, KeyGen)) of
         {ok, CVC} -> {ok, incr_tx_id(State#state{last_cvc=CVC})};
         Err -> {error, Err, incr_tx_id(State)}
     end;
 
 run(writeonly_red, KeyGen, ValueGen, State = #state{writeonly_ops=N}) ->
-    Keys = gen_keys(N, KeyGen),
-    Ops = [ {K, ValueGen()} || K <- Keys],
-    case perform_writeonly_red(State, Ops) of
+    case perform_writeonly_red(State, gen_updates(N, KeyGen, ValueGen)) of
         {ok, CVC} -> {ok, incr_tx_id(State#state{last_cvc=CVC})};
         Err -> {error, Err, incr_tx_id(State)}
     end;
 
-run(read_write_red, KeyGen, ValueGen, State = #state{mixed_ops_ratio={RN, WN}}) ->
-    ReadKeys = gen_keys(RN, KeyGen),
-    WriteKeys = gen_keys(WN, KeyGen),
-    Updates = [ {K, ValueGen()} || K <- WriteKeys],
-    case perform_read_write_red(State, ReadKeys, Updates) of
+run(read_write_red, KeyGen, ValueGen, State = #state{rw_reads=RN, rw_updates=WN}) ->
+    case perform_read_write_red(State, gen_keys(RN, KeyGen), gen_updates(WN, KeyGen, ValueGen)) of
         {ok, CVC} -> {ok, incr_tx_id(State#state{last_cvc=CVC})};
         Err -> {error, Err, incr_tx_id(State)}
     end;
 
 run(readonly_red_barrier, KeyGen, _, State = #state{readonly_ops=N, coord_state=Coord}) ->
-    Keys = gen_keys(N, KeyGen),
-    case perform_readonly_red(State, Keys) of
+    case perform_readonly_red(State, gen_keys(N, KeyGen)) of
         {ok, CVC} ->
             ok = perform_uniform_barrier(Coord, CVC),
             {ok, incr_tx_id(State#state{last_cvc=CVC})};
@@ -158,20 +143,15 @@ run(readonly_red_barrier, KeyGen, _, State = #state{readonly_ops=N, coord_state=
     end;
 
 run(writeonly_red_barrier, KeyGen, ValueGen, State = #state{writeonly_ops=N, coord_state=Coord}) ->
-    Keys = gen_keys(N, KeyGen),
-    Ops = [ {K, ValueGen()} || K <- Keys],
-    case perform_writeonly_red(State, Ops) of
+    case perform_writeonly_red(State, gen_updates(N, KeyGen, ValueGen)) of
         {ok, CVC} ->
             ok = perform_uniform_barrier(Coord, CVC),
             {ok, incr_tx_id(State#state{last_cvc=CVC})};
         Err -> {error, Err, incr_tx_id(State)}
     end;
 
-run(read_write_red_barrier, KeyGen, ValueGen, State = #state{mixed_ops_ratio={RN, WN}, coord_state=Coord}) ->
-    ReadKeys = gen_keys(RN, KeyGen),
-    WriteKeys = gen_keys(WN, KeyGen),
-    Updates = [ {K, ValueGen()} || K <- WriteKeys],
-    case perform_read_write_red(State, ReadKeys, Updates) of
+run(read_write_red_barrier, KeyGen, ValueGen, State = #state{rw_reads=RN, rw_updates=WN, coord_state=Coord}) ->
+    case perform_read_write_red(State, gen_keys(RN, KeyGen), gen_updates(WN, KeyGen, ValueGen)) of
         {ok, CVC} ->
             ok = perform_uniform_barrier(Coord, CVC),
             {ok, incr_tx_id(State#state{last_cvc=CVC})};
@@ -293,6 +273,11 @@ gen_keys(N, K) -> gen_keys(N, K, []).
 
 gen_keys(0, _, Acc) -> Acc;
 gen_keys(N, K, Acc) -> gen_keys(N - 1, K, [K() | Acc]).
+
+-spec gen_updates(non_neg_integer(), key_gen(binary()), key_gen(binary())) -> [{binary(), binary()}].
+gen_updates(N, K, V) -> gen_updates(N, K, V, []).
+gen_updates(0, _, _, Acc) -> Acc;
+gen_updates(N, K, V, Acc) -> gen_updates(N - 1, K, V, [{K(), V()} | Acc]).
 
 -spec next_tx_id(#state{}) -> tx_id().
 next_tx_id(#state{transaction_count=N}) -> N.
