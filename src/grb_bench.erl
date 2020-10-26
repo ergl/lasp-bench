@@ -90,18 +90,18 @@ run(read_write_blue_track, KeyGen, ValueGen, State = #state{coord_state=Coord, r
     Updates = gen_updates(WN, KeyGen, ValueGen),
     {StartTook, {ok, Tx}} = timer:tc(fun maybe_start_with_clock/1, [State]),
 
-    Tx1 = lists:foldl(fun(K, AccTx) ->
-        {ok, _, NextTx} = grb_client:read_op(Coord, AccTx, K),
-        NextTx
-    end, Tx, Keys),
+    {Tx1, ReadTook} = lists:foldl(fun(K, {AccTx, AccTook}) ->
+        {Took, {ok, _, NextTx}} = timer:tc(grb_client, read_op, [Coord, AccTx, K]),
+        {NextTx, AccTook + Took}
+    end, {Tx, 0}, Keys),
 
-    Tx2 = lists:foldl(fun({K, V}, AccTx) ->
-        {ok, _, NextTx} = grb_client:update_op(Coord, AccTx, K, V),
-        NextTx
-    end, Tx1, Updates),
+    {Tx2, UpdateTook} = lists:foldl(fun({K, V}, {AccTx, AccTook}) ->
+        {Took, {ok, _, NextTx}} = timer:tc(grb_client, update_op, [Coord, AccTx, K, V]),
+        {NextTx, Took + AccTook}
+    end, {Tx1, 0}, Updates),
 
     {CommitTook, CVC} = timer:tc(grb_client, commit, [Coord, Tx2]),
-    {ok, {track_mixed_blue, incr_tx_id(State#state{last_cvc=CVC}), StartTook, CommitTook}};
+    {ok, {track_mixed_blue, incr_tx_id(State#state{last_cvc=CVC}), StartTook, {RN, ReadTook}, {WN, UpdateTook}, CommitTook}};
 
 run(readonly_blue_barrier, KeyGen, _, State = #state{readonly_ops=N, coord_state=Coord}) ->
     CVC = perform_readonly_blue(State, gen_keys(N, KeyGen)),

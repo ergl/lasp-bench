@@ -315,8 +315,11 @@ worker_next_op(State) ->
             normal
     end.
 
-hack_preprocess_driver_state({_, read_write_blue_track}=Op, {track_mixed_blue, State, Start, Commit}) ->
+hack_preprocess_driver_state({_, read_write_blue_track}=Op, Payload) ->
+    {track_mixed_blue, State, Start, {RN, ReadTook}, {WN, UpdateTook}, Commit} = Payload,
     ok = lasp_bench_stats:op_complete(Op, ok, {mixed_start, Start}),
+    ok = lasp_bench_stats:op_complete(Op, {ok, RN}, {mixed_read, ReadTook}),
+    ok = lasp_bench_stats:op_complete(Op, {ok, WN}, {mixed_update, UpdateTook}),
     ok = lasp_bench_stats:op_complete(Op, ok, {mixed_commit, Commit}),
     State;
 

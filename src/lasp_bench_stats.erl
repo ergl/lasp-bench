@@ -154,7 +154,10 @@ build_folsom_tables(Ops) ->
     lists:foreach(fun(Op) ->
         case Op of
             {_, read_write_blue_track} ->
-                ?HISTOGRAMS(Op, [mixed_start, mixed_commit], Interval);
+                ?HISTOGRAMS(Op, [mixed_start,
+                                 mixed_read,
+                                 mixed_update,
+                                 mixed_commit], Interval);
             {_, readonly_red_track} ->
                 ?HISTOGRAMS(Op, [red_start,
                                  red_read,
@@ -326,6 +329,8 @@ report_latency(State, Elapsed, Window, Op={_, read_write_blue_track}) ->
     Errors = error_counter(Op),
     Units = folsom_metrics:get_metric_value({units, Op}),
     ExtraStats = [?HISTOGRAM_LINE(mixed_start, Op),
+                  ?HISTOGRAM_LINE(mixed_read, Op),
+                  ?HISTOGRAM_LINE(mixed_update, Op),
                   ?HISTOGRAM_LINE(mixed_commit, Op)],
     send_report(State, Elapsed, Window, Op, [{default, Stats} | ExtraStats], Errors, Units);
 

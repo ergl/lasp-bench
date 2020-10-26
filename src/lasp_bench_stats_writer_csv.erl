@@ -153,6 +153,8 @@ op_csv_file({Label, read_write_blue_track}) ->
     Norm = normalize_label(Label),
     Names = [{default, Norm ++ "_latencies.csv"},
              {mixed_start, Norm ++ "_start_latencies.csv"},
+             {mixed_read, Norm ++ "_read_latencies.csv"},
+             {mixed_update, Norm ++ "_update_latencies.csv"},
              {mixed_commit, Norm ++  "_commit_latencies.csv"}],
     lists:map(fun({Type, Fname}) ->
         {ok, F} = file:open(Fname, [raw, binary, write]),
