@@ -153,6 +153,8 @@ build_folsom_tables(Ops) ->
     Interval = lasp_bench_config:get(report_interval),
     lists:foreach(fun(Op) ->
         case Op of
+            {_, read_write_blue_track} ->
+                ?HISTOGRAMS(Op, [mixed_start, mixed_commit], Interval);
             {_, readonly_red_track} ->
                 ?HISTOGRAMS(Op, [red_start,
                                  red_read,
@@ -319,6 +321,14 @@ process_stats(Now, #state{stats_writer=Module}=State) ->
 %% Write latency info for a given op to the appropriate CSV. Returns the
 %% number of successful and failed ops in this window of time.
 %%
+report_latency(State, Elapsed, Window, Op={_, read_write_blue_track}) ->
+    Stats = folsom_metrics:get_histogram_statistics({latencies, Op}),
+    Errors = error_counter(Op),
+    Units = folsom_metrics:get_metric_value({units, Op}),
+    ExtraStats = [?HISTOGRAM_LINE(mixed_start, Op),
+                  ?HISTOGRAM_LINE(mixed_commit, Op)],
+    send_report(State, Elapsed, Window, Op, [{default, Stats} | ExtraStats], Errors, Units);
+
 report_latency(State, Elapsed, Window, Op={_, readonly_red_track}) ->
     Stats = folsom_metrics:get_histogram_statistics({latencies, Op}),
     Errors = error_counter(Op),

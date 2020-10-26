@@ -85,6 +85,24 @@ run(read_write_blue, KeyGen, ValueGen, State = #state{rw_reads=RN, rw_updates=WN
     CVC = perform_read_write_blue(State, gen_keys(RN, KeyGen), gen_updates(WN, KeyGen, ValueGen)),
     {ok, incr_tx_id(State#state{last_cvc=CVC})};
 
+run(read_write_blue_track, KeyGen, ValueGen, State = #state{coord_state=Coord, rw_reads=RN, rw_updates=WN}) ->
+    Keys = gen_keys(RN, KeyGen),
+    Updates = gen_updates(WN, KeyGen, ValueGen),
+    {StartTook, {ok, Tx}} = timer:tc(fun maybe_start_with_clock/1, [State]),
+
+    Tx1 = lists:foldl(fun(K, AccTx) ->
+        {ok, _, NextTx} = grb_client:read_op(Coord, AccTx, K),
+        NextTx
+    end, Tx, Keys),
+
+    Tx2 = lists:foldl(fun({K, V}, AccTx) ->
+        {ok, _, NextTx} = grb_client:update_op(Coord, AccTx, K, V),
+        NextTx
+    end, Tx1, Updates),
+
+    {CommitTook, CVC} = timer:tc(grb_client, commit, [Coord, Tx2]),
+    {ok, {track_mixed_blue, incr_tx_id(State#state{last_cvc=CVC}), StartTook, CommitTook}};
+
 run(readonly_blue_barrier, KeyGen, _, State = #state{readonly_ops=N, coord_state=Coord}) ->
     CVC = perform_readonly_blue(State, gen_keys(N, KeyGen)),
     ok = perform_uniform_barrier(Coord, CVC),

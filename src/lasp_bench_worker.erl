@@ -315,6 +315,11 @@ worker_next_op(State) ->
             normal
     end.
 
+hack_preprocess_driver_state({_, read_write_blue_track}=Op, {track_mixed_blue, State, Start, Commit}) ->
+    ok = lasp_bench_stats:op_complete(Op, ok, {mixed_start, Start}),
+    ok = lasp_bench_stats:op_complete(Op, ok, {mixed_commit, Commit}),
+    State;
+
 hack_preprocess_driver_state({_, readonly_red_track}=Op, {track_red_commit, State, Start, Read, Commit, CommitTimings}) ->
     PrepareTook = maps:get(prepare, CommitTimings, 0),
     CoordinatorCommit = maps:get(coordinator_commit, CommitTimings, 0),
