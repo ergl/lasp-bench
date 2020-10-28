@@ -77,8 +77,16 @@ run(readonly_blue, KeyGen, _, State = #state{readonly_ops=N}) ->
     CVC = perform_readonly_blue(State, gen_keys(N, KeyGen)),
     {ok, incr_tx_id(State#state{last_cvc=CVC})};
 
+run(readonly_blue_bypass, KeyGen, _, State = #state{readonly_ops=N}) ->
+    CVC = perform_readonly_blue_bypass(State, gen_keys(N, KeyGen)),
+    {ok, incr_tx_id(State#state{last_cvc=CVC})};
+
 run(writeonly_blue, KeyGen, ValueGen, State = #state{writeonly_ops=N}) ->
     CVC = perform_writeonly_blue(State, gen_updates(N, KeyGen, ValueGen)),
+    {ok, incr_tx_id(State#state{last_cvc=CVC})};
+
+run(writeonly_blue_bypass, KeyGen, ValueGen, State = #state{writeonly_ops=N}) ->
+    CVC = perform_writeonly_blue_bypass(State, gen_updates(N, KeyGen, ValueGen)),
     {ok, incr_tx_id(State#state{last_cvc=CVC})};
 
 run(read_write_blue, KeyGen, ValueGen, State = #state{rw_reads=RN, rw_updates=WN}) ->
@@ -196,11 +204,27 @@ perform_readonly_blue(S=#state{coord_state=CoordState}, Keys) ->
     end, Tx, Keys),
     grb_client:commit(CoordState, Tx1).
 
+perform_readonly_blue_bypass(S=#state{coord_state=CoordState}, Keys) ->
+    {ok, Tx} = maybe_start_with_clock(S),
+    Tx1 = lists:foldl(fun(K, AccTx) ->
+        {ok, _, NextTx} = grb_client:read_bypass(CoordState, AccTx, K),
+        NextTx
+    end, Tx, Keys),
+    grb_client:commit(CoordState, Tx1).
+
 %% todo(borja): Implement multi-key update
 perform_writeonly_blue(S=#state{coord_state=CoordState}, Updates) ->
     {ok, Tx} = maybe_start_with_clock(S),
     Tx1 = lists:foldl(fun({K, V}, AccTx) ->
         {ok, _, NextTx} = grb_client:update_op(CoordState, AccTx, K, V),
+        NextTx
+    end, Tx, Updates),
+    grb_client:commit(CoordState, Tx1).
+
+perform_writeonly_blue_bypass(S=#state{coord_state=CoordState}, Updates) ->
+    {ok, Tx} = maybe_start_with_clock(S),
+    Tx1 = lists:foldl(fun({K, V}, AccTx) ->
+        {ok, _, NextTx} = grb_client:update_bypass(CoordState, AccTx, K, V),
         NextTx
     end, Tx, Updates),
     grb_client:commit(CoordState, Tx1).
