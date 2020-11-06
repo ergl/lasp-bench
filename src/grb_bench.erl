@@ -148,6 +148,12 @@ run(readonly_red, KeyGen, _, State = #state{readonly_ops=N}) ->
         Err -> {error, Err, incr_tx_id(State)}
     end;
 
+run(readonly_red_bypass, KeyGen, _, State = #state{readonly_ops=N}) ->
+    case perform_readonly_red_bypass(State, gen_keys(N, KeyGen)) of
+        {ok, CVC} -> {ok, incr_tx_id(State#state{last_cvc=CVC})};
+        Err -> {error, Err, incr_tx_id(State)}
+    end;
+
 run(writeonly_red, KeyGen, ValueGen, State = #state{writeonly_ops=N}) ->
     case perform_writeonly_red(State, gen_updates(N, KeyGen, ValueGen)) of
         {ok, CVC} -> {ok, incr_tx_id(State#state{last_cvc=CVC})};
@@ -257,6 +263,17 @@ perform_readonly_red(S=#state{coord_state=CoordState}, Keys) ->
     end, Tx, Keys),
     case grb_client:commit_red(CoordState, Tx1) of
         {abort, _}=Err -> maybe_retry_readonly(S, Keys, Err);
+        Other -> Other
+    end.
+
+perform_readonly_red_bypass(S=#state{coord_state=CoordState}, Keys) ->
+    {ok, Tx} = maybe_start_with_clock(S),
+    Tx1 = lists:foldl(fun(K, AccTx) ->
+        {ok, _, NextTx} = grb_client:read_bypass(CoordState, AccTx, K),
+        NextTx
+    end, Tx, Keys),
+    case grb_client:commit_red(CoordState, Tx1) of
+        {abort, _}=Err -> Err;
         Other -> Other
     end.
 
