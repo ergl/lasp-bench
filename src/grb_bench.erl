@@ -154,6 +154,12 @@ run(readonly_red_bypass, KeyGen, _, State = #state{readonly_ops=N}) ->
         Err -> {error, Err, incr_tx_id(State)}
     end;
 
+run(read_start_red, KeyGen, _, State = #state{readonly_ops=N}) ->
+    case perform_start_readonly_red(State, gen_keys(N, KeyGen)) of
+        {ok, CVC} -> {ok, incr_tx_id(State#state{last_cvc=CVC})};
+        Err -> {error, Err, incr_tx_id(State)}
+    end;
+
 run(writeonly_red, KeyGen, ValueGen, State = #state{writeonly_ops=N}) ->
     case perform_writeonly_red(State, gen_updates(N, KeyGen, ValueGen)) of
         {ok, CVC} -> {ok, incr_tx_id(State#state{last_cvc=CVC})};
@@ -266,6 +272,17 @@ perform_readonly_red(S=#state{coord_state=CoordState}, Keys) ->
         Other -> Other
     end.
 
+perform_start_readonly_red(S=#state{coord_state=CoordState}, [HdKey | Rest]) ->
+    {ok, _, Tx} = maybe_start_read_with_clock(HdKey, S),
+    Tx1 = lists:foldl(fun(K, AccTx) ->
+        {ok, _, NextTx} = grb_client:read_op(CoordState, AccTx, K),
+        NextTx
+    end, Tx, Rest),
+    case grb_client:commit_red(CoordState, Tx1) of
+        {abort, _}=Err -> Err;
+        Other -> Other
+    end.
+
 perform_readonly_red_bypass(S=#state{coord_state=CoordState}, Keys) ->
     {ok, Tx} = maybe_start_with_clock(S),
     Tx1 = lists:foldl(fun(K, AccTx) ->
@@ -316,6 +333,13 @@ maybe_start_with_clock(S=#state{coord_state=CoordState, reuse_cvc=true, last_cvc
 
 maybe_start_with_clock(S=#state{coord_state=CoordState, reuse_cvc=false}) ->
     grb_client:start_transaction(CoordState, next_tx_id(S)).
+
+-spec maybe_start_read_with_clock(binary(), #state{}) -> {ok, binary(), grb_client:tx()}.
+maybe_start_read_with_clock(Key, S=#state{coord_state=CoordState, reuse_cvc=true, last_cvc=VC}) ->
+    grb_client:start_read(CoordState, next_tx_id(S), Key, VC);
+
+maybe_start_read_with_clock(Key, S=#state{coord_state=CoordState, reuse_cvc=false}) ->
+    grb_client:start_read(CoordState, next_tx_id(S), Key).
 
 maybe_retry_readonly(#state{retry_until_commit=false}, _, Err) -> Err;
 maybe_retry_readonly(S, Keys, _) -> perform_readonly_red(incr_tx_id(S), Keys).
