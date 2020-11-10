@@ -11,6 +11,7 @@
 
 -export([get_config/1,
          generator/2,
+         worker_generator/1,
          make_coordinator/1]).
 
 %% Get ring information from Antidote,
@@ -85,6 +86,10 @@ make_coordinator(WorkerId) ->
     ConnPools = get_config(shackle_pools),
     RedConnections = get_config(red_conns),
     grb_client:new(ReplicaId, LocalIP, WorkerId, RingInfo, ConnPools, RedConnections).
+
+-spec worker_generator(non_neg_integer()) -> fun(() -> binary()).
+worker_generator(Id) ->
+    fun() -> make_worker_key(get_config(local_ip), Id) end.
 
 -spec generator(non_neg_integer(), #{}) -> fun(() -> binary()).
 generator(Id, Opts=#{shared_key := SharedKey, conflict_ratio := Ratio}) ->
