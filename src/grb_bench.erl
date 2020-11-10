@@ -272,8 +272,7 @@ perform_readonly_red(S=#state{coord_state=CoordState}, Keys) ->
         Other -> Other
     end.
 
-perform_start_readonly_red(S=#state{coord_state=CoordState}, Keys=[HdKey | Rest]) ->
-    io:format("Reading keys ~p~n", [Keys]),
+perform_start_readonly_red(S=#state{coord_state=CoordState}, [HdKey | Rest]) ->
     {ok, _, Tx} = maybe_start_read_with_clock(HdKey, S),
     Tx1 = lists:foldl(fun(K, AccTx) ->
         {ok, _, NextTx} = grb_client:read_op(CoordState, AccTx, K),
