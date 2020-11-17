@@ -5,7 +5,7 @@
 -type user() :: {{atom(), bitstring()}, {atom(), bitstring()}}.
 
 -record(table_info, {
-    transition_table :: rubis_bench_table:transition_table(),
+    transition_table :: rubis_bench_table:t(),
     state_sequence :: [rubis_bench_table:state_name()],
     exhausted_states :: false | {true, non_neg_integer()},
     seq_len :: non_neg_integer()

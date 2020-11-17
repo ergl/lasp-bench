@@ -1,26 +1,57 @@
 -module(rubis_bench_table).
 
 %% Remove the states that call no transactions, don't care about them
--define(SHOULD_DISCARD, [
-    %% No tx, home page
+-define(SHOULD_DISCARD, [home,
+                         register,
+                         browse,
+                         buy_now_auth,
+                         put_bid_auth,
+                         put_comment_auth,
+                         sell,
+                         sell_item_form,
+                         about_me_auth]).
+
+-define(STATE_NAMES, {
+    %% no transaction
     home,
-    %% No tx, register user page
+    %% no transaction
     register,
-    %% No tx, just a search box
+    register_user,
+    %% no transaction
     browse,
-    %% Not sure what this does
-    browsecategoriesinregion,
-    %% Using buynowauth, this is just a page
-    buynow,
-    %% Using putbidauth, this is just a page
-    putbid,
-    %% Using putcommentauth, this is just a page
-    putcomment,
-    %% No tx, just a series of pages for items
+    %% browse ALL categories
+    browse_categories,
+    search_items_in_category,
+    browse_regions,
+    browse_categories_in_region,
+    search_items_in_region,
+    view_item,
+    view_user_info,
+    view_bid_history,
+    %% no transaction
+    buy_now_auth,
+    buy_now,
+    store_buy_now,
+    %% no transaction
+    put_bid_auth,
+    put_bid,
+    store_bid,
+    %% no transaction
+    put_comment_auth,
+    put_comment,
+    store_comment,
+    %% no transaction
     sell,
-    selectcategorytosellitem,
-    sellitemform
-]).
+    select_category_to_sell_item,
+    %% no transaction
+    sell_item_form,
+    register_item,
+    %% no transaction
+    about_me_auth,
+    about_me,
+    get_auctions_ready_for_close,
+    close_auction
+}).
 
 -type probability() :: integer() | float().
 -type matrix() :: list(list(probability())).
@@ -29,286 +60,273 @@
     %% RNG State
     random :: rand:state(),
 
-    rows :: integer(),
-    columns :: integer(),
+    rows :: non_neg_integer(),
+    columns :: non_neg_integer(),
     matrix :: matrix(),
-    table_name :: binary() | undefined,
+    table_name :: binary(),
 
     %% Name of the states
-    state_names :: list(atom()),
+    state_names :: {atom()},
     %% Current state, expressed as an index on the state names
-    current_state :: integer(),
+    current_state :: non_neg_integer(),
 
-    %% Probability of going back, indexed by state
-    back_probs :: list(probability()),
+    %% Probability of going back, tuple indexed by state
+    back_probs :: {probability()},
     %% Stack of previous states, in case we have to go back
-    previous_states :: queue:queue(integer()),
+    previous_states :: queue:queue(non_neg_integer()),
 
-    %% Probability of ending the session, indexed by state
-    end_session_probs :: list(probability()),
+    %% Probability of ending the session, tuple indexed by state
+    end_session_probs :: {probability()},
 
-    %% Waiting times (in ms)
-    waiting_times :: dict:dict(atom(), integer()),
+    %% Waiting times (in ms), tuple indexed by state
+    waiting_times :: {non_neg_integer()},
 
     %% True if the session is over, false otherwise
     reached_end_of_session :: boolean()
 }).
 
--opaque transition_table() :: #state{}.
+-record(parse_state, {
+    current_row = undefined :: non_neg_integer() | undefined,
+    rows = undefined :: non_neg_integer() | undefined,
+    cols = undefined :: non_neg_integer() | undefined,
+    matrix = undefined :: {{probability()}} | undefined,
+    table_name = undefined :: binary() | undefined,
+    state_names = undefined :: {atom()} | undefined,
+    back_probability = undefined :: {probability()} | undefined,
+    end_probability = undefined :: {probability()} | undefined,
+    waiting_times = undefined :: {probability()} | undefined
+}).
+
+-opaque t() :: #state{}.
 -type state_name() :: atom().
--export_type([transition_table/0]).
+-export_type([t/0]).
 
 %% API
 -export([new/1,
+         new/2,
          next_state/1]).
 
--spec new(string()) -> transition_table().
+-spec new(string()) -> t().
 new(FilePath) ->
-    parse_file(FilePath).
+    new(FilePath, erlang:timestamp()).
 
--spec next_state(transition_table()) -> {ok, state_name(), transition_table()} | stop.
+-spec new(string(), rand:seed()) -> t().
+new(FilePath, Seed) ->
+    {ok, Fd} = file:open(FilePath, [read, binary]),
+    ParseState = parse_table(Fd, #parse_state{}),
+    ok = file:close(Fd),
+    make_table(Seed, ParseState).
+
+-spec next_state(t()) -> {ok, state_name(), t()} | stop.
 next_state(#state{reached_end_of_session=true}) ->
     stop;
 
 next_state(State) ->
-    NextState = next_state_internal(State),
-    StateName = state_name(NextState),
-    case lists:member(StateName, ?SHOULD_DISCARD) of
-        false ->
-            {ok, StateName, NextState};
-        true ->
-            %% loop until we reach another transaction
-            next_state(NextState)
+    case next_state_internal(State) of
+        #state{reached_end_of_session=true} ->
+            stop;
+        NextState ->
+            StateName = state_name(NextState),
+            case lists:member(StateName, ?SHOULD_DISCARD) of
+                false ->
+                    {ok, StateName, NextState};
+                true ->
+                    %% loop until we reach another transaction
+                    next_state(NextState)
+            end
     end.
 
 %%
 %%  STATE GENERATION
 %%
 
-next_state_internal(MatrixState) ->
-    {Step, NewRState} = rand:uniform_s(MatrixState#state.random),
+-spec next_state_internal(t()) -> t().
+next_state_internal(Table0=#state{random=Random0,
+                                  rows=NRows,
+                                  matrix=Matrix,
+                                  current_state=CurrentState,
+                                  back_probs=BackProbs,
+                                  previous_states=PrevStates0,
+                                  end_session_probs=EndProbs}) ->
 
-    BackProb = current_back_probabilty(MatrixState),
-    EndProb = current_end_of_session(MatrixState),
-    ToCheck = case BackProb < EndProb of
-        true ->
-            {check_end, should_end(Step, EndProb)};
-        false ->
-            {check_back, should_go_back(Step, BackProb)}
-    end,
-
-    {Continue, NewMatrixState} = case ToCheck of
-        {check_end, true} ->
-            {stop, MatrixState#state{reached_end_of_session=true}};
-
-        {check_back, true} ->
-            case queue:out_r(MatrixState#state.previous_states) of
-                {{value, PopState}, NewStateQueue} ->
-                    TmpMatrixState = MatrixState#state{current_state=PopState,
-                                                       previous_states=NewStateQueue},
-                    {stop, TmpMatrixState};
-                {empty, _} ->
-                    %% Had to go back, but there's nowhere to go, ignore
-                    {continue, MatrixState}
-            end;
-
-        _ ->
-            %% We can do a normal step
-            {continue, MatrixState}
-    end,
-
-    case Continue of
-        stop ->
-            NewMatrixState#state{random=NewRState};
-        continue ->
-            #state{rows=NRows,
-                   matrix=Matrix,
-                   current_state=CurrentState} = NewMatrixState,
-
-            CurrentColumn = column_for_current_state(CurrentState, Matrix),
-            NewState = case calc_next_state(CurrentColumn, NRows, Step) of
-                {ok, NextState} -> NextState;
-                {error, end_of_column} -> CurrentState
+    {Step, Random} = rand:uniform_s(Random0),
+    case calc_next_state(Step, Matrix, CurrentState, NRows) of
+        {ok, NextState} ->
+            %% If there's no probability of going back from this state, flush the queue
+            PrevStates = case erlang:element(NextState, BackProbs) of
+                N when N > 0 -> queue:in(CurrentState, PrevStates0);
+                _ -> queue:new()
             end,
-            QueuedStates = queue:in(CurrentState, NewMatrixState#state.previous_states),
-            NewMatrixState#state{random=NewRState,
-                                 current_state=NewState,
-                                 previous_states=QueuedStates}
+            Table0#state{random=Random,
+                         current_state=NextState,
+                         previous_states=PrevStates};
+
+        {not_found, AccProbability} ->
+            BackProb = erlang:element(CurrentState, BackProbs),
+            EndProb =  erlang:element(CurrentState, EndProbs),
+            if
+                Step < (AccProbability + BackProb) ->
+                    back_to_previous_state(Table0#state{random=Random});
+
+                Step < (AccProbability + BackProb + EndProb) ->
+                    Table0#state{random=Random, reached_end_of_session=true};
+
+                true ->
+                    %% The Java code implicitly assumes that if we don't match on any probability,
+                    %% we will reach the end and terminate
+                    Table0#state{random=Random, reached_end_of_session=true}
+            end
     end.
 
--spec current_back_probabilty(transition_table()) -> float().
-current_back_probabilty(#state{current_state=C, back_probs=B}) ->
-    lists:nth(C, B).
+back_to_previous_state(Table=#state{previous_states=PrevStates0}) ->
+    case queue:out_r(PrevStates0) of
+        {{value, PrevState}, PrevStates} ->
+            Table#state{current_state=PrevState, previous_states=PrevStates};
+        {empty, _} ->
+            error
+    end.
 
--spec current_end_of_session(transition_table()) -> float().
-current_end_of_session(#state{current_state=C, end_session_probs=E}) ->
-    lists:nth(C, E).
+-spec calc_next_state(Prob :: probability(),
+                      Matrix :: tuple(),
+                      Col :: non_neg_integer(),
+                      NRows :: non_neg_integer()) -> {ok, non_neg_integer()} | {not_found, probability()}.
 
--spec should_go_back(float(), float()) -> boolean().
-should_go_back(Step, BackProbabilty) ->
-    Step < BackProbabilty.
+calc_next_state(Prob, Matrix, Col, NRows) ->
+    calc_next_state(Prob, 0, Matrix, Col, 1, NRows).
 
--spec should_end(float(), float()) -> boolean().
-should_end(Step, EndOfSessionProb) ->
-    Step < EndOfSessionProb.
+-spec calc_next_state(Prob :: probability(),
+                      AccProb :: probability(),
+                      Matrix :: tuple(),
+                      Col :: non_neg_integer(),
+                      Row :: non_neg_integer(),
+                      NRows :: non_neg_integer()) -> {ok, non_neg_integer()} | {not_found, probability()}.
 
--spec column_for_current_state(integer(), list(list())) -> list().
-column_for_current_state(CurState, Matrix) ->
-    lists:map(fun(Row) -> lists:nth(CurState, Row) end, Matrix).
+calc_next_state(_Prob, AccProb, _Matrix, _Col, Row, Row) ->
+    {not_found, AccProb};
 
--spec calc_next_state(list(float()), integer(), float()) -> {ok, integer()} | {error, atom()}.
-calc_next_state(CurrentColumn, NumRows, Step) ->
-    calc_next_state(CurrentColumn, 1, NumRows, Step, 0).
-
-calc_next_state(CurrentColumn, CurrentRow, NumRows, Step, AccProb) ->
-    case CurrentRow =< NumRows of
-        false ->
-            {error, end_of_column};
+calc_next_state(Prob, AccProb0, Matrix, Col, Row, NRows) ->
+    MatrixProb = erlang:element(Col, erlang:element(Row, Matrix)),
+    AccProb = AccProb0 + MatrixProb,
+    if
+        Prob < AccProb ->
+            {ok, Row};
         true ->
-            TargetProb = lists:nth(CurrentRow, CurrentColumn),
-            NewAccProb = AccProb + TargetProb,
-            case Step < NewAccProb of
-                false ->
-                    calc_next_state(
-                        CurrentColumn,
-                        CurrentRow + 1,
-                        NumRows,
-                        Step,
-                        NewAccProb
-                    );
-                true ->
-                    {ok, CurrentRow}
-            end
+            calc_next_state(Prob, AccProb, Matrix, Col, Row + 1, NRows)
     end.
 
 %%
 %% FILE PARSING
 %%
 
--spec parse_file(string()) -> transition_table().
-parse_file(Filename) ->
-    {ok, Fd} = file:open(Filename, [read, binary]),
-    NewState = parse_matrix(Fd, new_state(27, 27)),
-    ok = file:close(Fd),
-    NewState#state{matrix=lists:reverse(NewState#state.matrix)}.
-
--spec new_state(integer(), integer()) -> transition_table().
-new_state(Rows, Cols) ->
-    #state{
-        random=rand:seed(exs64),
-
-        rows=Rows,
-        columns=Cols,
-        matrix=[],
-        table_name=undefined,
-
-        state_names=[],
-        current_state=1,
-
-        back_probs=[],
-        end_session_probs=[],
-
-        waiting_times=dict:new(),
-        previous_states=queue:new(),
-        reached_end_of_session=false
-    }.
-
--spec parse_matrix(file:io_device(), transition_table()) -> transition_table().
-parse_matrix(Fd, Acc) ->
+-spec parse_table(file:io_device(), #parse_state{}) -> #parse_state{}.
+parse_table(Fd, Acc0) ->
     case io:get_line(Fd, "") of
         eof ->
-            Acc;
+            Acc0;
         Line ->
-            case parse_line(Line, Acc) of
-                {continue, NewAcc} ->
-                    parse_matrix(Fd, NewAcc);
-                {stop, Acc} ->
-                    Acc#state{state_names=lists:reverse(Acc#state.state_names)}
+            case parse_line(Line, Acc0) of
+                {continue, Acc} -> parse_table(Fd, Acc);
+                {stop, Acc} -> Acc
             end
     end.
 
 %% Skip newlines
--spec parse_line(binary(), transition_table()) -> {continue, transition_table()}
-| {stop, transition_table()}.
+-spec parse_line(binary(), #parse_state{}) -> {continue, #parse_state{}}
+                                            | {stop, #parse_state{}}.
+
 parse_line(<<"\n", _/binary>>, Acc) ->
     {continue, Acc};
 
 parse_line(<<"\"", _/binary>>, Acc) ->
     {continue, Acc};
 
-parse_line(<<"From", _/binary>>, Acc) ->
-    {continue, Acc};
-
 parse_line(<<"Total", _/binary>>, Acc) ->
     {stop, Acc};
 
-parse_line(Line, State) ->
+parse_line(Line, State0) ->
     Splitted = binary:split(Line, [<<"\t">>, <<"\n">>], [global, trim_all]),
-    {continue, append_row(Splitted, State)}.
+    case append_row(Splitted, State0) of
+        {stop, State} ->
+            {stop, State};
+        State ->
+            {continue, State}
+    end.
 
--spec append_row(list(binary()), transition_table()) -> transition_table().
+-spec append_row(list(binary()), #parse_state{}) -> #parse_state{} | {stop, #parse_state{}}.
 append_row([], State) ->
     State;
 
 append_row([<<"RUBiS Transition Table">> | _]=Row, State) ->
-    State#state{table_name=lists:nth(2, Row)};
+    State#parse_state{table_name=lists:nth(2, Row)};
+
+append_row([<<"From", _/binary>> | Rest], State) ->
+    %% Skip the column for waiting time, matrix is square
+    NumCols = length(Rest) - 1,
+    State#parse_state{current_row=1,
+                      rows=NumCols,
+                      cols=NumCols,
+                      matrix=erlang:make_tuple(NumCols, undefined),
+                      state_names=erlang:make_tuple(NumCols, <<>>),
+                      waiting_times=erlang:make_tuple(NumCols, 0)};
 
 append_row([<<"Back probability">> | Data], State) ->
-    FlData = lists:map(fun(D) -> bin_to_numeric(D) end, lists:droplast(Data)),
-    State#state{back_probs=FlData};
+    %% Skip waiting time
+    FlData = [bin_to_numeric(D) || D <- lists:droplast(Data)],
+    State#parse_state{back_probability=list_to_tuple(FlData)};
 
 append_row([<<"End of Session">> | Data], State) ->
-    FlData = lists:map(fun(D) -> bin_to_numeric(D) end, lists:droplast(Data)),
-    State#state{end_session_probs=FlData};
+    %% Skip waiting time
+    FlData = [bin_to_numeric(D) || D <- lists:droplast(Data)],
+    %% Docs say that everything after this row can be ignored
+    {stop, State#parse_state{end_probability=list_to_tuple(FlData)}};
 
-append_row([RowName | Data], State = #state{columns=Columns}) ->
+append_row([_RowName | Data], State0 = #parse_state{current_row=NRow,
+                                                    cols=Cols,
+                                                    matrix=Matrix0,
+                                                    state_names=Names0,
+                                                    waiting_times=WaitTimes0}) ->
     Size = length(Data),
     case Size of
-        N when N =:= Columns + 2 orelse N =:= Columns + 1 ->
-            AtomizedRowName = state_name_to_atom(RowName),
-            NumData = lists:map(fun(D) -> bin_to_numeric(D) end, Data),
-            {RowData, Extra} = lists:partition(fun(Num) -> Num =< 1 end, NumData),
-            case Extra of
-                [WaitingTime] ->
-                    process_row(AtomizedRowName, RowData, WaitingTime, State);
-
-                %% Browse-only transition tables contain an extra column that means nothing
-                [_, WaitingTime] ->
-                    process_row(AtomizedRowName, RowData, WaitingTime, State)
-            end;
+        N when N =:= Cols + 1 ->
+            NumData = [ bin_to_numeric(D) || D <- Data],
+            %% The last item is WaitingTime
+            {RowData, [WaitingTime]} = lists:split(length(NumData) - 1, NumData),
+            State0#parse_state{current_row=NRow + 1,
+                               matrix=erlang:setelement(NRow, Matrix0, list_to_tuple(RowData)),
+                               state_names=erlang:setelement(NRow, Names0, erlang:element(NRow, ?STATE_NAMES)),
+                               waiting_times=erlang:setelement(NRow, WaitTimes0, WaitingTime)};
         _ ->
-            State
+            State0#parse_state{current_row=NRow + 1}
     end.
 
--spec process_row(
-    binary(),
-    list(integer() | float()),
-    integer(),
-    transition_table()
-) -> transition_table().
+make_table(Seed, #parse_state{rows=Rows,
+                              cols=Cols,
+                              matrix=Matrix,
+                              table_name=TableName,
+                              state_names=Names,
+                              back_probability=BackProbs,
+                              end_probability=EndProbs,
+                              waiting_times=WaitTimes}) ->
 
-process_row(RowName, RawData, WaitingTime, State=#state{
-    matrix=Matrix,
-    state_names=StateNames,
-    waiting_times=WaitingTimes
-}) ->
-    NameState = State#state{state_names=[RowName | StateNames]},
-    case WaitingTime of
-        0 ->
-            NameState;
-        _ ->
-            NameState#state{
-                matrix=[RawData | Matrix],
-                waiting_times=dict:store(RowName, WaitingTime, WaitingTimes)
-            }
-    end.
+    #state{random=rand:seed(exsss, Seed),
+           rows=Rows,
+           columns=Cols,
+           matrix=Matrix,
+           table_name=TableName,
+           state_names=Names,
+           current_state=1,
+           back_probs=BackProbs,
+           previous_states=queue:new(),
+           end_session_probs=EndProbs,
+           waiting_times=WaitTimes,
+           reached_end_of_session=false}.
 
 %%
 %%  UTIL FUNCTIONS
 %%
 
 state_name(#state{current_state=CState,state_names=SNames}) ->
-    lists:nth(CState, SNames).
+    erlang:element(CState, SNames).
 
 -spec bin_to_numeric(binary()) -> integer() | float().
 bin_to_numeric(N) ->
@@ -317,9 +335,3 @@ bin_to_numeric(N) ->
     catch _:_ ->
         binary_to_integer(N)
     end.
-
-state_name_to_atom(<<"AboutMe (auth form)">>) ->
-    aboutme_auth;
-
-state_name_to_atom(StateName) ->
-    list_to_atom(string:to_lower(binary_to_list(StateName))).
