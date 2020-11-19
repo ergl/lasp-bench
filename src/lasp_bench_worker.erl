@@ -33,18 +33,20 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
 
--record(state, { id,
-                 keygen,
-                 valgen,
-                 driver,
-                 driver_state,
-                 shutdown_on_error,
-                 ops,
-                 ops_len,
-                 rng_seed,
-                 parent_pid,
-                 worker_pid,
-                 sup_id}).
+-record(state, {
+    id :: non_neg_integer(),
+    keygen :: lasp_bench_keygen:t(),
+    valgen :: lasp_bench_valgen:t(),
+    driver :: module(),
+    driver_state :: term(),
+    shutdown_on_error :: boolean(),
+    ops :: tuple(),
+    ops_len :: non_neg_integer(),
+    rng_seed :: erlang:timestamp(),
+    parent_pid :: pid(),
+    worker_pid :: pid(),
+    sup_id :: pid()
+}).
 
 -include("lasp_bench.hrl").
 

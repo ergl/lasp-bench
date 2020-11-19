@@ -26,6 +26,9 @@
          sequential_int_generator/4]).
 -export([reset_sequential_int_state/0]).        % Internal driver use only.
 
+-type t() :: fun(() -> term()).
+-export_type([t/0]).
+
 -include("lasp_bench.hrl").
 
 %% Use a fixed shape for Pareto that will yield the desired 80/20

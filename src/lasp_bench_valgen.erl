@@ -24,6 +24,9 @@
 -export([new/2,
          dimension/2]).
 
+-type t() :: fun(() -> term()).
+-export_type([t/0]).
+
 -include("lasp_bench.hrl").
 
 %% ====================================================================
@@ -63,7 +66,8 @@ new({uniform_int, MaxVal}, _Id)
     fun() -> rand:uniform(MaxVal) end;
 new({uniform_int, MinVal, MaxVal}, _Id)
   when is_integer(MinVal), is_integer(MaxVal), MaxVal > MinVal ->
-    fun() -> crypto:rand_uniform(MinVal, MaxVal) end;
+    Range = MaxVal - MinVal,
+    fun() -> (MinVal + rand:uniform(Range)) - 1 end;
 new(Other, _Id) ->
     ?FAIL_MSG("Invalid value generator requested: ~p\n", [Other]).
 
