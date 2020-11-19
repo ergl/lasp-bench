@@ -146,10 +146,10 @@ new(FilePath, Seed) ->
 next_state(#state{reached_end_of_session=true}) ->
     stop;
 
-next_state(State) ->
-    case next_state_internal(State) of
-        #state{reached_end_of_session=true} ->
-            stop;
+next_state(S0) ->
+    case next_state_internal(S0) of
+        S=#state{reached_end_of_session=true} ->
+            next_state(recycle_state(S));
         NextState ->
             StateName = state_name(NextState),
             case lists:member(StateName, ?SHOULD_DISCARD) of
@@ -160,6 +160,12 @@ next_state(State) ->
                     next_state(NextState)
             end
     end.
+
+-spec recycle_state(t()) -> t().
+recycle_state(S) ->
+    S#state{reached_end_of_session=false,
+            previous_states=queue:new(),
+            current_state=1}.
 
 %%
 %%  STATE GENERATION
