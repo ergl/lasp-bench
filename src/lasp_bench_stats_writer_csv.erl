@@ -141,7 +141,7 @@ get_line_from_stats(Op, Elapsed, Window, Stats, Errors, Units) ->
                            proplists:get_value(max, Stats),
                            Errors]);
         false ->
-            ?WARN("No data for op: ~p\n", [Op]),
+            ?DEBUG("No data for op: ~p\n", [Op]),
             io_lib:format("~w, ~w, 0, 0, 0, 0, 0, 0, 0, 0, ~w\n", [Elapsed, Window, Errors])
     end.
 

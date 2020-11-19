@@ -1,4 +1,5 @@
 -module(rubis_bench_table).
+-behavior(lasp_bench_ops).
 
 %% Remove the states that call no transactions, don't care about them
 -define(SHOULD_DISCARD, [home,
@@ -101,10 +102,34 @@
 -type state_name() :: atom().
 -export_type([t/0]).
 
+%% Ops API
+-export([init/1,
+         operations/0,
+         next_operation/1,
+         terminate/1]).
+
 %% API
 -export([new/1,
          new/2,
          next_state/1]).
+
+init([_Id, ArgMap = #{transition_table := FilePath}]) ->
+    Seed = maps:get(seed, ArgMap, erlang:timestamp()),
+    new(FilePath, Seed).
+
+operations() ->
+    [{OpTag, OpTag} || OpTag <- tuple_to_list(?STATE_NAMES)].
+
+next_operation(S0) ->
+    case next_state(S0) of
+        stop ->
+            {error, stop};
+        {ok, State, S} ->
+            {ok, {State, State}, S}
+    end.
+
+terminate(_) ->
+    ok.
 
 -spec new(string()) -> t().
 new(FilePath) ->

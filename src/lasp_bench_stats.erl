@@ -111,11 +111,7 @@ init([]) ->
     ets:new(lasp_bench_total_errors, [protected, named_table]),
 
     %% Get the list of operations we'll be using for this test
-    F1 =
-        fun({OpTag, _Count}) -> {OpTag, OpTag};
-           ({Label, OpTag, _Count}) -> {Label, OpTag}
-        end,
-    Ops = [F1(X) || X <- lasp_bench_config:get(operations, [])],
+    Ops = lasp_bench_ops:list_driver_operations(),
 
     %% Get the list of measurements we'll be using for this test
     F2 =

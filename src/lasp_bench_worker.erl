@@ -39,10 +39,8 @@
     valgen :: lasp_bench_valgen:t(),
     driver :: module(),
     driver_state :: term(),
+    driver_ops :: lasp_bench_ops:t(),
     shutdown_on_error :: boolean(),
-    ops :: tuple(),
-    ops_len :: non_neg_integer(),
-    rng_seed :: erlang:timestamp(),
     parent_pid :: pid(),
     worker_pid :: pid(),
     sup_id :: pid()
@@ -82,26 +80,9 @@ stop(Pids) ->
 %% ====================================================================
 
 init([SupChild, Id]) ->
-    %% Setup RNG seed for worker sub-process to use; incorporate the ID of
-    %% the worker to ensure consistency in load-gen
-    %%
-    %% NOTE: If the worker process dies, this obviously introduces some entroy
-    %% into the equation since you'd be restarting the RNG all over.
-    %%
-    %% The RNG_SEED is static by default for replicability of key size
-    %% and value size generation between test runs.
-    process_flag(trap_exit, true),
-    {A1, A2, A3} =
-        case lasp_bench_config:get(rng_seed, {42, 23, 12}) of
-            {Aa, Ab, Ac} -> {Aa, Ab, Ac};
-            now -> erlang:timestamp()
-        end,
-
-    RngSeed = {A1+Id, A2+Id, A3+Id},
-
     %% Pull all config settings from environment
     Driver  = lasp_bench_config:get(driver),
-    Ops     = ops_tuple(),
+    Ops = lasp_bench_ops:get_driver_operations(Id),
     ShutdownOnError = lasp_bench_config:get(shutdown_on_error, false),
 
     %% Finally, initialize key and value generation. We pass in our ID to the
@@ -109,13 +90,14 @@ init([SupChild, Id]) ->
     KeyGen = lasp_bench_keygen:new(lasp_bench_config:get(key_generator), Id),
     ValGen = lasp_bench_valgen:new(lasp_bench_config:get(value_generator), Id),
 
-    State = #state { id = Id, keygen = KeyGen, valgen = ValGen,
-                     driver = Driver,
-                     shutdown_on_error = ShutdownOnError,
-                     ops = Ops, ops_len = size(Ops),
-                     rng_seed = RngSeed,
-                     parent_pid = self(),
-                     sup_id = SupChild},
+    State = #state{id=Id,
+                   keygen=KeyGen,
+                   valgen=ValGen,
+                   driver=Driver,
+                   driver_ops=Ops,
+                   shutdown_on_error=ShutdownOnError,
+                   parent_pid=self(),
+                   sup_id=SupChild},
 
     %% Use a dedicated sub-process to do the actual work. The work loop may need
     %% to sleep or otherwise delay in a way that would be inappropriate and/or
@@ -198,26 +180,11 @@ stop_worker(SupChild) ->
             ok
     end.
 
-%%
-%% Expand operations list into tuple suitable for weighted, random draw
-%%
-ops_tuple() ->
-    F =
-        fun({OpTag, Count}) ->
-                lists:duplicate(Count, {OpTag, OpTag});
-           ({Label, OpTag, Count}) ->
-                lists:duplicate(Count, {Label, OpTag})
-        end,
-    Ops = [F(X) || X <- lasp_bench_config:get(operations, [])],
-    list_to_tuple(lists:flatten(Ops)).
-
-
-worker_init(State) ->
+worker_init(State=#state{driver_ops=Ops}) ->
     %% Trap exits from linked parent process; use this to ensure the driver
     %% gets a chance to cleanup
     process_flag(trap_exit, true),
-    rand:seed(exs1024,State#state.rng_seed),
-    worker_idle_loop(State).
+    worker_idle_loop(State#state{driver_ops=lasp_bench_ops:init_ops(Ops)}).
 
 worker_idle_loop(State) ->
     Driver = State#state.driver,
@@ -252,12 +219,27 @@ worker_idle_loop(State) ->
             end
     end.
 
-worker_next_op2(State, OpTag) ->
-   catch (State#state.driver):run(OpTag, State#state.keygen, State#state.valgen,
-                                  State#state.driver_state).
 worker_next_op(State) ->
-    Next = element(rand:uniform(State#state.ops_len), State#state.ops),
-    {_Label, OpTag} = Next,
+    case lasp_bench_ops:next_op(State#state.driver_ops) of
+        {error, Reason} ->
+            io:format("Next op exited with reason ~p~n", [Reason]),
+            %% Driver (or something within it) has requested that this worker
+            %% terminate cleanly.
+            ?INFO("Driver ~p (~p) has requested stop: ~p\n", [State#state.driver, self(), Reason]),
+            %% Give the driver a chance to cleanup
+            (catch (State#state.driver):terminate(normal, State#state.driver_state)),
+            normal;
+
+        {ok, Next, NextOps} ->
+            worker_next_op_continue(Next, State#state{driver_ops=NextOps})
+    end.
+
+worker_next_op2(State, OpTag) ->
+    Driver = State#state.driver,
+    catch Driver:run(OpTag, State#state.keygen,
+                     State#state.valgen, State#state.driver_state).
+
+worker_next_op_continue({_Label, OpTag}=Next, State) ->
     Start = os:timestamp(),
     Result = worker_next_op2(State, OpTag),
     ElapsedUs = erlang:max(0, timer:now_diff(os:timestamp(), Start)),
