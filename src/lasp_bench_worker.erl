@@ -125,6 +125,7 @@ init([SupChild, Id]) ->
     %%
     %% Link the worker and the sub-process to ensure that if either exits, the
     %% other goes with it.
+    process_flag(trap_exit, true),
     WorkerPid = spawn_link(fun() -> worker_init(State) end),
     WorkerPid ! {init_driver, self()},
     receive
