@@ -282,7 +282,6 @@ get_auctions_ready_for_close(item_id, max_bids) {
       AND items.nb_of_bids > max_bids
 }
 
-
 -- 28
 close_auction(item_id) {
   SELECT * AS item
