@@ -33,7 +33,7 @@ search_items_in_category(category_id, category_name, page, per_page) {
            items.initial_price
       FROM items
      WHERE items.category = category_id
-       AND items.closed >= false
+       AND items.closed <> false
      LIMIT (page * per_page), per_page
 }
 
