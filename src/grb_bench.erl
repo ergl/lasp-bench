@@ -22,6 +22,9 @@
     readonly_ops :: non_neg_integer(),
     writeonly_ops :: non_neg_integer(),
 
+    read_fun :: fun(),
+    update_fun :: fun(),
+
     %% Read / Update ops to use in mixed workloads
     rw_reads :: non_neg_integer(),
     rw_updates :: non_neg_integer(),
@@ -44,11 +47,19 @@ new(WorkerId) ->
     ReuseCVC = lasp_bench_config:get(reuse_cvc),
     RetryUntilCommit = lasp_bench_config:get(retry_aborts, true),
 
+    CRDT_Type = lasp_bench_config:get(crdt_type, grb_lww),
+
+    ReadFunction = read_method(CRDT_Type),
+    UpdateFunction = update_method(CRDT_Type),
+
     State = #state{worker_id=WorkerId,
                    transaction_count=0,
 
                    readonly_ops=RonlyOps,
                    writeonly_ops=WonlyOps,
+
+                   read_fun=ReadFunction,
+                   update_fun=UpdateFunction,
 
                    rw_reads=RWReads,
                    rw_updates=RWUpdates,
@@ -77,39 +88,37 @@ run(readonly_blue, KeyGen, _, State = #state{readonly_ops=N}) ->
     CVC = perform_readonly_blue(State, gen_keys(N, KeyGen)),
     {ok, incr_tx_id(State#state{last_cvc=CVC})};
 
-run(readonly_blue_bypass, KeyGen, _, State = #state{readonly_ops=N}) ->
-    CVC = perform_readonly_blue_bypass(State, gen_keys(N, KeyGen)),
-    {ok, incr_tx_id(State#state{last_cvc=CVC})};
-
 run(writeonly_blue, KeyGen, ValueGen, State = #state{writeonly_ops=N}) ->
     CVC = perform_writeonly_blue(State, gen_updates(N, KeyGen, ValueGen)),
-    {ok, incr_tx_id(State#state{last_cvc=CVC})};
-
-run(writeonly_blue_bypass, KeyGen, ValueGen, State = #state{writeonly_ops=N}) ->
-    CVC = perform_writeonly_blue_bypass(State, gen_updates(N, KeyGen, ValueGen)),
     {ok, incr_tx_id(State#state{last_cvc=CVC})};
 
 run(read_write_blue, KeyGen, ValueGen, State = #state{rw_reads=RN, rw_updates=WN}) ->
     CVC = perform_read_write_blue(State, gen_keys(RN, KeyGen), gen_updates(WN, KeyGen, ValueGen)),
     {ok, incr_tx_id(State#state{last_cvc=CVC})};
 
-run(read_write_blue_track, KeyGen, ValueGen, State = #state{coord_state=Coord, rw_reads=RN, rw_updates=WN}) ->
+run(read_write_blue_track, KeyGen, ValueGen, State = #state{coord_state=Coord,
+                                                            rw_reads=RN,
+                                                            rw_updates=WN,
+                                                            read_fun=ReadF,
+                                                            update_fun=UpdateF}) ->
     Keys = gen_keys(RN, KeyGen),
     Updates = gen_updates(WN, KeyGen, ValueGen),
     {StartTook, {ok, Tx}} = timer:tc(fun maybe_start_with_clock/1, [State]),
 
     {Tx1, ReadTook} = lists:foldl(fun(K, {AccTx, AccTook}) ->
-        {Took, {ok, _, NextTx}} = timer:tc(grb_client, read_op, [Coord, AccTx, K]),
+        {Took, {ok, _, NextTx}} = timer:tc(ReadF, [Coord, AccTx, K]),
         {NextTx, AccTook + Took}
     end, {Tx, 0}, Keys),
 
     {Tx2, UpdateTook} = lists:foldl(fun({K, V}, {AccTx, AccTook}) ->
-        {Took, {ok, _, NextTx}} = timer:tc(grb_client, update_op, [Coord, AccTx, K, V]),
+        {Took, {ok, _, NextTx}} = timer:tc(UpdateF, [Coord, AccTx, K, V]),
         {NextTx, Took + AccTook}
     end, {Tx1, 0}, Updates),
 
     {CommitTook, CVC} = timer:tc(grb_client, commit, [Coord, Tx2]),
-    {ok, {track_mixed_blue, incr_tx_id(State#state{last_cvc=CVC}), StartTook, {RN, ReadTook}, {WN, UpdateTook}, CommitTook}};
+    {ok,
+        {track_mixed_blue, incr_tx_id(State#state{last_cvc=CVC}),
+         StartTook, {RN, ReadTook}, {WN, UpdateTook}, CommitTook}};
 
 run(readonly_blue_barrier, KeyGen, _, State = #state{readonly_ops=N, coord_state=Coord}) ->
     CVC = perform_readonly_blue(State, gen_keys(N, KeyGen)),
@@ -130,9 +139,9 @@ run(read_write_blue_barrier, KeyGen, ValueGen, State = #state{rw_reads=RN, rw_up
 %% Red operations
 %%====================================================================
 
-run(readonly_red_track, KeyGen, _, State = #state{coord_state=CoordState}) ->
+run(readonly_red_track, KeyGen, _, State = #state{coord_state=CoordState, read_fun=ReadF}) ->
     {StartTook, {ok, Tx}} = timer:tc(fun maybe_start_with_clock/1, [State]),
-    {ReadTook, {ok, _, NextTx}} = timer:tc(grb_client, read_op, [CoordState, Tx, KeyGen()]),
+    {ReadTook, {ok, _, NextTx}} = timer:tc(ReadF, [CoordState, Tx, KeyGen()]),
     {CommitTook, Result} = timer:tc(grb_client, commit_red, [CoordState, NextTx]),
     case Result of
         {abort, _}=Err ->
@@ -144,18 +153,6 @@ run(readonly_red_track, KeyGen, _, State = #state{coord_state=CoordState}) ->
 
 run(readonly_red, KeyGen, _, State = #state{readonly_ops=N}) ->
     case perform_readonly_red(State, gen_keys(N, KeyGen)) of
-        {ok, CVC} -> {ok, incr_tx_id(State#state{last_cvc=CVC})};
-        Err -> {error, Err, incr_tx_id(State)}
-    end;
-
-run(readonly_red_bypass, KeyGen, _, State = #state{readonly_ops=N}) ->
-    case perform_readonly_red_bypass(State, gen_keys(N, KeyGen)) of
-        {ok, CVC} -> {ok, incr_tx_id(State#state{last_cvc=CVC})};
-        Err -> {error, Err, incr_tx_id(State)}
-    end;
-
-run(read_start_red, KeyGen, _, State = #state{readonly_ops=N}) ->
-    case perform_start_readonly_red(State, gen_keys(N, KeyGen)) of
         {ok, CVC} -> {ok, incr_tx_id(State#state{last_cvc=CVC})};
         Err -> {error, Err, incr_tx_id(State)}
     end;
@@ -208,50 +205,34 @@ perform_uniform_barrier(CoordState, CVC) ->
 %%====================================================================
 
 %% todo(borja): Implement multi-key read
-perform_readonly_blue(S=#state{coord_state=CoordState}, Keys) ->
+perform_readonly_blue(S=#state{coord_state=CoordState, read_fun=ReadF}, Keys) ->
     {ok, Tx} = maybe_start_with_clock(S),
     Tx1 = lists:foldl(fun(K, AccTx) ->
-        {ok, _, NextTx} = grb_client:read_op(CoordState, AccTx, K),
-        NextTx
-    end, Tx, Keys),
-    grb_client:commit(CoordState, Tx1).
-
-perform_readonly_blue_bypass(S=#state{coord_state=CoordState}, Keys) ->
-    {ok, Tx} = maybe_start_with_clock(S),
-    Tx1 = lists:foldl(fun(K, AccTx) ->
-        {ok, _, NextTx} = grb_client:read_bypass(CoordState, AccTx, K),
+        {ok, _, NextTx} = ReadF(CoordState, AccTx, K),
         NextTx
     end, Tx, Keys),
     grb_client:commit(CoordState, Tx1).
 
 %% todo(borja): Implement multi-key update
-perform_writeonly_blue(S=#state{coord_state=CoordState}, Updates) ->
+perform_writeonly_blue(S=#state{coord_state=CoordState, update_fun=UpdateF}, Updates) ->
     {ok, Tx} = maybe_start_with_clock(S),
     Tx1 = lists:foldl(fun({K, V}, AccTx) ->
-        {ok, _, NextTx} = grb_client:update_op(CoordState, AccTx, K, V),
-        NextTx
-    end, Tx, Updates),
-    grb_client:commit(CoordState, Tx1).
-
-perform_writeonly_blue_bypass(S=#state{coord_state=CoordState}, Updates) ->
-    {ok, Tx} = maybe_start_with_clock(S),
-    Tx1 = lists:foldl(fun({K, V}, AccTx) ->
-        {ok, _, NextTx} = grb_client:update_bypass(CoordState, AccTx, K, V),
+        {ok, _, NextTx} = UpdateF(CoordState, AccTx, K, V),
         NextTx
     end, Tx, Updates),
     grb_client:commit(CoordState, Tx1).
 
 %% todo(borja): Implement multi-key read and update
-perform_read_write_blue(S=#state{coord_state=CoordState}, Keys, Updates) ->
+perform_read_write_blue(S=#state{coord_state=CoordState, read_fun=ReadF, update_fun=UpdateF}, Keys, Updates) ->
     {ok, Tx} = maybe_start_with_clock(S),
 
     Tx1 = lists:foldl(fun(K, AccTx) ->
-        {ok, _, NextTx} = grb_client:read_op(CoordState, AccTx, K),
+        {ok, _, NextTx} = ReadF(CoordState, AccTx, K),
         NextTx
     end, Tx, Keys),
 
     Tx2 = lists:foldl(fun({K, V}, AccTx) ->
-        {ok, _, NextTx} = grb_client:update_op(CoordState, AccTx, K, V),
+        {ok, _, NextTx} = UpdateF(CoordState, AccTx, K, V),
         NextTx
     end, Tx1, Updates),
 
@@ -261,10 +242,10 @@ perform_read_write_blue(S=#state{coord_state=CoordState}, Keys, Updates) ->
 %% Red operations
 %%====================================================================
 
-perform_readonly_red(S=#state{coord_state=CoordState}, Keys) ->
+perform_readonly_red(S=#state{coord_state=CoordState, read_fun=ReadF}, Keys) ->
     {ok, Tx} = maybe_start_with_clock(S),
     Tx1 = lists:foldl(fun(K, AccTx) ->
-        {ok, _, NextTx} = grb_client:read_op(CoordState, AccTx, K),
+        {ok, _, NextTx} = ReadF(CoordState, AccTx, K),
         NextTx
     end, Tx, Keys),
     case grb_client:commit_red(CoordState, Tx1) of
@@ -272,32 +253,10 @@ perform_readonly_red(S=#state{coord_state=CoordState}, Keys) ->
         Other -> Other
     end.
 
-perform_start_readonly_red(S=#state{coord_state=CoordState}, [HdKey | Rest]) ->
-    {ok, _, Tx} = maybe_start_read_with_clock(HdKey, S),
-    Tx1 = lists:foldl(fun(K, AccTx) ->
-        {ok, _, NextTx} = grb_client:read_op(CoordState, AccTx, K),
-        NextTx
-    end, Tx, Rest),
-    case grb_client:commit_red(CoordState, Tx1) of
-        {abort, _}=Err -> Err;
-        Other -> Other
-    end.
-
-perform_readonly_red_bypass(S=#state{coord_state=CoordState}, Keys) ->
-    {ok, Tx} = maybe_start_with_clock(S),
-    Tx1 = lists:foldl(fun(K, AccTx) ->
-        {ok, _, NextTx} = grb_client:read_bypass(CoordState, AccTx, K),
-        NextTx
-    end, Tx, Keys),
-    case grb_client:commit_red(CoordState, Tx1) of
-        {abort, _}=Err -> Err;
-        Other -> Other
-    end.
-
-perform_writeonly_red(S=#state{coord_state=CoordState}, Updates) ->
+perform_writeonly_red(S=#state{coord_state=CoordState, update_fun=UpdateF}, Updates) ->
     {ok, Tx} = maybe_start_with_clock(S),
     Tx1 = lists:foldl(fun({K, V}, AccTx) ->
-        {ok, _, NextTx} = grb_client:update_op(CoordState, AccTx, K, V),
+        {ok, _, NextTx} = UpdateF(CoordState, AccTx, K, V),
         NextTx
     end, Tx, Updates),
     case grb_client:commit_red(CoordState, Tx1) of
@@ -305,16 +264,16 @@ perform_writeonly_red(S=#state{coord_state=CoordState}, Updates) ->
         Other -> Other
     end.
 
-perform_read_write_red(S=#state{coord_state=CoordState}, Keys, Updates) ->
+perform_read_write_red(S=#state{coord_state=CoordState, read_fun=ReadF, update_fun=UpdateF}, Keys, Updates) ->
     {ok, Tx} = maybe_start_with_clock(S),
 
     Tx1 = lists:foldl(fun(K, AccTx) ->
-        {ok, _, NextTx} = grb_client:read_op(CoordState, AccTx, K),
+        {ok, _, NextTx} = ReadF(CoordState, AccTx, K),
         NextTx
     end, Tx, Keys),
 
     Tx2 = lists:foldl(fun({K, V}, AccTx) ->
-        {ok, _, NextTx} = grb_client:update_op(CoordState, AccTx, K, V),
+        {ok, _, NextTx} = UpdateF(CoordState, AccTx, K, V),
         NextTx
     end, Tx1, Updates),
 
@@ -327,19 +286,20 @@ perform_read_write_red(S=#state{coord_state=CoordState}, Keys, Updates) ->
 %% Util functions
 %%====================================================================
 
+-spec read_method(atom()) -> fun().
+read_method(Type) ->
+    fun(C, T, K) -> grb_client:read_key_snapshot(C, T, K, Type) end.
+
+-spec update_method(atom()) -> fun().
+update_method(grb_lww) -> fun grb_client:update_lww/4;
+update_method(grb_gset) -> fun grb_client:update_gset/4.
+
 -spec maybe_start_with_clock(#state{}) -> {ok, grb_client:tx()}.
 maybe_start_with_clock(S=#state{coord_state=CoordState, reuse_cvc=true, last_cvc=VC}) ->
     grb_client:start_transaction(CoordState, next_tx_id(S), VC);
 
 maybe_start_with_clock(S=#state{coord_state=CoordState, reuse_cvc=false}) ->
     grb_client:start_transaction(CoordState, next_tx_id(S)).
-
--spec maybe_start_read_with_clock(binary(), #state{}) -> {ok, binary(), grb_client:tx()}.
-maybe_start_read_with_clock(Key, S=#state{coord_state=CoordState, reuse_cvc=true, last_cvc=VC}) ->
-    grb_client:start_read(CoordState, next_tx_id(S), Key, VC);
-
-maybe_start_read_with_clock(Key, S=#state{coord_state=CoordState, reuse_cvc=false}) ->
-    grb_client:start_read(CoordState, next_tx_id(S), Key).
 
 maybe_retry_readonly(#state{retry_until_commit=false}, _, Err) -> Err;
 maybe_retry_readonly(S, Keys, _) -> perform_readonly_red(incr_tx_id(S), Keys).
