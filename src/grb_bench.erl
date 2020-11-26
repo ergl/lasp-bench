@@ -291,8 +291,8 @@ read_method(Type) ->
     fun(C, T, K) -> grb_client:read_key_snapshot(C, T, K, Type) end.
 
 -spec update_method(atom()) -> fun().
-update_method(grb_lww) -> fun grb_client:update_lww/4;
-update_method(grb_gset) -> fun grb_client:update_gset/4.
+update_method(Type) ->
+    fun(C, T, K, V) -> grb_client:update_operation(C, T, K, Type, V) end.
 
 -spec maybe_start_with_clock(#state{}) -> {ok, grb_client:tx()}.
 maybe_start_with_clock(S=#state{coord_state=CoordState, reuse_cvc=true, last_cvc=VC}) ->
