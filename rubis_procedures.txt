@@ -24,16 +24,16 @@ browse_categories() {
 }
 
 -- 5
-search_items_in_category(category_id, category_name, page, per_page) {
+search_items_in_category(category_id, page, per_page) {
     SELECT items.name,
            items.id,
            items.closed,
-           items.max_bid,
+           items.max_bid_amount,
            items.nb_of_bids,
            items.initial_price
       FROM items
      WHERE items.category = category_id
-       AND items.closed <> false
+       AND items.closed = false
      LIMIT (page * per_page), per_page
 }
 
@@ -49,11 +49,11 @@ browse_categories_in_region(region_name) {
 }
 
 -- 8 (same as search_items_in_category, but such that the seller is in the region)
-search_items_in_region(category_id, category_name, region_id, page, per_page) {
+search_items_in_region(category_id, region_id, page, per_page) {
   SELECT items.name,
          items.id,
          items.closed,
-         items.max_bid,
+         items.max_bid_amount,
          items.nb_of_bids,
          items.initial_price
     FROM items, users
@@ -93,7 +93,7 @@ view_bid_history(item_id) {
   SELECT bids.*, users.nickname
     FROM bids, users
    WHERE item_id = item_id
-    AND bids.user_id = users.id
+     AND bids.user_id = users.id
 }
 
 -- 13
@@ -104,7 +104,7 @@ buy_now(item_id, user_name, password) {
 
    if no_match(password, user_password)
       return
-  
+
   SELECT items.*, users.nickname
     FROM items, users
    WHERE items.id = items_id
@@ -133,23 +133,20 @@ put_bid(item_id, nickname, password) {
    if no_match(password, user_password)
       return
 
-  SELECT items.* AS item, users.nickname
+  SELECT items.name AS item_name,
+         items.max_bid_amount AS bid,
+         items.nb_of_bids,
+         items.initial_price AS init_price
+         users.nickname
    FROM items, users
    WHERE items.id = item_id
      AND items.seller_id = users.id
 
-  SELECT max(bid) AS bid
-    FROM bids
-   WHERE item_id = item_id
-
-   maxBid = (bid != null) ? bid.bid : items.initial_price
-   SELECT COUNT(*) AS bid
-    FROM bids
-   WHERE item_id = item_id
+  maxBid = if bid == 0 then init_price
 }
 
 -- 17
-store_bid(item_id, user_id, bid, max_bid, qty) {
+store_bid(item_id, user_id, bid_amount, qty) {
   SELECT quantity AS q, reserve_price, closed
    FROM items
   WHERE id = item_id
@@ -160,22 +157,24 @@ store_bid(item_id, user_id, bid, max_bid, qty) {
   if qty > quantity then
     return
 
-  if max_bid < reserve_price then
+  if bid_amount < reserve_price then
     return
 
-  if bid < reserve_price then
-    return
+  bid_id = INSERT INTO bids values (user_id, item_id, bid_amount)
 
-  SELECT nb_bids, max_bid
+  SELECT nb_bids, max_bid_amount
     FROM items
    WHERE id = item_id
 
-  UPDATE items
-     SET max_bid = max(max_bid, bid),
-         nb_bids = nb_bids + 1
-   WHERE id = item_id
+  if max_bid_amount < bid_amount
+    UPDATE items
+      SET max_bid_id = bid_id,
+          max_bid_amount = bid_amount
+  end
 
-  INSERT INTO bids values (user_id, item_id, bid)
+  UPDATE items
+     SET nb_of_bids = nb_bids + 1
+   WHERE id = item_id
 }
 
 -- 19
@@ -190,7 +189,7 @@ put_comment(item_id, to_id, nickname, password) {
   SELECT nickname AS to_nickname
     FROM users
    WHERE id = to_id
-  
+
   SELECT name
     FROM items
    WHERE id = item_id
@@ -225,7 +224,7 @@ select_category_to_sell_item(nickname, password) {
 -- 24
 register_item(user_id, category_id, name, description, initial_price,
               reserve_price, buy_now, duration, quantity) {
-  
+
   INSERT INTO items VALUES(fresh(), ...)
 }
 
@@ -243,10 +242,10 @@ about_me(nickname, password) {
    WHERE id = user_id
 
    -- bids for user
-   SELECT item_id, bids.max_bid
+   SELECT item_id, bids.bid
    FROM bids, items
    WHERE bids.user_id = user_id
-    AND bids.item_id = items.id
+     AND bids.item_id = items.id
 
   -- selling items
   SELECT *
@@ -275,33 +274,33 @@ about_me(nickname, password) {
 }
 
 -- 27
-get_auctions_ready_for_close(item_id, max_bids) {
-  SELECT *
-    FROM items
-    WHERE items.id < item_id
+get_auctions_ready_for_close(region_id, category_id, max_items, max_bids) {
+  SELECT items.*
+    FROM items, users
+    WHERE items.category_id = category_id
+      AND items.closed = false
       AND items.nb_of_bids > max_bids
+      AND items.user_id = users.id
+      AND users.region_id = region_id
+    LIMIT max_items
 }
 
 -- 28
 close_auction(item_id) {
-  SELECT * AS item
-    FROM items
-   WHERE id = item_id
+  SELECT item.closed,
+         bid.* AS winner_bid
+    FROM items, bids
+   WHERE item.id = item_id
+     AND item.max_bid_id = bid.id
 
- if item.closed then
+ if item.closed == true then
     return
 
-  SELECT (user_id, bid) as max_bid
-    FROM bids
-   WHERE bids.item_id = item_id
-    ORDER BY bid DESC
-    LIMIT 1
-
- if max_bid == null then
-  return
+  if winner_bid == null then
+    return
 
   INSERT INTO winners
-       VALUES (max_bid.user_id, item_id, max_bid.bid)
+       VALUES (winner_bid.user_id, item_id, winner_bid.bid)
 
   UPDATE items
      SET closed = true
