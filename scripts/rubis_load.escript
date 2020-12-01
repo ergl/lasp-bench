@@ -1,5 +1,5 @@
 #!/usr/bin/env escript
-%%! ../_build/default/lib/pvc_proto/ebin -Wall
+%%! -pa ../_build/default/lib/pvc_proto/ebin -Wall
 
 -mode(compile).
 -export([main/1]).

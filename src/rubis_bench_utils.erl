@@ -7,12 +7,6 @@
     session_password :: term(),
 
     %% todo(borja, rubis): Rethink this (pregenerated ids, props in config, etc)
-    region_ids :: tuple(),
-    region_ids_len :: non_neg_integer(),
-
-    category_ids :: tuple(),
-    category_ids_len :: non_neg_integer(),
-
     user_ids :: #{non_neg_integer() => term()},
     user_ids_len :: non_neg_integer(),
 
@@ -27,8 +21,6 @@
 -export_type([t/0]).
 %% State API
 -export([new/0,
-         random_region_id/1,
-         random_category_id/1,
          random_user_id/1,
          different_user_id/2,
          random_item_id/1,
@@ -43,14 +35,6 @@
 -spec new() -> t().
 new() ->
     #state{}.
-
--spec random_region_id(t()) -> term().
-random_region_id(#state{region_ids=Regions, region_ids_len=Len}) ->
-    erlang:element(rand:uniform(Len), Regions).
-
--spec random_category_id(t()) -> term().
-random_category_id(#state{category_ids=Categories, category_ids_len=Len}) ->
-    erlang:element(rand:uniform(Len), Categories).
 
 -spec random_user_id(t()) -> term().
 random_user_id(#state{user_ids=Users,user_ids_len=Len}) ->
