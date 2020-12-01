@@ -1,6 +1,3 @@
-examples/rubis_default.config
-scripts/rubis_default_ops.json
-scripts/rubis_output.json
 tests/
 grid_tests/
 .rebar
@@ -9,3 +6,4 @@ grid_tests/
 tags
 _build/
 .DS_Store
+
