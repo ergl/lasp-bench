@@ -25,6 +25,9 @@
     read_fun :: fun(),
     update_fun :: fun(),
 
+    multi_read_fun :: fun(),
+    multi_update_fun :: fun(),
+
     %% Read / Update ops to use in mixed workloads
     rw_reads :: non_neg_integer(),
     rw_updates :: non_neg_integer(),
@@ -52,6 +55,10 @@ new(WorkerId) ->
     ReadFunction = read_method(CRDT_Type),
     UpdateFunction = update_method(CRDT_Type),
 
+    ParallelRead = lasp_bench_config:get(parallel_read, false),
+    ParallelReadFun = multi_read_method(CRDT_Type, ParallelRead),
+    ParallelUpdateFun = multiupdate_method(CRDT_Type, ParallelRead),
+
     State = #state{worker_id=WorkerId,
                    transaction_count=0,
 
@@ -60,6 +67,9 @@ new(WorkerId) ->
 
                    read_fun=ReadFunction,
                    update_fun=UpdateFunction,
+
+                   multi_read_fun=ParallelReadFun,
+                   multi_update_fun=ParallelUpdateFun,
 
                    rw_reads=RWReads,
                    rw_updates=RWUpdates,
@@ -204,79 +214,50 @@ perform_uniform_barrier(CoordState, CVC) ->
 %% Blue operations
 %%====================================================================
 
-%% todo(borja): Implement multi-key read
-perform_readonly_blue(S=#state{coord_state=CoordState, read_fun=ReadF}, Keys) ->
+perform_readonly_blue(S=#state{coord_state=CoordState, multi_read_fun=MultiReadF}, Keys) ->
     {ok, Tx} = maybe_start_with_clock(S),
-    Tx1 = lists:foldl(fun(K, AccTx) ->
-        {ok, _, NextTx} = ReadF(CoordState, AccTx, K),
-        NextTx
-    end, Tx, Keys),
+    {ok, _, Tx1} = MultiReadF(CoordState, Tx, Keys),
     grb_client:commit(CoordState, Tx1).
 
-%% todo(borja): Implement multi-key update
-perform_writeonly_blue(S=#state{coord_state=CoordState, update_fun=UpdateF}, Updates) ->
+perform_writeonly_blue(S=#state{coord_state=CoordState, multi_update_fun=MultiUpdateF}, Updates) ->
     {ok, Tx} = maybe_start_with_clock(S),
-    Tx1 = lists:foldl(fun({K, V}, AccTx) ->
-        {ok, _, NextTx} = UpdateF(CoordState, AccTx, K, V),
-        NextTx
-    end, Tx, Updates),
+    {ok, _, Tx1} = MultiUpdateF(CoordState, Tx, Updates),
     grb_client:commit(CoordState, Tx1).
 
-%% todo(borja): Implement multi-key read and update
-perform_read_write_blue(S=#state{coord_state=CoordState, read_fun=ReadF, update_fun=UpdateF}, Keys, Updates) ->
+perform_read_write_blue(S=#state{coord_state=CoordState, multi_read_fun=MultiReadF,
+                                 multi_update_fun=MultiUpdateF}, Keys, Updates) ->
+
     {ok, Tx} = maybe_start_with_clock(S),
-
-    Tx1 = lists:foldl(fun(K, AccTx) ->
-        {ok, _, NextTx} = ReadF(CoordState, AccTx, K),
-        NextTx
-    end, Tx, Keys),
-
-    Tx2 = lists:foldl(fun({K, V}, AccTx) ->
-        {ok, _, NextTx} = UpdateF(CoordState, AccTx, K, V),
-        NextTx
-    end, Tx1, Updates),
-
+    {ok, _, Tx1} = MultiReadF(CoordState, Tx, Keys),
+    {ok, _, Tx2} = MultiUpdateF(CoordState, Tx1, Updates),
     grb_client:commit(CoordState, Tx2).
 
 %%====================================================================
 %% Red operations
 %%====================================================================
 
-perform_readonly_red(S=#state{coord_state=CoordState, read_fun=ReadF}, Keys) ->
+perform_readonly_red(S=#state{coord_state=CoordState, multi_read_fun=MultiReadF}, Keys) ->
     {ok, Tx} = maybe_start_with_clock(S),
-    Tx1 = lists:foldl(fun(K, AccTx) ->
-        {ok, _, NextTx} = ReadF(CoordState, AccTx, K),
-        NextTx
-    end, Tx, Keys),
+    {ok, _, Tx1} = MultiReadF(CoordState, Tx, Keys),
     case grb_client:commit_red(CoordState, Tx1) of
         {abort, _}=Err -> maybe_retry_readonly(S, Keys, Err);
         Other -> Other
     end.
 
-perform_writeonly_red(S=#state{coord_state=CoordState, update_fun=UpdateF}, Updates) ->
+perform_writeonly_red(S=#state{coord_state=CoordState, multi_update_fun=MultiUpdateF}, Updates) ->
     {ok, Tx} = maybe_start_with_clock(S),
-    Tx1 = lists:foldl(fun({K, V}, AccTx) ->
-        {ok, _, NextTx} = UpdateF(CoordState, AccTx, K, V),
-        NextTx
-    end, Tx, Updates),
+    {ok, _, Tx1} = MultiUpdateF(CoordState, Tx, Updates),
     case grb_client:commit_red(CoordState, Tx1) of
         {abort, _}=Err -> maybe_retry_writeonly(S, Updates, Err);
         Other -> Other
     end.
 
-perform_read_write_red(S=#state{coord_state=CoordState, read_fun=ReadF, update_fun=UpdateF}, Keys, Updates) ->
+perform_read_write_red(S=#state{coord_state=CoordState, multi_read_fun=MultiReadF,
+                                multi_update_fun=MultiUpdateF}, Keys, Updates) ->
+
     {ok, Tx} = maybe_start_with_clock(S),
-
-    Tx1 = lists:foldl(fun(K, AccTx) ->
-        {ok, _, NextTx} = ReadF(CoordState, AccTx, K),
-        NextTx
-    end, Tx, Keys),
-
-    Tx2 = lists:foldl(fun({K, V}, AccTx) ->
-        {ok, _, NextTx} = UpdateF(CoordState, AccTx, K, V),
-        NextTx
-    end, Tx1, Updates),
-
+    {ok, _, Tx1} = MultiReadF(CoordState, Tx, Keys),
+    {ok, _, Tx2} = MultiUpdateF(CoordState, Tx1, Updates),
     case grb_client:commit_red(CoordState, Tx2) of
         {abort, _}=Err -> maybe_retry_read_write(S, Keys, Updates, Err);
         Other -> Other
@@ -292,7 +273,29 @@ read_method(Type) ->
 
 -spec update_method(atom()) -> fun().
 update_method(Type) ->
-    fun(C, T, K, V) -> grb_client:update_operation(C, T, K, Type, V) end.
+    fun(C, T, K, V) -> grb_client:update_operation(C, T, K, grb_crdt:make_op(Type, V)) end.
+
+-spec multi_read_method(atom(), boolean()) -> fun().
+multi_read_method(Type, true) ->
+    fun(C, T, KS) -> grb_client:read_key_snapshots(C, T, [{K, Type} || K <- KS]) end;
+multi_read_method(Type, false) ->
+    fun(C, T, KS) ->
+        lists:foldl(fun(K, {Vs, AccTx}) ->
+            {ok, V, Next} = grb_client:read_key_snapshot(C, AccTx, K, Type),
+            {Vs#{K => V}, Next}
+        end, {#{}, T}, KS)
+    end.
+
+-spec multiupdate_method(atom(), boolean()) -> fun().
+multiupdate_method(Type, true) ->
+    fun(C, T, KS) -> grb_client:update_operations(C, T, [{K, grb_crdt:make_op(Type, V)} || {K, V} <- KS]) end;
+multiupdate_method(Type, false) ->
+    fun(C, T, KS) ->
+        lists:foldl(fun({K, V}, {Vs, AccTx}) ->
+            {ok, V, Next} = grb_client:update_operation(C, AccTx, K, grb_crdt:make_op(Type, V)),
+            {Vs#{K => V}, Next}
+        end, {#{}, T}, KS)
+    end.
 
 -spec maybe_start_with_clock(#state{}) -> {ok, grb_client:tx()}.
 maybe_start_with_clock(S=#state{coord_state=CoordState, reuse_cvc=true, last_cvc=VC}) ->
