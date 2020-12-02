@@ -279,6 +279,10 @@ run(register_item, _, _, S0=#state{coord_state=Coord}) ->
     ItemKey = {Region, items, ItemId},
     InitialPrice = rand:uniform(100),
     Quantity = safe_uniform(hook_rubis:get_rubis_prop(item_max_quantity)),
+    Description = case safe_uniform(hook_rubis:get_rubis_prop(item_description_max_len)) of
+        N when N >= 1 -> random_binary(N);
+        _ -> <<>>
+    end,
     ReservePrice = case (rand:uniform(100) =< hook_rubis:get_rubis_prop(item_reserve_percentage)) of
         true -> InitialPrice + rand:uniform(10);
         false -> 0
@@ -289,6 +293,8 @@ run(register_item, _, _, S0=#state{coord_state=Coord}) ->
     end,
     Updates = [{
         %% Item Updates
+        {{Region, items, ItemId, name}, grb_crdt:make_op(grb_lww, ItemId)},
+        {{Region, items, ItemId, description}, grb_crdt:make_op(grb_lww, Description)},
         {{Region, items, ItemId, seller}, grb_crdt:make_op(grb_lww, {Region, users, Seller})},
         {{Region, items, ItemId, category}, grb_crdt:make_op(grb_lww, Category)},
         {{Region, items, ItemId, initial_price}, grb_crdt:make_op(grb_lww, InitialPrice)},
@@ -412,6 +418,10 @@ gen_new_itemid(S=#state{local_ip_str=IPStr, worker_id=Id, item_count=N}) ->
 -spec safe_uniform(pos_integer()) -> pos_integer().
 safe_uniform(0) -> 0;
 safe_uniform(X) when X >= 1 -> rand:uniform(X).
+
+-spec random_binary(Size :: non_neg_integer()) -> binary().
+random_binary(N) ->
+    list_to_binary(random_string(N)).
 
 -spec random_string(Size :: non_neg_integer()) -> string().
 random_string(N) ->
