@@ -269,7 +269,21 @@ run(put_comment, _, _, S0=#state{coord_state=Coord}) ->
     {ok, incr_tx_id(S1)};
 
 run(store_comment, _, _, S) -> {ok, S};
-run(select_category_to_sell_item, _, _, S) -> {ok, S};
+
+run(select_category_to_sell_item, _, _, S0=#state{coord_state=Coord}) ->
+    %% same as browse_categories, but with auth step
+    {UserRegion, Nickname} = random_user(S0),
+    {ok, Tx} = start_transaction(S0),
+    S1 = case try_auth(Coord, Tx, UserRegion, Nickname, Nickname) of
+        {error, _} ->
+            %% bail out, no need to clean up anything
+            S0;
+         {ok, Tx1} ->
+             {ok, _, Tx2} = grb_client:read_key_snapshot(Coord, Tx1, {?global_indices, all_categories}, grb_gset),
+             {ok, CVC} = grb_client:commit(Coord, Tx2),
+             S0#state{last_cvc=CVC}
+    end,
+    {ok, incr_tx_id(S1)};
 
 run(register_item, _, _, S0=#state{coord_state=Coord}) ->
     Category = random_category(),
