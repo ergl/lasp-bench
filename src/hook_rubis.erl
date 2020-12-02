@@ -18,21 +18,26 @@ start(Args) ->
 
     {ok, Terms} = file:consult(RubisPath),
     RubisPropsMap = proplists:get_value(rubis_config, Terms),
-    maps:fold(fun(Key, Value, _) ->
-        case Key of
-            regions ->
-                RT = list_to_tuple(Value),
-                ok = persistent_term:put({?MODULE, regions}, RT),
-                ok = persistent_term:put({?MODULE, regions_size}, erlang:size(RT));
-            categories ->
-                CT = list_to_tuple(Value),
-                ok = persistent_term:put({?MODULE, categories}, CT),
-                ok = persistent_term:put({?MODULE, categories_size}, erlang:size(CT));
-            _ ->
-                ok = persistent_term:put({?MODULE, Key}, Value)
-        end,
-        ok
-    end, ok, RubisPropsMap),
+
+    #{
+        regions := Regions,
+        categories := Categories,
+        user_total := TotalUsers
+    } = RubisPropsMap,
+
+    RegionsTuple = list_to_tuple(Regions),
+    NRegions = erlang:size(RegionsTuple),
+    CategoriesTuple = list_to_tuple(Categories),
+
+    ok = persistent_term:put({?MODULE, user_total}, TotalUsers),
+    ok = persistent_term:put({?MODULE, user_per_region}, TotalUsers div NRegions),
+    ok = persistent_term:put({?MODULE, regions}, {NRegions, RegionsTuple}),
+    ok = persistent_term:put({?MODULE, categories}, {erlang:size(CategoriesTuple), CategoriesTuple}),
+
+    [
+        ok = persistent_term:put({?MODULE, K}, V)
+        || {K, V} <- maps:to_list(maps:without([regions, categories, user_total], RubisPropsMap))
+    ],
 
     hook_grb:start(Args).
 
