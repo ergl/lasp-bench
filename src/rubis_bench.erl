@@ -142,7 +142,32 @@ run(view_item, _, _, S0=#state{coord_state=Coord}) ->
     {ok, CVC} = grb_client:commit(Coord, Tx1),
     {ok, incr_tx_id(S0#state{last_cvc=CVC})};
 
-run(view_user_info, _, _, S) -> {ok, S};
+run(view_user_info, _, _, S0=#state{coord_state=Coord}) ->
+    {Region, NickName} = random_user(S0),
+    CommentIndexKey = {Region, comments_to_user, {Region, users, NickName}},
+    UserKeys = [{
+        %% User object
+        {{Region, users, NickName, name}, grb_lww},
+        {{Region, users, NickName, lastname}, grb_lww},
+        {{Region, users, NickName, rating}, grb_gcounter},
+        %% Comments to this user
+        %% fixme(borja): limit?
+        {CommentIndexKey, grb_gset}
+    }],
+    {ok, Tx} = start_transaction(S0),
+    {ok, #{ CommentIndexKey := CommentIds }, Tx1} = grb_client:read_key_snapshots(Coord, Tx, UserKeys),
+    CommentKeys = maps:fold(fun({CommentRegion, comments, CommentId}, _, Acc) ->
+        [
+            {{CommentRegion, comments, CommentId, from}, grb_lww},
+            {{CommentRegion, comments, CommentId, rating}, grb_lww},
+            {{CommentRegion, comments, CommentId, text}, grb_lww}
+            | Acc
+        ]
+    end, [], CommentIds),
+    {ok, _, Tx2} = grb_client:read_key_snapshots(Coord, Tx1, CommentKeys),
+    {ok, CVC} = grb_client:commit(Coord, Tx2),
+    {ok, incr_tx_id(S0#state{last_cvc=CVC})};
+
 run(view_bid_history, _, _, S) -> {ok, S};
 run(buy_now, _, _, S) -> {ok, S};
 run(store_buy_now, _, _, S) -> {ok, S};
