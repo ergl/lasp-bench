@@ -127,7 +127,21 @@ run(search_items_in_region, _, _, S=#state{coord_state=Coord}) ->
     CVC = grb_client:commit(Coord, Tx1),
     {ok, incr_tx_id(S#state{last_cvc=CVC})};
 
-run(view_item, _, _, S) -> {ok, S};
+run(view_item, _, _, S0=#state{coord_state=Coord}) ->
+    {Region, ItemId} = random_item(S0),
+    {ok, Tx} = start_transaction(S0),
+    {ok, _, Tx1} = grb_client:read_key_snapshots(Coord, Tx, [{
+        {{Region, items, ItemId, seller}, grb_lww},
+        {{Region, items, ItemId, category}, grb_lww},
+        {{Region, items, ItemId, initial_price}, grb_lww},
+        {{Region, items, ItemId, quantity}, grb_lww},
+        {{Region, items, ItemId, reserve_price}, grb_lww},
+        {{Region, items, ItemId, buy_now}, grb_lww},
+        {{Region, items, ItemId, closed}, grb_lww}
+    }]),
+    {ok, CVC} = grb_client:commit(Coord, Tx1),
+    {ok, incr_tx_id(S0#state{last_cvc=CVC})};
+
 run(view_user_info, _, _, S) -> {ok, S};
 run(view_bid_history, _, _, S) -> {ok, S};
 run(buy_now, _, _, S) -> {ok, S};
@@ -212,6 +226,11 @@ random_category() ->
     {NCat, Cat} = hook_rubis:get_rubis_prop(categories),
     element(1, erlang:element(rand:uniform(NCat), Cat)).
 
+-spec random_category_items() -> {binary(), pos_integer()}.
+random_category_items() ->
+    {NCat, Cat} = hook_rubis:get_rubis_prop(categories),
+    erlang:element(rand:uniform(NCat), Cat).
+
 -spec random_user(state()) -> {Region :: binary(), Nickname :: binary()}.
 random_user(#state{last_generated_user={Region, NickName}}) ->
     {Region, NickName};
@@ -220,6 +239,17 @@ random_user(#state{last_generated_user=undefined}) ->
     Region = random_region(),
     Id = rand:uniform(hook_rubis:get_rubis_prop(user_per_region)),
     {Region, list_to_binary(io_lib:format("~s/user/preload_~b", [Region, Id]))}.
+
+random_item(#state{last_generated_item={Region, ItemId}}) ->
+    {Region, ItemId};
+
+random_item(#state{last_generated_item=undefined}) ->
+    {NReg, Reg} = hook_rubis:get_rubis_prop(regions),
+    {Category, ItemsInCat} = random_category_items(),
+    ItemIdNumeric = rand:uniform(ItemsInCat),
+    Region = erlang:element((ItemIdNumeric rem NReg), Reg),
+    ItemId = list_to_binary(io_lib:format("~s/items/preload_~b", [Category, ItemIdNumeric])),
+    {Region, ItemId}.
 
 -spec gen_new_nickname(state()) -> {binary(), state()}.
 gen_new_nickname(S=#state{local_ip_str=IPStr, worker_id=Id, user_count=N}) ->
