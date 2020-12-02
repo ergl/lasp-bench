@@ -207,8 +207,7 @@ run(buy_now, _, _, S0=#state{coord_state=Coord}) ->
     ItemKeys = [{
         {{ItemRegion, items, ItemId, name}, grb_lww},
         {{ItemRegion, items, ItemId, seller}, grb_lww},
-        {{ItemRegion, items, ItemId, buy_now}, grb_lww},
-        {{ItemRegion, items, ItemId, description}, grb_lww}
+        {{ItemRegion, items, ItemId, buy_now}, grb_lww}
     }],
     {ok, Tx} = start_transaction(S0),
     S1 = case try_auth(Coord, Tx, UserRegion, Nickname, Nickname) of
@@ -223,7 +222,29 @@ run(buy_now, _, _, S0=#state{coord_state=Coord}) ->
     {ok, incr_tx_id(S1)};
 
 run(store_buy_now, _, _, S) -> {ok, S};
-run(put_bid, _, _, S) -> {ok, S};
+
+run(put_bid, _, _, S0=#state{coord_state=Coord}) ->
+    {ItemRegion, ItemId} = random_item(S0),
+    {UserRegion, Nickname} = random_user(S0),
+    ItemKeys = [{
+        {{ItemRegion, items, ItemId, name}, grb_lww},
+        {{ItemRegion, items, ItemId, seller}, grb_lww},
+        {{ItemRegion, items, ItemId, max_bid}, grb_maxtuple},
+        {{ItemRegion, items, ItemId, bids_number}, grb_gcounter},
+        {{ItemRegion, items, ItemId, initial_price}, grb_lww}
+    }],
+    {ok, Tx} = start_transaction(S0),
+    S1 = case try_auth(Coord, Tx, UserRegion, Nickname, Nickname) of
+        {error, _} ->
+            %% bail out, no need to clean up anything
+            S0;
+         {ok, Tx1} ->
+             {ok, _, Tx2} = grb_client:read_key_snapshots(Coord, Tx1, ItemKeys),
+             {ok, CVC} = grb_client:commit(Coord, Tx2),
+             S0#state{last_cvc=CVC}
+    end,
+    {ok, incr_tx_id(S1)};
+
 run(store_bid, _, _, S) -> {ok, S};
 run(put_comment, _, _, S) -> {ok, S};
 run(store_comment, _, _, S) -> {ok, S};
