@@ -55,6 +55,7 @@ run(register_user, _, _, S0=#state{coord_state=Coord}) ->
     Region = random_region(),
     {Nickname, S1} = gen_new_nickname(S0),
     Updates = [{
+        {Nickname, grb_crdt:make_op(grb_lww, Nickname)},
         {{Region, users, Nickname}, grb_crdt:make_op(grb_lww, Nickname)},
         {{Region, users, Nickname, name}, grb_crdt:make_op(grb_lww, Nickname)},
         {{Region, users, Nickname, lastname}, grb_crdt:make_op(grb_lww, Nickname)},
