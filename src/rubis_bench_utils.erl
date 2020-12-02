@@ -28,6 +28,7 @@
 
 %% Util API
 -export([random_binary/1,
+         random_string/1,
          random_email/1,
          random_rating/0,
          random_boolean/0]).
@@ -61,6 +62,10 @@ random_user(#state{usernames = Usernames, usernames_len = Len}) ->
 -spec random_binary(Size :: non_neg_integer()) -> binary().
 random_binary(N) ->
     list_to_binary(random_string_(N)).
+
+-spec random_string(non_neg_integer()) -> list().
+random_string(N) ->
+    random_string_(N).
 
 -spec random_email(Size :: non_neg_integer()) -> binary().
 random_email(N) ->
