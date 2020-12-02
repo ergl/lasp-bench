@@ -221,7 +221,9 @@ run(buy_now, _, _, S0=#state{coord_state=Coord}) ->
     end,
     {ok, incr_tx_id(S1)};
 
-run(store_buy_now, _, _, S) -> {ok, S};
+run(store_buy_now, _, _, S) ->
+    %% fixme(borja): Implement
+    {ok, S};
 
 run(put_bid, _, _, S0=#state{coord_state=Coord}) ->
     {ItemRegion, ItemId} = random_item(S0),
@@ -245,7 +247,9 @@ run(put_bid, _, _, S0=#state{coord_state=Coord}) ->
     end,
     {ok, incr_tx_id(S1)};
 
-run(store_bid, _, _, S) -> {ok, S};
+run(store_bid, _, _, S) ->
+    %% fixme(borja): Implement
+    {ok, S};
 
 run(put_comment, _, _, S0=#state{coord_state=Coord}) ->
     {FromRegion, FromNickname} = random_user(S0),
@@ -267,7 +271,9 @@ run(put_comment, _, _, S0=#state{coord_state=Coord}) ->
     end,
     {ok, incr_tx_id(S1)};
 
-run(store_comment, _, _, S) -> {ok, S};
+run(store_comment, _, _, S) ->
+    %% fixme(borja): Implement
+    {ok, S};
 
 run(select_category_to_sell_item, _, _, S0=#state{coord_state=Coord}) ->
     %% same as browse_categories, but with auth step
@@ -327,7 +333,9 @@ run(register_item, _, _, S0=#state{coord_state=Coord}) ->
     {ok, CVC} = grb_client:commit(Coord, Tx2),
     {ok, incr_tx_id(S1#state{last_cvc=CVC, last_generated_item={Region, ItemId}})};
 
-run(about_me, _, _, S) -> {ok, S};
+run(about_me, _, _, S) ->
+    %% fixme(borja): Implement
+    {ok, S};
 
 run(get_auctions_ready_for_close, _, _, S=#state{coord_state=Coord}) ->
     Region = random_region(),
@@ -358,7 +366,9 @@ run(get_auctions_ready_for_close, _, _, S=#state{coord_state=Coord}) ->
     {ok, CVC} = grb_client:commit(Coord, Tx2),
     {ok, incr_tx_id(S#state{last_cvc=CVC})};
 
-run(close_auction, _, _, S) -> {ok, S}.
+run(close_auction, _, _, S) ->
+    %% fixme(borja): Implement
+    {ok, S}.
 
 terminate(_Reason, _State) ->
     hook_rubis:stop(),
