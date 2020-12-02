@@ -80,7 +80,6 @@ run(register_user, _, _, S0=#state{coord_state=Coord}) ->
             %% no need to abort at server, we didn't store anything there
             S1
     end,
-    %% todo(borja): Store this user nickname?
     {ok, incr_tx_id(S2)};
 
 run(browse_categories, _, _, S=#state{coord_state=Coord}) ->
