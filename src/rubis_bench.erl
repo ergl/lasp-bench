@@ -156,19 +156,51 @@ run(view_user_info, _, _, S0=#state{coord_state=Coord}) ->
     }],
     {ok, Tx} = start_transaction(S0),
     {ok, #{ CommentIndexKey := CommentIds }, Tx1} = grb_client:read_key_snapshots(Coord, Tx, UserKeys),
-    CommentKeys = maps:fold(fun({CommentRegion, comments, CommentId}, _, Acc) ->
-        [
-            {{CommentRegion, comments, CommentId, from}, grb_lww},
-            {{CommentRegion, comments, CommentId, rating}, grb_lww},
-            {{CommentRegion, comments, CommentId, text}, grb_lww}
-            | Acc
-        ]
-    end, [], CommentIds),
+    %% Comments written to this user are stored in the same region
+    CommentKeys = maps:fold(
+        fun({CommentRegion, comments, CommentId}, _, Acc)
+            when CommentRegion =:= Region ->
+                [
+                    {{CommentRegion, comments, CommentId, from}, grb_lww},
+                    {{CommentRegion, comments, CommentId, rating}, grb_lww},
+                    {{CommentRegion, comments, CommentId, text}, grb_lww}
+                    | Acc
+                ]
+        end,
+        [],
+        CommentIds
+    ),
     {ok, _, Tx2} = grb_client:read_key_snapshots(Coord, Tx1, CommentKeys),
     {ok, CVC} = grb_client:commit(Coord, Tx2),
     {ok, incr_tx_id(S0#state{last_cvc=CVC})};
 
-run(view_bid_history, _, _, S) -> {ok, S};
+run(view_bid_history, _, _, S0=#state{coord_state=Coord}) ->
+    {Region, ItemId} = random_item(S0),
+    BidIndexKey = {Region, bids_item, {Region, items, ItemId}},
+    Keys = [
+        {{Region, items, ItemId, name}, grb_lww},
+        %% bids for this item
+        %% fixme(borja): limit?
+        {BidIndexKey, grb_gset}
+    ],
+    {ok, Tx} = start_transaction(S0),
+    {ok, #{ BidIndexKey := BidIds }, Tx1} = grb_client:read_key_snapshots(Coord, Tx, Keys),
+    BidKeys = maps:fold(
+        fun({{BidRegion, bids, BidId}, _BidderKey}, _, Acc)
+            when BidRegion =:= Region->
+                [
+                    {{BidRegion, bids, BidId, amount}, grb_lww},
+                    {{BidRegion, bids, BidId, quantity}, grb_lww}
+                    | Acc
+                ]
+        end,
+        [],
+        BidIds
+    ),
+    {ok, _, Tx2} = grb_client:read_key_snapshots(Coord, Tx1, BidKeys),
+    {ok, CVC} = grb_client:commit(Coord, Tx2),
+    {ok, incr_tx_id(S0#state{last_cvc=CVC})};
+
 run(buy_now, _, _, S) -> {ok, S};
 run(store_buy_now, _, _, S) -> {ok, S};
 run(put_bid, _, _, S) -> {ok, S};
