@@ -247,7 +247,27 @@ run(put_bid, _, _, S0=#state{coord_state=Coord}) ->
     {ok, incr_tx_id(S1)};
 
 run(store_bid, _, _, S) -> {ok, S};
-run(put_comment, _, _, S) -> {ok, S};
+
+run(put_comment, _, _, S0=#state{coord_state=Coord}) ->
+    {FromRegion, FromNickname} = random_user(S0),
+    {_, ToNickname} = random_different_user(FromRegion, FromNickname, S0),
+    {ItemRegion, ItemId} = random_item(S0),
+    Keys = [{
+        {ToNickname, grb_lww},
+        {{ItemRegion, items, ItemId, name}, grb_lww}
+    }],
+    {ok, Tx} = start_transaction(S0),
+    S1 = case try_auth(Coord, Tx, FromRegion, FromNickname, FromNickname) of
+        {error, _} ->
+            %% bail out, no need to clean up anything
+            S0;
+         {ok, Tx1} ->
+             {ok, _, Tx2} = grb_client:read_key_snapshots(Coord, Tx1, Keys),
+             {ok, CVC} = grb_client:commit(Coord, Tx2),
+             S0#state{last_cvc=CVC}
+    end,
+    {ok, incr_tx_id(S1)};
+
 run(store_comment, _, _, S) -> {ok, S};
 run(select_category_to_sell_item, _, _, S) -> {ok, S};
 
@@ -353,6 +373,16 @@ random_user(#state{last_generated_user=undefined}) ->
     Region = random_region(),
     Id = rand:uniform(hook_rubis:get_rubis_prop(user_per_region)),
     {Region, list_to_binary(io_lib:format("~s/user/preload_~b", [Region, Id]))}.
+
+-spec random_different_user(binary(), binary(), state()) -> {Region :: binary(), Nickname :: binary()}.
+random_different_user(Region, Nickname, S) ->
+    case random_user(S) of
+        {Region, Nickname} ->
+            random_different_user(Region, Nickname, S);
+
+        Other ->
+            Other
+    end.
 
 random_item(#state{last_generated_item={Region, ItemId}}) ->
     {Region, ItemId};
