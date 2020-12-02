@@ -328,7 +328,36 @@ run(register_item, _, _, S0=#state{coord_state=Coord}) ->
     {ok, incr_tx_id(S1#state{last_cvc=CVC, last_generated_item={Region, ItemId}})};
 
 run(about_me, _, _, S) -> {ok, S};
-run(get_auctions_ready_for_close, _, _, S) -> {ok, S};
+
+run(get_auctions_ready_for_close, _, _, S=#state{coord_state=Coord}) ->
+    Region = random_region(),
+    Category = random_category(),
+    MaxBids = safe_uniform(hook_rubis:get_rubis_prop(item_max_bids)),
+    {ok, Tx} = start_transaction(S),
+    %% fixme(borja): This might return a huge number of items, limit up to page limit
+    {ok, ItemIds, Tx1} = grb_client:read_key_snapshot(Coord, Tx, {Region, items_region_category, Category}, grb_gset),
+    {_, Tx2} = maps:fold(
+        fun(ItemKey={ItemRegion, items, ItemId}, _, {Matching, TxAcc0})
+            when ItemRegion =:= Region ->
+                ClosedKey = {ItemRegion, items, ItemId, closed},
+                NBidsKey = {ItemRegion, items, ItemId, bids_number},
+
+                {ok, Results, TxAcc} = grb_client:read_key_snapshots(Coord, TxAcc0, [{ClosedKey, grb_lww}, {NBidsKey, grb_gcounter}]),
+                #{ ClosedKey := IsClosed, NBidsKey := NBids } = Results,
+                {ok, IsClosed, TxAcc} = grb_client:read_key_snapshot(Coord, TxAcc0, {ItemRegion, items, ItemId, closed}, grb_lww),
+                if
+                    (not IsClosed) andalso (NBids > MaxBids) ->
+                        {[ ItemKey | Matching ], TxAcc};
+                    true ->
+                        {Matching, TxAcc}
+                end
+        end,
+        {[], Tx1},
+        ItemIds
+    ),
+    {ok, CVC} = grb_client:commit(Coord, Tx2),
+    {ok, incr_tx_id(S#state{last_cvc=CVC})};
+
 run(close_auction, _, _, S) -> {ok, S}.
 
 terminate(_Reason, _State) ->
