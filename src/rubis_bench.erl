@@ -91,6 +91,7 @@ run(browse_categories, _, _, S=#state{coord_state=Coord}) ->
     {ok, incr_tx_id(S#state{last_cvc=CVC})};
 
 run(search_items_in_category, _, _, S=#state{coord_state=Coord}) ->
+    %% mostly the same as search_items_in_region
     {ok, Tx} = start_transaction(S),
     CVC = search_items_in_region_category(Coord, Tx, random_region(), random_category(), random_page_size()),
     {ok, incr_tx_id(S#state{last_cvc=CVC})};
@@ -135,16 +136,18 @@ run(view_user_info, _, _, S0=#state{coord_state=Coord}) ->
         %% User object
         {{Region, users, NickName, name}, grb_lww},
         {{Region, users, NickName, lastname}, grb_lww},
-        {{Region, users, NickName, rating}, grb_gcounter},
-        %% Comments to this user
-        %% fixme(borja): limit?
-        {CommentIndexKey, grb_gset}
+        {{Region, users, NickName, rating}, grb_gcounter}
     }],
     {ok, Tx} = start_transaction(S0),
-    {ok, #{ CommentIndexKey := CommentIds }, Tx1} = grb_client:read_key_snapshots(Coord, Tx, UserKeys),
+
+    %% Read up to limit from the list of comments to this user, and while it completes read the user object
+    {ok, Req} = grb_client:send_read_operation(Coord, Tx, CommentIndexKey, ?gset_limit_op(random_page_size())),
+    {ok, _, Tx1} = grb_client:read_key_snapshots(Coord, Tx, UserKeys),
+    {ok, CommentIds, Tx2} = grb_client:receive_read_operation(Coord, Tx1, CommentIndexKey, Req),
+
     %% Comments written to this user are stored in the same region
-    CommentKeys = maps:fold(
-        fun({CommentRegion, comments, CommentId}, _, Acc)
+    CommentKeys = lists:foldl(
+        fun({CommentRegion, comments, CommentId}, Acc)
             when CommentRegion =:= Region ->
                 [
                     {{CommentRegion, comments, CommentId, from}, grb_lww},
@@ -156,8 +159,8 @@ run(view_user_info, _, _, S0=#state{coord_state=Coord}) ->
         [],
         CommentIds
     ),
-    {ok, _, Tx2} = grb_client:read_key_snapshots(Coord, Tx1, CommentKeys),
-    {ok, CVC} = grb_client:commit(Coord, Tx2),
+    {ok, _, Tx3} = grb_client:read_key_snapshots(Coord, Tx2, CommentKeys),
+    {ok, CVC} = grb_client:commit(Coord, Tx3),
     {ok, incr_tx_id(S0#state{last_cvc=CVC})};
 
 run(view_bid_history, _, _, S0=#state{coord_state=Coord}) ->
