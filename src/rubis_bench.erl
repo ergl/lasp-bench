@@ -409,7 +409,7 @@ register_user_loop(S0=#state{coord_state=Coord, retry_until_commit=Retry}) ->
 
         _ ->
             %% todo(borja): What to do here? (user_taken)
-            {ok, incr_tx_id(S1)}
+            incr_tx_id(S1)
     end.
 
 -spec register_user(grb_client:coord(), grb_client:tx(), binary(), binary()) -> {ok, _} | {abort, _} | {error, user_taken}.
