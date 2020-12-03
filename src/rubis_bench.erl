@@ -53,36 +53,8 @@ new(WorkerId) ->
 
     {ok, State}.
 
-run(register_user, _, _, S0=#state{coord_state=Coord}) ->
-    Region = random_region(),
-    {Nickname, S1} = gen_new_nickname(S0),
-    Updates = [{
-        {Nickname, grb_crdt:make_op(grb_lww, Nickname)},
-        {{Region, users, Nickname}, grb_crdt:make_op(grb_lww, Nickname)},
-        {{Region, users, Nickname, name}, grb_crdt:make_op(grb_lww, Nickname)},
-        {{Region, users, Nickname, lastname}, grb_crdt:make_op(grb_lww, Nickname)},
-        {{Region, users, Nickname, password}, grb_crdt:make_op(grb_lww, Nickname)},
-        {{Region, users, Nickname, email}, grb_crdt:make_op(grb_lww, Nickname)},
-        {{Region, users, Nickname, rating}, grb_crdt:make_op(grb_gcounter, 0)}
-    }],
-    {ok, Tx} = start_transaction(S1),
-    {ok, Index, Tx1} = grb_client:read_key_snapshot(Coord, Tx, Nickname, grb_lww),
-    S2 = case Index of
-        <<>> ->
-            %% username not claimed, send our operations
-            {ok, Tx2} = grb_client:send_key_operations(Coord, Tx1, Updates),
-            case grb_client:commit_red(Coord, Tx2, ?register_user_label) of
-                {ok, CVC} ->
-                    S1#state{last_cvc=CVC, last_generated_user={Region, Nickname}};
-                {abort, _Reason} ->
-                    %% todo(borja): What to do?
-                    S1
-            end;
-        _ ->
-            %% no need to abort at server, we didn't store anything there
-            S1
-    end,
-    {ok, incr_tx_id(S2)};
+run(register_user, _, _, State) ->
+    {ok, register_user_loop(State)};
 
 run(browse_categories, _, _, S=#state{coord_state=Coord}) ->
     {ok, Tx} = start_transaction(S),
@@ -391,6 +363,45 @@ try_auth(Coord, Tx0, Region, NickName, Password) ->
             {ok, Tx1};
         true ->
             {error, Tx1}
+    end.
+
+-spec register_user_loop(state()) -> state().
+register_user_loop(S0=#state{coord_state=Coord, retry_until_commit=Retry}) ->
+    Region = random_region(),
+    {NickName, S1} = gen_new_nickname(S0),
+    {ok, Tx} = start_transaction(S1),
+    case register_user(Coord, Tx, Region, NickName) of
+        {abort, _} when Retry =:= true ->
+            register_user_loop(incr_tx_id(S1));
+
+        {ok, CVC} ->
+            incr_tx_id(S1#state{last_cvc=CVC, last_generated_user={Region, NickName}});
+
+        _ ->
+            %% todo(borja): What to do here? (user_taken)
+            {ok, incr_tx_id(S1)}
+    end.
+
+-spec register_user(grb_client:coord(), grb_client:tx(), binary(), binary()) -> {ok, _} | {abort, _} | {error, user_taken}.
+register_user(Coord, Tx, Region, Nickname) ->
+    Updates = [{
+        {Nickname, grb_crdt:make_op(grb_lww, Nickname)},
+        {{Region, users, Nickname}, grb_crdt:make_op(grb_lww, Nickname)},
+        {{Region, users, Nickname, name}, grb_crdt:make_op(grb_lww, Nickname)},
+        {{Region, users, Nickname, lastname}, grb_crdt:make_op(grb_lww, Nickname)},
+        {{Region, users, Nickname, password}, grb_crdt:make_op(grb_lww, Nickname)},
+        {{Region, users, Nickname, email}, grb_crdt:make_op(grb_lww, Nickname)},
+        {{Region, users, Nickname, rating}, grb_crdt:make_op(grb_gcounter, 0)}
+    }],
+    {ok, Index, Tx1} = grb_client:read_key_snapshot(Coord, Tx, Nickname, grb_lww),
+    case Index of
+        <<>> ->
+            %% username not claimed, send our operations
+            {ok, Tx2} = grb_client:send_key_operations(Coord, Tx1, Updates),
+            grb_client:commit_red(Coord, Tx2, ?register_user_label);
+        _ ->
+            %% let the caller choose what to do
+            {error, user_taken}
     end.
 
 %% Get all non-closed items (up to page size) belonging to a category, and with sellers in region, up to `Limit`
