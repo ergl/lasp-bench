@@ -30,6 +30,8 @@
     item_count = 1 :: pos_integer(),
     comment_count = 1 :: pos_integer(),
     buy_now_count = 1 :: pos_integer(),
+    bid_count = 1 :: pos_integer(),
+    win_count = 1 :: pos_integer(),
 
     last_generated_user = undefined :: {Region :: binary(), Name :: binary()} | undefined,
     last_generated_item = undefined :: {Region :: binary(), Id :: binary()} | undefined
@@ -579,6 +581,20 @@ gen_new_buynow_id(S=#state{local_ip_str=IPStr, worker_id=Id, buy_now_count=N}) -
     {
         list_to_binary(IPStr ++ integer_to_list(Id) ++ integer_to_list(N)),
         S#state{buy_now_count=N+1}
+    }.
+
+-spec gen_new_bid_id(state()) -> {binary(), state()}.
+gen_new_bid_id(S=#state{local_ip_str=IPStr, worker_id=Id, bid_count=N}) ->
+    {
+        list_to_binary(IPStr ++ integer_to_list(Id) ++ integer_to_list(N)),
+        S#state{bid_count=N+1}
+    }.
+
+-spec gen_new_win_id(state()) -> {binary(), state()}.
+gen_new_win_id(S=#state{local_ip_str=IPStr, worker_id=Id, win_count=N}) ->
+    {
+        list_to_binary(IPStr ++ integer_to_list(Id) ++ integer_to_list(N)),
+        S#state{win_count=N+1}
     }.
 
 -spec random_page_size() -> non_neg_integer().
