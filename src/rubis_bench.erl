@@ -165,17 +165,14 @@ run(view_user_info, _, _, S0=#state{coord_state=Coord}) ->
 
 run(view_bid_history, _, _, S0=#state{coord_state=Coord}) ->
     {Region, ItemId} = random_item(S0),
+    ItemNameKey = {Region, items, ItemId, name},
     BidIndexKey = {Region, bids_item, {Region, items, ItemId}},
-    Keys = [
-        {{Region, items, ItemId, name}, grb_lww},
-        %% bids for this item
-        %% fixme(borja): limit?
-        {BidIndexKey, grb_gset}
-    ],
     {ok, Tx} = start_transaction(S0),
-    {ok, #{ BidIndexKey := BidIds }, Tx1} = grb_client:read_key_snapshots(Coord, Tx, Keys),
-    BidKeys = maps:fold(
-        fun({{BidRegion, bids, BidId}, _BidderKey}, _, Acc)
+    {ok, Req} = grb_client:send_read_operation(Coord, Tx, BidIndexKey, ?gset_limit_op(random_page_size())),
+    {ok, _, Tx1} = grb_client:read_key_snapshot(Coord, Tx, ItemNameKey, grb_lww),
+    {ok, BidIds, Tx2} = grb_client:receive_read_operation(Coord, Tx1, BidIndexKey, Req),
+    BidKeys = lists:foldl(
+        fun({{BidRegion, bids, BidId}, _BidderKey}, Acc)
             when BidRegion =:= Region->
                 [
                     {{BidRegion, bids, BidId, amount}, grb_lww},
@@ -186,8 +183,8 @@ run(view_bid_history, _, _, S0=#state{coord_state=Coord}) ->
         [],
         BidIds
     ),
-    {ok, _, Tx2} = grb_client:read_key_snapshots(Coord, Tx1, BidKeys),
-    {ok, CVC} = grb_client:commit(Coord, Tx2),
+    {ok, _, Tx3} = grb_client:read_key_snapshots(Coord, Tx2, BidKeys),
+    {ok, CVC} = grb_client:commit(Coord, Tx3),
     {ok, incr_tx_id(S0#state{last_cvc=CVC})};
 
 run(buy_now, _, _, S0=#state{coord_state=Coord}) ->
