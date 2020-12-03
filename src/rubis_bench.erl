@@ -28,6 +28,7 @@
     %% Benchmark state
     user_count = 1 :: pos_integer(),
     item_count = 1 :: pos_integer(),
+    comment_count = 1 :: pos_integer(),
 
     last_generated_user = undefined :: {Region :: binary(), Name :: binary()} | undefined,
     last_generated_item = undefined :: {Region :: binary(), Id :: binary()} | undefined
@@ -229,9 +230,38 @@ run(put_comment, _, _, S0=#state{coord_state=Coord}) ->
     end,
     {ok, incr_tx_id(S1)};
 
-run(store_comment, _, _, S) ->
-    %% fixme(borja): Implement
-    {ok, S};
+run(store_comment, _, _, S0=#state{coord_state=Coord}) ->
+    {FromRegion, FromNickname} = random_user(S0),
+    {ToRegion, ToNickname} = random_different_user(FromRegion, FromNickname, S0),
+    {ItemRegion, ItemId} = random_item(S0),
+
+    SenderKey = {FromRegion, users, FromNickname},
+    RecipientKey = {ToRegion, users, ToNickname},
+    ItemKey = {ItemRegion, items, ItemId},
+
+    {CommentId, S1} = gen_new_commentid(S0),
+    CommentKey = {ToRegion, comments, CommentId},
+    Rating = random_rating(),
+    CommentText = random_binary(safe_uniform(hook_rubis:get_rubis_prop(comment_max_len))),
+
+    Updates = [{
+        %% Comment Object
+        { {ToRegion, comments, CommentId, from}, grb_crdt:make_op(grb_lww, SenderKey)},
+        { {ToRegion, comments, CommentId, to}, grb_crdt:make_op(grb_lww, RecipientKey)},
+        { {ToRegion, comments, CommentId, on_item}, grb_crdt:make_op(grb_lww, ItemKey)},
+        { {ToRegion, comments, CommentId, rating}, grb_crdt:make_op(grb_lww, Rating)},
+        { {ToRegion, comments, CommentId, text}, grb_crdt:make_op(grb_lww, CommentText)},
+        %% Append to COMMENTS_to_user index
+        { {ToRegion, comments_to_user, RecipientKey}, grb_crdt:make_op(grb_gset, CommentKey)},
+        %% Update recipient rating
+        { {ToRegion, users, ToNickname, rating}, grb_crdt:make_op(grb_gcounter, Rating)}
+    }],
+    {ok, Tx} = start_transaction(S1),
+    %% Claim the item key, read/write so we don't do any blind updates, should get back the same value
+    {ok, CommentKey, Tx1} = grb_client:update_operation(Coord, Tx, CommentKey, grb_crdt:make_op(grb_lww, CommentKey)),
+    {ok, Tx2} = grb_client:send_key_operations(Coord, Tx1, Updates),
+    {ok, CVC} = grb_client:commit(Coord, Tx2),
+    {ok, incr_tx_id(S1#state{last_cvc=CVC})};
 
 run(select_category_to_sell_item, _, _, S0=#state{coord_state=Coord}) ->
     %% same as browse_categories, but with auth step
@@ -491,6 +521,13 @@ gen_new_itemid(S=#state{local_ip_str=IPStr, worker_id=Id, item_count=N}) ->
         S#state{item_count=N+1}
     }.
 
+-spec gen_new_commentid(state()) -> {binary(), state()}.
+gen_new_commentid(S=#state{local_ip_str=IPStr, worker_id=Id, comment_count=N}) ->
+    {
+        list_to_binary(IPStr ++ integer_to_list(Id) ++ integer_to_list(N)),
+        S#state{item_count=N+1}
+    }.
+
 -spec random_page_size() -> non_neg_integer().
 random_page_size() ->
     safe_uniform(hook_rubis:get_rubis_prop(result_page_size)).
@@ -500,8 +537,15 @@ safe_uniform(0) -> 0;
 safe_uniform(X) when X >= 1 -> rand:uniform(X).
 
 -spec random_binary(Size :: non_neg_integer()) -> binary().
+random_binary(0) ->
+    <<>>;
 random_binary(N) ->
     list_to_binary(random_string(N)).
+
+-spec random_rating() -> non_neg_integer().
+random_rating() ->
+    %% range: -5 to 5
+    rand:uniform(11) - 6.
 
 -spec random_string(Size :: non_neg_integer()) -> string().
 random_string(N) ->
