@@ -15,6 +15,8 @@
 -define(place_bid_label, <<"rubis/placeBid">>).
 -define(close_auction_label, <<"rubis/closeAuction">>).
 
+-define(gset_limit_op(__S), grb_crdt:wrap_op(grb_gset, grb_gset:limit_op(__S))).
+
 -record(state, {
     worker_id :: non_neg_integer(),
     local_ip_str :: list(),
@@ -89,19 +91,8 @@ run(browse_categories, _, _, S=#state{coord_state=Coord}) ->
     {ok, incr_tx_id(S#state{last_cvc=CVC})};
 
 run(search_items_in_category, _, _, S=#state{coord_state=Coord}) ->
-    Category = random_category(),
-    %% todo(borja): Figure out a way to work in page size
     {ok, Tx} = start_transaction(S),
-    {ok, Regions, Tx1} = grb_client:read_key_snapshot(Coord, Tx, {?global_indices, all_regions}, grb_gset),
-
-    IndexKeys = maps:fold(fun(Region, _, Acc) ->
-        [ { {Region, items_region_in_category, Category}, grb_gset } | Acc]
-    end, [], Regions),
-
-    %% fixme(borja): This might return a huge number of items
-    %% todo(borja): Fetch items, filter on open auction
-    {ok, _, Tx2} = grb_client:read_key_snapshots(Coord, Tx1, IndexKeys),
-    CVC = grb_client:commit(Coord, Tx2),
+    CVC = search_items_in_region_category(Coord, Tx, random_region(), random_category(), random_page_size()),
     {ok, incr_tx_id(S#state{last_cvc=CVC})};
 
 run(browse_regions, _, _, S=#state{coord_state=Coord}) ->
@@ -118,13 +109,8 @@ run(browse_categories_in_region, _, _, S=#state{coord_state=Coord}) ->
     {ok, incr_tx_id(S#state{last_cvc=CVC})};
 
 run(search_items_in_region, _, _, S=#state{coord_state=Coord}) ->
-    Region = random_region(),
-    Category = random_category(),
     {ok, Tx} = start_transaction(S),
-    %% fixme(borja): This might return a huge number of items
-    %% todo(borja): Fetch items, filter on open auction
-    {ok, _, Tx1} = grb_client:read_key_snapshot(Coord, Tx, {Region, items_region_category, Category}, grb_gset),
-    CVC = grb_client:commit(Coord, Tx1),
+    CVC = search_items_in_region_category(Coord, Tx, random_region(), random_category(), random_page_size()),
     {ok, incr_tx_id(S#state{last_cvc=CVC})};
 
 run(view_item, _, _, S0=#state{coord_state=Coord}) ->
@@ -404,6 +390,30 @@ try_auth(Coord, Tx0, Region, NickName, Password) ->
             {error, Tx1}
     end.
 
+%% Get all non-closed items (up to page size) belonging to a category, and with sellers in region, up to `Limit`
+-spec search_items_in_region_category(grb_client:coord(), grb_client:tx(), binary(), binary(), pos_integer()) -> grb_client:rvc().
+search_items_in_region_category(Coord, Tx, Region, Category, Limit) ->
+    {ok, ItemIds, Tx1} = grb_client:read_key_operation(Coord, Tx,
+                                                       {Region, items_region_in_category, Category},
+                                                       ?gset_limit_op(Limit)),
+    %% Now check how many of those are still open
+    ItemKeyTypes = [ { {ItemRegion, items, ItemId, closed}, grb_lww} || {ItemRegion, items, ItemId} <- ItemIds ],
+    {ok, Items, Tx2} = grb_client:read_key_snapshots(Coord, Tx1, ItemKeyTypes),
+    %% For those that are open, read some information
+    OpenKeyTypes = maps:fold(fun
+        (_, true, Acc) -> Acc;
+        ({R, T, Id}, false, Acc) ->
+            [
+                { {R, T, Id, name}, grb_lww},
+                { {R, T, Id, max_id}, grb_maxtuple},
+                { {R, T, Id, bids_number}, grb_gcounter},
+                { {R, T, Id, initial_price}, grb_lww}
+                | Acc
+            ]
+    end, [], Items),
+    {ok, _, Tx3} = grb_client:read_key_snapshots(Coord, Tx2, OpenKeyTypes),
+    grb_client:commit(Coord, Tx3).
+
 %%%===================================================================
 %%% Random Utils
 %%%===================================================================
@@ -466,6 +476,10 @@ gen_new_itemid(S=#state{local_ip_str=IPStr, worker_id=Id, item_count=N}) ->
         list_to_binary(IPStr ++ integer_to_list(Id) ++ integer_to_list(N)),
         S#state{item_count=N+1}
     }.
+
+-spec random_page_size() -> non_neg_integer().
+random_page_size() ->
+    safe_uniform(hook_rubis:get_rubis_prop(result_page_size)).
 
 -spec safe_uniform(pos_integer()) -> pos_integer().
 safe_uniform(0) -> 0;
