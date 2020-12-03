@@ -29,6 +29,7 @@
     user_count = 1 :: pos_integer(),
     item_count = 1 :: pos_integer(),
     comment_count = 1 :: pos_integer(),
+    buy_now_count = 1 :: pos_integer(),
 
     last_generated_user = undefined :: {Region :: binary(), Name :: binary()} | undefined,
     last_generated_item = undefined :: {Region :: binary(), Id :: binary()} | undefined
@@ -181,8 +182,7 @@ run(buy_now, _, _, S0=#state{coord_state=Coord}) ->
     {ok, incr_tx_id(S1)};
 
 run(store_buy_now, _, _, S) ->
-    %% fixme(borja): Implement
-    {ok, S};
+    {ok, store_buy_now_loop(S)};
 
 run(put_bid, _, _, S0=#state{coord_state=Coord}) ->
     {ItemRegion, ItemId} = random_item(S0),
@@ -239,7 +239,7 @@ run(store_comment, _, _, S0=#state{coord_state=Coord}) ->
     RecipientKey = {ToRegion, users, ToNickname},
     ItemKey = {ItemRegion, items, ItemId},
 
-    {CommentId, S1} = gen_new_commentid(S0),
+    {CommentId, S1} = gen_new_comment_id(S0),
     CommentKey = {ToRegion, comments, CommentId},
     Rating = random_rating(),
     CommentText = random_binary(safe_uniform(hook_rubis:get_rubis_prop(comment_max_len))),
@@ -282,7 +282,7 @@ run(register_item, _, _, S0=#state{coord_state=Coord}) ->
     Category = random_category(),
     {Region, SellerNickname} = random_user(S0),
     Seller = {Region, users, SellerNickname},
-    {ItemId, S1} = gen_new_itemid(S0),
+    {ItemId, S1} = gen_new_item_id(S0),
     ItemKey = {Region, items, ItemId},
     InitialPrice = rand:uniform(100),
     Quantity = safe_uniform(hook_rubis:get_rubis_prop(item_max_quantity)),
@@ -436,6 +436,50 @@ register_user(Coord, Tx, Region, Nickname) ->
             {error, user_taken}
     end.
 
+-spec store_buy_now_loop(state()) -> state().
+store_buy_now_loop(S0=#state{coord_state=Coord, retry_until_commit=Retry}) ->
+    {ItemRegion, ItemId} = random_item(S0),
+    {UserRegion, NickName} = random_user(S0),
+    Qty = safe_uniform(hook_rubis:get_rubis_prop(item_max_quantity)),
+    {BuyNowId, S1} = gen_new_buynow_id(S0),
+    {ok, Tx} = start_transaction(S1),
+    case store_buy_now(Coord, Tx, {ItemRegion, items, ItemId}, {UserRegion, users, NickName}, BuyNowId, Qty) of
+        {abort, _} when Retry =:= true ->
+            store_buy_now_loop(incr_tx_id(S1));
+        {ok, CVC} ->
+            incr_tx_id(S1#state{last_cvc=CVC});
+        _ ->
+            %% todo(borja): What to do here? (bad_quantity)
+            incr_tx_id(S1)
+    end.
+
+-spec store_buy_now(grb_client:coord(), grb_client:tx(), _, _, binary(), non_neg_integer()) -> {ok, _} | {abort, _} | {error, bad_quantity}.
+store_buy_now(Coord, Tx, ItemKey={ItemRegion, items, ItemId}, UserKey={UserRegion, _, _}, BuyNowId, Quantity) ->
+    ItemQtyKey = {ItemRegion, items, ItemId, quantity},
+    {ok, ItemQty, Tx1} = grb_client:read_key_snapshot(Coord, Tx, ItemQtyKey, grb_lww),
+    if
+        (not is_integer(ItemQty)) orelse Quantity > ItemQty ->
+            {error, bad_quantity};
+
+        true ->
+            NewQty = ItemQty - Quantity,
+            %% we already read from the item, so we can blind-update the quantity
+            %% we can't do that at the user region, but we also don't want to read from the buy_now index (huge)
+            %% we read from the user table so we only read a tiny amount of data (nickname)
+            {ok, NickReq} = grb_client:send_read_key(Coord, Tx1, UserKey, grb_lww),
+            %% While the previous request is in flight, send our updates
+            {ok, Tx2} = grb_client:send_key_operations(Coord, Tx1, [
+                { {UserRegion, buy_nows, BuyNowId, on_item}, grb_crdt:make_op(grb_lww, ItemKey) },
+                { {UserRegion, buy_nows, BuyNowId, buyer}, grb_crdt:make_op(grb_lww, UserKey) },
+                { {UserRegion, buy_nows, BuyNowId, quantity}, grb_crdt:make_op(grb_lww, Quantity) },
+                { {UserRegion, buy_nows_buyer, UserKey}, grb_crdt:make_op(grb_gset, {UserRegion, buy_nows, BuyNowId}) },
+                { ItemQtyKey, grb_crdt:make_op(grb_lww, NewQty) }
+            ]),
+            %% now receive it, but ignore the data
+            {ok, _, Tx3} = grb_client:receive_read_key(Coord, Tx2, UserKey, NickReq),
+            grb_client:commit_red(Coord, Tx3, ?store_buy_now_label)
+    end.
+
 %% Get all non-closed items (up to page size) belonging to a category, and with sellers in region, up to `Limit`
 -spec search_items_in_region_category(grb_client:coord(), grb_client:tx(), binary(), binary(), pos_integer()) -> grb_client:rvc().
 search_items_in_region_category(Coord, Tx, Region, Category, Limit) ->
@@ -516,18 +560,25 @@ gen_new_nickname(S=#state{local_ip_str=IPStr, worker_id=Id, user_count=N}) ->
         S#state{user_count=N+1}
     }.
 
--spec gen_new_itemid(state()) -> {binary(), state()}.
-gen_new_itemid(S=#state{local_ip_str=IPStr, worker_id=Id, item_count=N}) ->
+-spec gen_new_item_id(state()) -> {binary(), state()}.
+gen_new_item_id(S=#state{local_ip_str=IPStr, worker_id=Id, item_count=N}) ->
     {
         list_to_binary(IPStr ++ integer_to_list(Id) ++ integer_to_list(N)),
         S#state{item_count=N+1}
     }.
 
--spec gen_new_commentid(state()) -> {binary(), state()}.
-gen_new_commentid(S=#state{local_ip_str=IPStr, worker_id=Id, comment_count=N}) ->
+-spec gen_new_comment_id(state()) -> {binary(), state()}.
+gen_new_comment_id(S=#state{local_ip_str=IPStr, worker_id=Id, comment_count=N}) ->
     {
         list_to_binary(IPStr ++ integer_to_list(Id) ++ integer_to_list(N)),
-        S#state{item_count=N+1}
+        S#state{comment_count=N+1}
+    }.
+
+-spec gen_new_buynow_id(state()) -> {binary(), state()}.
+gen_new_buynow_id(S=#state{local_ip_str=IPStr, worker_id=Id, buy_now_count=N}) ->
+    {
+        list_to_binary(IPStr ++ integer_to_list(Id) ++ integer_to_list(N)),
+        S#state{buy_now_count=N+1}
     }.
 
 -spec random_page_size() -> non_neg_integer().
