@@ -416,7 +416,6 @@ register_user_loop(S0=#state{coord_state=Coord, retry_until_commit=Retry}) ->
 register_user(Coord, Tx, Region, Nickname) ->
     Updates = [{
         {Nickname, grb_crdt:make_op(grb_lww, Nickname)},
-        {{Region, users, Nickname}, grb_crdt:make_op(grb_lww, Nickname)},
         {{Region, users, Nickname, name}, grb_crdt:make_op(grb_lww, Nickname)},
         {{Region, users, Nickname, lastname}, grb_crdt:make_op(grb_lww, Nickname)},
         {{Region, users, Nickname, password}, grb_crdt:make_op(grb_lww, Nickname)},
@@ -426,9 +425,12 @@ register_user(Coord, Tx, Region, Nickname) ->
     {ok, Index, Tx1} = grb_client:read_key_snapshot(Coord, Tx, Nickname, grb_lww),
     case Index of
         <<>> ->
-            %% username not claimed, send our operations
+            UserKey = {Region, users, Nickname},
+            %% username not claimed, send our operations. Pay the price of reading once (no blind writes to Region)
+            {ok, Req} = grb_client:send_key_update(Coord, Tx1, UserKey, grb_crdt:make_op(grb_lww, Nickname)),
             {ok, Tx2} = grb_client:send_key_operations(Coord, Tx1, Updates),
-            grb_client:commit_red(Coord, Tx2, ?register_user_label);
+            {ok, Nickname, Tx3} = grb_client:receive_key_update(Coord, Tx2, UserKey, Req),
+            grb_client:commit_red(Coord, Tx3, ?register_user_label);
         _ ->
             %% let the caller choose what to do
             {error, user_taken}
