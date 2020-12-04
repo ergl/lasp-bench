@@ -31,7 +31,6 @@
     comment_count = 1 :: pos_integer(),
     buy_now_count = 1 :: pos_integer(),
     bid_count = 1 :: pos_integer(),
-    win_count = 1 :: pos_integer(),
 
     last_generated_user = undefined :: {Region :: binary(), Name :: binary()} | undefined,
     last_generated_item = undefined :: {Region :: binary(), Id :: binary()} | undefined
@@ -434,8 +433,7 @@ run(get_auctions_ready_for_close, _, _, S=#state{coord_state=Coord}) ->
     {ok, incr_tx_id(S#state{last_cvc=CVC})};
 
 run(close_auction, _, _, S) ->
-    %% fixme(borja): Implement
-    {ok, S}.
+    {ok, close_auction_loop(S)}.
 
 terminate(_Reason, _State) ->
     hook_rubis:stop(),
@@ -620,6 +618,49 @@ store_bid(Coord, Tx, ItemKey={ItemRegion, items, ItemId}, UserKey={UserRegion, _
             grb_client:commit_red(Coord, Tx3, ?place_bid_label)
     end.
 
+-spec close_auction_loop(state()) -> state().
+close_auction_loop(State=#state{coord_state=Coord, retry_until_commit=Retry}) ->
+    {ItemRegion, Itemid} = random_item(State),
+    {ok, Tx} = start_transaction(State),
+    case close_auction(Coord, Tx, {ItemRegion, items, Itemid}) of
+        {abort, _} when Retry =:= true ->
+            close_auction_loop(incr_tx_id(State));
+        {ok, CVC} ->
+            incr_tx_id(State#state{last_cvc=CVC});
+        _ ->
+            %% todo(borja): What to do here? (closed | no_bids)
+            incr_tx_id(State)
+    end.
+
+-spec close_auction(grb_client:coord(), grb_client:tx(), {binary(), atom(), binary()}) -> {ok, _} | {abort, _} | {error, atom()}.
+close_auction(Coord, Tx, ItemKey={ItemRegion, _, ItemId}) ->
+    ItemSellerKey = {ItemRegion, items, ItemId, seller},
+    ItemClosedKey = {ItemRegion, items, ItemId, closed},
+    ItemMaxBidKey = {ItemRegion, items, ItemId, max_bid},
+    {ok, Data0, Tx1} = grb_client:read_key_snapshots(Coord, Tx, [{ItemSellerKey, grb_lww}, {ItemClosedKey, grb_lww}, {ItemMaxBidKey, grb_maxtuple}]),
+    #{ ItemClosedKey := IsClosed, ItemMaxBidKey := {MaxBidAmount, MaxBidPayload}, ItemSellerKey := ItemSeller } = Data0,
+    if
+        IsClosed ->
+            {error, closed};
+
+        is_binary(MaxBidPayload) ->
+            {error, no_bids};
+
+        true ->
+            {MaxBidKey, {BidderRegion, _, _}=BidderKey} = MaxBidPayload,
+
+            %% Read from user partition to prevent blind update
+            {ok, Req} = grb_client:send_read_key(Coord, Tx1, BidderKey, grb_lww),
+            {ok, Tx2} = grb_client:send_key_operations(Coord, Tx1, [
+                %% Close auction
+                {ItemClosedKey, grb_crdt:make_op(grb_lww, false)},
+                %% Append to user index
+                {{BidderRegion, wins_user, BidderKey}, grb_crdt:make_op(grb_gset, {ItemKey, ItemSeller, MaxBidKey, MaxBidAmount})}
+            ]),
+            {ok, _, Tx3} = grb_client:receive_read_key(Coord, Tx2, BidderKey, Req),
+            grb_client:commit_red(Coord, Tx3, ?close_auction_label)
+    end.
+
 %% Get all non-closed items (up to page size) belonging to a category, and with sellers in region, up to `Limit`
 -spec search_items_in_region_category(grb_client:coord(), grb_client:tx(), binary(), binary(), pos_integer()) -> grb_client:rvc().
 search_items_in_region_category(Coord, Tx, Region, Category, Limit) ->
@@ -726,13 +767,6 @@ gen_new_bid_id(S=#state{local_ip_str=IPStr, worker_id=Id, bid_count=N}) ->
     {
         list_to_binary(IPStr ++ integer_to_list(Id) ++ integer_to_list(N)),
         S#state{bid_count=N+1}
-    }.
-
--spec gen_new_win_id(state()) -> {binary(), state()}.
-gen_new_win_id(S=#state{local_ip_str=IPStr, worker_id=Id, win_count=N}) ->
-    {
-        list_to_binary(IPStr ++ integer_to_list(Id) ++ integer_to_list(N)),
-        S#state{win_count=N+1}
     }.
 
 -spec random_page_size() -> non_neg_integer().
