@@ -469,11 +469,13 @@ store_buy_now(Coord, Tx, ItemKey={ItemRegion, items, ItemId}, UserKey={UserRegio
             %% we read from the user table so we only read a tiny amount of data (nickname)
             {ok, NickReq} = grb_client:send_read_key(Coord, Tx1, UserKey, grb_lww),
             %% While the previous request is in flight, send our updates
+            BuyNowKey = {UserRegion, buy_nows, BuyNowId},
             {ok, Tx2} = grb_client:send_key_operations(Coord, Tx1, [
                 { {UserRegion, buy_nows, BuyNowId, on_item}, grb_crdt:make_op(grb_lww, ItemKey) },
                 { {UserRegion, buy_nows, BuyNowId, buyer}, grb_crdt:make_op(grb_lww, UserKey) },
                 { {UserRegion, buy_nows, BuyNowId, quantity}, grb_crdt:make_op(grb_lww, Quantity) },
-                { {UserRegion, buy_nows_buyer, UserKey}, grb_crdt:make_op(grb_gset, {UserRegion, buy_nows, BuyNowId}) },
+                %% Update BUY_NOWS_buyer index. Store the item key too, so we don't perform extra roundtrips
+                { {UserRegion, buy_nows_buyer, UserKey}, grb_crdt:make_op(grb_gset, {UserRegion, buy_nows, {BuyNowKey, ItemKey}}) },
                 { ItemQtyKey, grb_crdt:make_op(grb_lww, NewQty) }
             ]),
             %% now receive it, but ignore the data
