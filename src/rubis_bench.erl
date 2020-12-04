@@ -348,6 +348,7 @@ run(about_me, _, _, S0=#state{coord_state=Coord}) ->
 
             UserKey = {UserRegion, users, Nickname},
             SoldItemsIdxKey = {UserRegion, items_seller, UserKey},
+            WonItemsIdxKey = {UserRegion, wins_user, UserKey},
             BuyNowsIdxKey = {UserRegion, buy_nows_buyer, UserKey},
             CommentIdxKey = {UserRegion, comments_to_user, UserKey},
             IndexReadOps = [
@@ -355,7 +356,8 @@ run(about_me, _, _, S0=#state{coord_state=Coord}) ->
                 { {UserRegion, bids_user, UserKey}, ?gset_limit_op(PageSize) },
                 %% Read items sold by this user. Later, we will read info from here
                 { SoldItemsIdxKey, ?gset_limit_op(PageSize) },
-                %% TODO(borja): won items here
+                %% Read items won by this user. This already contains everything we want (item seller, paid amount, etc)
+                { WonItemsIdxKey, ?gset_limit_op(PageSize) },
                 %% BUY_nows put by this user. Later, we will read info from here
                 { BuyNowsIdxKey, ?gset_limit_op(PageSize) },
                 %% Comments send to this user. Later we will read info from here
