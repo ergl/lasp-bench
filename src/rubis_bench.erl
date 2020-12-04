@@ -209,8 +209,7 @@ run(put_bid, _, _, S0=#state{coord_state=Coord}) ->
     {ok, incr_tx_id(S1)};
 
 run(store_bid, _, _, S) ->
-    %% fixme(borja): Implement
-    {ok, S};
+    {ok, store_bid_loop(S)};
 
 run(put_comment, _, _, S0=#state{coord_state=Coord}) ->
     {FromRegion, FromNickname} = random_user(S0),
@@ -480,6 +479,68 @@ store_buy_now(Coord, Tx, ItemKey={ItemRegion, items, ItemId}, UserKey={UserRegio
             %% now receive it, but ignore the data
             {ok, _, Tx3} = grb_client:receive_read_key(Coord, Tx2, UserKey, NickReq),
             grb_client:commit_red(Coord, Tx3, ?store_buy_now_label)
+    end.
+
+-spec store_bid_loop(state()) -> state().
+store_bid_loop(S0=#state{coord_state=Coord, retry_until_commit=Retry}) ->
+    {ItemRegion, ItemId} = random_item(S0),
+    {UserRegion, NickName} = random_user(S0),
+    Qty = safe_uniform(hook_rubis:get_rubis_prop(item_max_quantity)),
+    Amount = safe_uniform(hook_rubis:get_rubis_prop(item_max_initial_price)),
+    {BidId, S1} = gen_new_bid_id(S0),
+    {ok, Tx} = start_transaction(S1),
+    case store_bid(Coord, Tx, {ItemRegion, items, ItemId}, {UserRegion, users, NickName}, BidId, Amount, Qty) of
+        {abort, _} when Retry =:= true ->
+            store_bid_loop(incr_tx_id(S1));
+        {ok, CVC} ->
+            incr_tx_id(S1#state{last_cvc=CVC});
+        _ ->
+            %% todo(borja): What to do here? (bad_data)
+            incr_tx_id(S1)
+    end.
+
+-spec store_bid(grb_client:coord(), grb_client:tx(), _, _, binary(), non_neg_integer(), non_neg_integer()) -> {ok, _} | {abort, _} | {error, bad_data}.
+store_bid(Coord, Tx, ItemKey={ItemRegion, items, ItemId}, UserKey={UserRegion, _, _}, BidId, Amount, Qty) ->
+    ItemQtyKey = {ItemRegion, items, ItemId, quantity},
+    ItemClosedKey = {ItemRegion, items, ItemId, closed},
+    ItemPriceKey = {ItemRegion, items, ItemId, reserve_price},
+    {ok, Data0, Tx1} = grb_client:read_key_snapshots(Coord, Tx, [{ItemQtyKey, grb_lww},
+                                                                 {ItemClosedKey, grb_lww},
+                                                                 {ItemPriceKey, grb_lww}]),
+
+    #{ItemQtyKey := ItemQty, ItemClosedKey := IsClosed, ItemPriceKey := ItemPrice} = Data0,
+    BadData = IsClosed orelse (Qty > ItemQty) orelse (Amount < ItemPrice),
+    if
+        BadData ->
+            {error, bad_data};
+        true ->
+            %% Bids are colocated with the region. Since we read from that partition, we can send our operations,
+            %% including updating the item. The update to BIDS_user is in another partition, so we should read from
+            %% there before. The BIDS_user index is too big, so read from something else.
+            {ok, Req} = grb_client:send_read_key(Coord, Tx1, UserKey, grb_lww),
+
+            BidKey = {ItemRegion, bids, BidId},
+            Updates = [{
+                %% Bid object
+                { {ItemRegion, bids, BidId, item}, grb_crdt:make_op(grb_lww, ItemKey) },
+                { {ItemRegion, bids, BidId, quantity}, grb_crdt:make_op(grb_lww, Qty) },
+                { {ItemRegion, bids, BidId, amount}, grb_crdt:make_op(grb_lww, Amount) },
+                { {ItemRegion, bids, BidId, bidder}, grb_crdt:make_op(grb_lww, UserKey) },
+                %% Update number of bids (increment by one)
+                { {ItemRegion, items, ItemId, bids_number}, grb_crdt:make_op(grb_counter, 1)},
+                %% Update max bid on item (no need to check, CRDT handles the max, and we save a read
+                { {ItemRegion, items, ItemId, max_bid}, grb_crdt:make_op(grb_maxtuple, {Amount, BidKey})},
+                %% Update BIDS_item index (and include the bidder)
+                { {ItemRegion, bids_item, ItemKey}, grb_crdt:make_op(grb_gset, {BidKey, UserKey}) },
+                %% Update BIDS_user index (and include the amount)
+                { {UserRegion, bids_user, UserKey}, grb_crdt:make_op(grb_gset, {BidKey, Amount})}
+            }],
+
+            {ok, Tx2} = grb_client:send_key_operations(Coord, Tx1, Updates),
+
+            %% this should have finished by now
+            {ok, _, Tx3} = grb_client:receive_read_key(Coord, Tx2, UserKey, Req),
+            grb_client:commit_red(Coord, Tx3, ?place_bid_label)
     end.
 
 %% Get all non-closed items (up to page size) belonging to a category, and with sellers in region, up to `Limit`
