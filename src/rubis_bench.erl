@@ -322,9 +322,83 @@ run(register_item, _, _, S0=#state{coord_state=Coord}) ->
     {ok, CVC} = grb_client:commit(Coord, Tx2),
     {ok, incr_tx_id(S1#state{last_cvc=CVC, last_generated_item={Region, ItemId}})};
 
-run(about_me, _, _, S) ->
-    %% fixme(borja): Implement
-    {ok, S};
+run(about_me, _, _, S0=#state{coord_state=Coord}) ->
+    {UserRegion, Nickname} = random_user(S0),
+    {ok, Tx} = start_transaction(S0),
+    S1 = case try_auth(Coord, Tx, UserRegion, Nickname, Nickname) of
+        {error, _} ->
+            %% bail out, no need to clean up anything
+             S0;
+        {ok, Tx1} ->
+            %% First, read data from the user (name, last name, email, rating)
+            %% Then, read bid amounts (use BID_user index, colocated with region)
+            %% Then, read item info from ITEMS_user index. At least name, number of bids, max bid
+            %% Then, read won items using WINS_user index. Should contain iten name and name of the seller
+            %% Then, read item info from BUY_NOW_user index. Contain item info and name of the seller
+            %% Then, comments from COMMENTS_to_user index. Contain comment info and name of commenter
+            PageSize = random_page_size(),
+            UserProfileReads = [
+                { {UserRegion, users, Nickname, name}, grb_lww },
+                { {UserRegion, users, Nickname, lastname}, grb_lww },
+                { {UserRegion, users, Nickname, email}, grb_lww },
+                { {UserRegion, users, Nickname, rating}, grb_gcounter }
+            ],
+            %% We can read this at once, everything is in the same partition
+            {ok, Req} = grb_client:send_read_partition(Coord, Tx1, UserProfileReads),
+
+            UserKey = {UserRegion, users, Nickname},
+            SoldItemsIdxKey = {UserRegion, items_seller, UserKey},
+            BuyNowsIdxKey = {UserRegion, buy_nows_buyer, UserKey},
+            CommentIdxKey = {UserRegion, comments_to_user, UserKey},
+            IndexReadOps = [
+                %% This already contains bid amount, so no need to do another roundtrip
+                { {UserRegion, bids_user, UserKey}, ?gset_limit_op(PageSize) },
+                %% Read items sold by this user. Later, we will read info from here
+                { SoldItemsIdxKey, ?gset_limit_op(PageSize) },
+                %% TODO(borja): won items here
+                %% BUY_nows put by this user. Later, we will read info from here
+                { BuyNowsIdxKey, ?gset_limit_op(PageSize) },
+                %% Comments send to this user. Later we will read info from here
+                { CommentIdxKey, ?gset_limit_op(PageSize) }
+            ],
+
+            {ok, IdxResults, Tx2} = grb_client:read_key_operations(Coord, Tx1, IndexReadOps),
+            {ok, _UserInfo, Tx3} = grb_client:receive_read_partition(Coord, Tx2, Req),
+            #{
+                SoldItemsIdxKey := SoldItemIds,
+                BuyNowsIdxKey := BoughtIds,
+                CommentIdxKey := CommentIds
+            } = IdxResults,
+
+            %% Read info from the items we sell
+            Reads0 = lists:foldl(fun({_, _, ItemId}, Acc) ->
+                [ { {UserRegion, items, ItemId, name}, grb_lww },
+                  { {UserRegion, items, ItemId, bids_number}, grb_gcounter },
+                  { {UserRegion, items, ItemId, max_bid}, grb_maxtuple }
+                  | Acc ]
+            end, [], SoldItemIds),
+
+            %% TODO(borja): won items here
+
+            %% Read info from the items we bought
+            Reads1 = lists:foldl(fun({_, {BoughtRegion, _, BoughtItemId}}, Acc) ->
+                [ { {BoughtRegion, items, BoughtItemId, name}, grb_lww },
+                  { {BoughtRegion, items, BoughtItemId, seller}, grb_lww },
+                  { {BoughtRegion, items, BoughtItemId, description}, grb_lww }
+                  | Acc ]
+            end, Reads0, BoughtIds),
+
+            Reads2 = lists:foldl(fun({_, _, CommentId}, Acc) ->
+                [ { {UserRegion, comments, CommentId, from}, grb_lww },
+                  { {UserRegion, comments, CommentId, text}, grb_lww },
+                  { {UserRegion, comments, CommentId, rating}, grb_lww }
+                  | Acc]
+            end, Reads1, CommentIds),
+
+            {ok, _Info, Tx4} = grb_client:read_key_snapshots(Coord, Tx3, Reads2),
+            grb_client:commit(Coord, Tx4)
+    end,
+    {ok, incr_tx_id(S1)};
 
 run(get_auctions_ready_for_close, _, _, S=#state{coord_state=Coord}) ->
     Region = random_region(),
