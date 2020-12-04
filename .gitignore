@@ -6,4 +6,5 @@ grid_tests/
 tags
 _build/
 .DS_Store
+*.beam
 
