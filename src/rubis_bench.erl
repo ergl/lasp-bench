@@ -305,6 +305,7 @@ run(register_item, _, _, S0=#state{coord_state=Coord}) ->
         {{Region, items, ItemId, description}, grb_crdt:make_op(grb_lww, Description)},
         {{Region, items, ItemId, seller}, grb_crdt:make_op(grb_lww, {Region, users, Seller})},
         {{Region, items, ItemId, category}, grb_crdt:make_op(grb_lww, Category)},
+        {{Region, items, ItemId, max_bid}, grb_crdt:make_op(grb_maxtuple, {-1, <<>>})},
         {{Region, items, ItemId, initial_price}, grb_crdt:make_op(grb_lww, InitialPrice)},
         {{Region, items, ItemId, quantity}, grb_crdt:make_op(grb_lww, Quantity)},
         {{Region, items, ItemId, reserve_price}, grb_crdt:make_op(grb_lww, ReservePrice)},
@@ -605,7 +606,7 @@ store_bid(Coord, Tx, ItemKey={ItemRegion, items, ItemId}, UserKey={UserRegion, _
                 %% Update number of bids (increment by one)
                 { {ItemRegion, items, ItemId, bids_number}, grb_crdt:make_op(grb_counter, 1)},
                 %% Update max bid on item (no need to check, CRDT handles the max, and we save a read
-                { {ItemRegion, items, ItemId, max_bid}, grb_crdt:make_op(grb_maxtuple, {Amount, BidKey})},
+                { {ItemRegion, items, ItemId, max_bid}, grb_crdt:make_op(grb_maxtuple, {Amount, {BidKey, UserKey}})},
                 %% Update BIDS_item index (and include the bidder)
                 { {ItemRegion, bids_item, ItemKey}, grb_crdt:make_op(grb_gset, {BidKey, UserKey}) },
                 %% Update BIDS_user index (and include the amount)
