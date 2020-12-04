@@ -118,7 +118,7 @@ init([_Id, ArgMap = #{transition_table := FilePath}]) ->
     new(FilePath, Seed).
 
 operations() ->
-    [{OpTag, OpTag} || OpTag <- tuple_to_list(?STATE_NAMES)].
+    [{OpTag, OpTag} || OpTag <- (tuple_to_list(?STATE_NAMES) -- ?SHOULD_DISCARD)].
 
 next_operation(S0) ->
     case next_state(S0) of
