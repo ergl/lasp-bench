@@ -61,6 +61,9 @@
     %% RNG State
     random :: rand:state(),
 
+    %% Limit?
+    steps_until_stop :: pos_integer() | undefined,
+
     rows :: non_neg_integer(),
     columns :: non_neg_integer(),
     matrix :: matrix(),
@@ -110,12 +113,13 @@
 
 %% API
 -export([new/1,
-         new/2,
+         new/3,
          next_state/1]).
 
 init([_Id, ArgMap = #{transition_table := FilePath}]) ->
     Seed = maps:get(seed, ArgMap, erlang:timestamp()),
-    new(FilePath, Seed).
+    TransitionLimit = maps:get(transition_limit, ArgMap, undefined),
+    new(FilePath, Seed, TransitionLimit).
 
 operations() ->
     [{OpTag, OpTag} || OpTag <- (tuple_to_list(?STATE_NAMES) -- ?SHOULD_DISCARD)].
@@ -133,33 +137,41 @@ terminate(_) ->
 
 -spec new(string()) -> t().
 new(FilePath) ->
-    new(FilePath, erlang:timestamp()).
+    new(FilePath, erlang:timestamp(), undefined).
 
--spec new(string(), rand:seed()) -> t().
-new(FilePath, Seed) ->
+-spec new(string(), rand:seed(), pos_integer() | undefined) -> t().
+new(FilePath, Seed, TransitionLimit) ->
     {ok, Fd} = file:open(FilePath, [read, binary]),
     ParseState = parse_table(Fd, #parse_state{}),
     ok = file:close(Fd),
-    make_table(Seed, ParseState).
+    make_table(Seed, TransitionLimit, ParseState).
 
 -spec next_state(t()) -> {ok, state_name(), t()} | stop.
 next_state(#state{reached_end_of_session=true}) ->
     stop;
 
+next_state(#state{steps_until_stop=N}) when N =< 0 ->
+    stop;
+
 next_state(S0) ->
     case next_state_internal(S0) of
         S=#state{reached_end_of_session=true} ->
-            next_state(recycle_state(S));
+            next_state(recycle_state(decr_steps(S)));
+
         NextState ->
             StateName = state_name(NextState),
             case lists:member(StateName, ?SHOULD_DISCARD) of
                 false ->
-                    {ok, StateName, NextState};
+                    {ok, StateName, decr_steps(NextState)};
                 true ->
-                    %% loop until we reach another transaction
+                    %% loop until we reach another transaction, but don't consume steps
                     next_state(NextState)
             end
     end.
+
+-spec decr_steps(t()) -> t().
+decr_steps(S=#state{steps_until_stop=undefined}) -> S;
+decr_steps(S=#state{steps_until_stop=N}) -> S#state{steps_until_stop=N-1}.
 
 -spec recycle_state(t()) -> t().
 recycle_state(S) ->
@@ -197,7 +209,8 @@ next_state_internal(Table0=#state{random=Random0,
             EndProb =  erlang:element(CurrentState, EndProbs),
             if
                 Step < (AccProbability + BackProb) ->
-                    back_to_previous_state(Table0#state{random=Random});
+                    {ok, Table1} = back_to_previous_state(Table0#state{random=Random}),
+                    Table1;
 
                 Step < (AccProbability + BackProb + EndProb) ->
                     Table0#state{random=Random, reached_end_of_session=true};
@@ -209,10 +222,11 @@ next_state_internal(Table0=#state{random=Random0,
             end
     end.
 
+-spec back_to_previous_state(t()) -> {ok, t()} | error.
 back_to_previous_state(Table=#state{previous_states=PrevStates0}) ->
     case queue:out_r(PrevStates0) of
         {{value, PrevState}, PrevStates} ->
-            Table#state{current_state=PrevState, previous_states=PrevStates};
+            {ok, Table#state{current_state=PrevState, previous_states=PrevStates}};
         {empty, _} ->
             error
     end.
@@ -330,16 +344,17 @@ append_row([_RowName | Data], State0 = #parse_state{current_row=NRow,
             State0#parse_state{current_row=NRow + 1}
     end.
 
-make_table(Seed, #parse_state{rows=Rows,
-                              cols=Cols,
-                              matrix=Matrix,
-                              table_name=TableName,
-                              state_names=Names,
-                              back_probability=BackProbs,
-                              end_probability=EndProbs,
-                              waiting_times=WaitTimes}) ->
+make_table(Seed, TransitionLimit, #parse_state{rows=Rows,
+                                               cols=Cols,
+                                               matrix=Matrix,
+                                               table_name=TableName,
+                                               state_names=Names,
+                                               back_probability=BackProbs,
+                                               end_probability=EndProbs,
+                                               waiting_times=WaitTimes}) ->
 
     #state{random=rand:seed(exsss, Seed),
+           steps_until_stop=TransitionLimit,
            rows=Rows,
            columns=Cols,
            matrix=Matrix,
