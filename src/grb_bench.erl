@@ -280,10 +280,10 @@ multi_read_method(Type, true) ->
     fun(C, T, KS) -> grb_client:read_key_snapshots(C, T, [{K, Type} || K <- KS]) end;
 multi_read_method(Type, false) ->
     fun(C, T, KS) ->
-        lists:foldl(fun(K, {Vs, AccTx}) ->
+        lists:foldl(fun(K, {ok, Vs, AccTx}) ->
             {ok, V, Next} = grb_client:read_key_snapshot(C, AccTx, K, Type),
-            {Vs#{K => V}, Next}
-        end, {#{}, T}, KS)
+            {ok, Vs#{K => V}, Next}
+        end, {ok, #{}, T}, KS)
     end.
 
 -spec multiupdate_method(atom(), boolean()) -> fun().
@@ -291,10 +291,10 @@ multiupdate_method(Type, true) ->
     fun(C, T, KS) -> grb_client:update_operations(C, T, [{K, grb_crdt:make_op(Type, V)} || {K, V} <- KS]) end;
 multiupdate_method(Type, false) ->
     fun(C, T, KS) ->
-        lists:foldl(fun({K, V}, {Vs, AccTx}) ->
+        lists:foldl(fun({K, V}, {ok, Vs, AccTx}) ->
             {ok, V, Next} = grb_client:update_operation(C, AccTx, K, grb_crdt:make_op(Type, V)),
-            {Vs#{K => V}, Next}
-        end, {#{}, T}, KS)
+            {ok, Vs#{K => V}, Next}
+        end, {ok, #{}, T}, KS)
     end.
 
 -spec maybe_start_with_clock(#state{}) -> {ok, grb_client:tx()}.
