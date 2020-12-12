@@ -555,7 +555,7 @@ store_buy_now(Coord, Tx, ItemKey={ItemRegion, items, ItemId}, UserKey={UserRegio
                 { {UserRegion, buy_nows, BuyNowId, buyer}, grb_crdt:make_op(grb_lww, UserKey) },
                 { {UserRegion, buy_nows, BuyNowId, quantity}, grb_crdt:make_op(grb_lww, Quantity) },
                 %% Update BUY_NOWS_buyer index. Store the item key too, so we don't perform extra roundtrips
-                { {UserRegion, buy_nows_buyer, UserKey}, grb_crdt:make_op(grb_gset, {UserRegion, buy_nows, {BuyNowKey, ItemKey}}) },
+                { {UserRegion, buy_nows_buyer, UserKey}, grb_crdt:make_op(grb_gset, {BuyNowKey, ItemKey}) },
                 { ItemQtyKey, grb_crdt:make_op(grb_lww, NewQty) }
             ]),
             %% now receive it, but ignore the data
