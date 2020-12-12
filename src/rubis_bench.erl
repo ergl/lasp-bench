@@ -290,13 +290,17 @@ run(register_item, _, _, S0=#state{coord_state=Coord}) ->
         N when N >= 1 -> random_binary(N);
         _ -> <<>>
     end,
-    ReservePrice = case (rand:uniform(100) =< hook_rubis:get_rubis_prop(item_reserve_percentage)) of
-        true -> InitialPrice + rand:uniform(10);
-        false -> 0
+    ReservePrice = InitialPrice + begin
+        case (rand:uniform(100) =< hook_rubis:get_rubis_prop(item_reserve_percentage)) of
+            true -> rand:uniform(10);
+            false -> 0
+        end
     end,
-    BuyNow = case (rand:uniform(100) =< hook_rubis:get_rubis_prop(item_buy_now_percentage)) of
-        true -> InitialPrice + ReservePrice + rand:uniform(10);
-        false -> 0
+    BuyNow = begin
+        case (rand:uniform(100) =< hook_rubis:get_rubis_prop(item_buy_now_percentage)) of
+            true -> rand:uniform(10);
+            false -> 0
+        end
     end,
     Updates = [
         %% Item Updates
@@ -733,7 +737,7 @@ random_item(#state{last_generated_item=undefined}) ->
     {NReg, Reg} = hook_rubis:get_rubis_prop(regions),
     {Category, ItemsInCat} = random_category_items(),
     ItemIdNumeric = rand:uniform(ItemsInCat),
-    Region = erlang:element((ItemIdNumeric rem NReg), Reg),
+    Region = erlang:element(((ItemIdNumeric rem NReg) + 1), Reg),
     ItemId = list_to_binary(io_lib:format("~s/items/preload_~b", [Category, ItemIdNumeric])),
     {Region, ItemId}.
 
