@@ -315,9 +315,9 @@ run(register_item, _, _, S0=#state{coord_state=Coord}) ->
         {{Region, items, ItemId, buy_now}, grb_crdt:make_op(grb_lww, BuyNow)},
         {{Region, items, ItemId, closed}, grb_crdt:make_op(grb_lww, false)},
         %% append to ITEMS_seller index
-        {{Region, items_seller, Seller}, grb_crdt:make_op(grb_set, ItemKey)},
+        {{Region, items_seller, Seller}, grb_crdt:make_op(grb_gset, ItemKey)},
         %% append to ITEMS_region_category index
-        {{Region, items_region_category, Category}, grb_crdt:make_op(grb_set, ItemKey)}
+        {{Region, items_region_category, Category}, grb_crdt:make_op(grb_gset, ItemKey)}
     ],
     {ok, Tx} = start_transaction(S1),
     %% Claim the item key, read/write so we don't do any blind updates, should get back the same value
@@ -609,7 +609,7 @@ store_bid(Coord, Tx, ItemKey={ItemRegion, items, ItemId}, UserKey={UserRegion, _
                 { {ItemRegion, bids, BidId, amount}, grb_crdt:make_op(grb_lww, Amount) },
                 { {ItemRegion, bids, BidId, bidder}, grb_crdt:make_op(grb_lww, UserKey) },
                 %% Update number of bids (increment by one)
-                { {ItemRegion, items, ItemId, bids_number}, grb_crdt:make_op(grb_counter, 1)},
+                { {ItemRegion, items, ItemId, bids_number}, grb_crdt:make_op(grb_gcounter, 1)},
                 %% Update max bid on item (no need to check, CRDT handles the max, and we save a read
                 { {ItemRegion, items, ItemId, max_bid}, grb_crdt:make_op(grb_maxtuple, {Amount, {BidKey, UserKey}})},
                 %% Update BIDS_item index (and include the bidder)
