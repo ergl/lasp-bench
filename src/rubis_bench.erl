@@ -212,7 +212,7 @@ run(store_bid, _, _, S) ->
 
 run(put_comment, _, _, S0=#state{coord_state=Coord}) ->
     {FromRegion, FromNickname} = random_user(S0),
-    {_, ToNickname} = random_different_user(FromRegion, FromNickname, S0),
+    {_, ToNickname} = random_different_user(FromRegion, FromNickname),
     {ItemRegion, ItemId} = random_item(S0),
     Keys = [
         {ToNickname, grb_lww},
@@ -232,7 +232,7 @@ run(put_comment, _, _, S0=#state{coord_state=Coord}) ->
 
 run(store_comment, _, _, S0=#state{coord_state=Coord}) ->
     {FromRegion, FromNickname} = random_user(S0),
-    {ToRegion, ToNickname} = random_different_user(FromRegion, FromNickname, S0),
+    {ToRegion, ToNickname} = random_different_user(FromRegion, FromNickname),
     {ItemRegion, ItemId} = random_item(S0),
 
     SenderKey = {FromRegion, users, FromNickname},
@@ -720,15 +720,21 @@ random_user(#state{last_generated_user=undefined}) ->
     Id = rand:uniform(hook_rubis:get_rubis_prop(user_per_region)),
     {Region, list_to_binary(io_lib:format("~s/user/preload_~b", [Region, Id]))}.
 
--spec random_different_user(binary(), binary(), state()) -> {Region :: binary(), Nickname :: binary()}.
-random_different_user(Region, Nickname, S) ->
-    case random_user(S) of
+-spec random_different_user(binary(), binary()) -> {Region :: binary(), Nickname :: binary()}.
+random_different_user(Region, Nickname) ->
+    case random_user_bypass() of
         {Region, Nickname} ->
-            random_different_user(Region, Nickname, S);
+            random_different_user(Region, Nickname);
 
         Other ->
             Other
     end.
+
+-spec random_user_bypass() -> {Region :: binary(), Nickname :: binary()}.
+random_user_bypass() ->
+    Region = random_region(),
+    Id = rand:uniform(hook_rubis:get_rubis_prop(user_per_region)),
+    {Region, list_to_binary(io_lib:format("~s/user/preload_~b", [Region, Id]))}.
 
 random_item(#state{last_generated_item={Region, ItemId}}) ->
     {Region, ItemId};
