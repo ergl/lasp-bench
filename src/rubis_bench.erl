@@ -92,7 +92,7 @@ run(search_items_in_region, _, _, S=#state{coord_state=Coord}) ->
 run(view_item, _, _, S0=#state{coord_state=Coord}) ->
     {Region, ItemId} = random_item(S0),
     {ok, Tx} = start_transaction(S0),
-    {ok, _, Tx1} = grb_client:read_key_snapshots(Coord, Tx, [{
+    {ok, _, Tx1} = grb_client:read_key_snapshots(Coord, Tx, [
         {{Region, items, ItemId, seller}, grb_lww},
         {{Region, items, ItemId, category}, grb_lww},
         {{Region, items, ItemId, initial_price}, grb_lww},
@@ -100,19 +100,19 @@ run(view_item, _, _, S0=#state{coord_state=Coord}) ->
         {{Region, items, ItemId, reserve_price}, grb_lww},
         {{Region, items, ItemId, buy_now}, grb_lww},
         {{Region, items, ItemId, closed}, grb_lww}
-    }]),
-    {ok, CVC} = grb_client:commit(Coord, Tx1),
+    ]),
+    CVC = grb_client:commit(Coord, Tx1),
     {ok, incr_tx_id(S0#state{last_cvc=CVC})};
 
 run(view_user_info, _, _, S0=#state{coord_state=Coord}) ->
     {Region, NickName} = random_user(S0),
     CommentIndexKey = {Region, comments_to_user, {Region, users, NickName}},
-    UserKeys = [{
+    UserKeys = [
         %% User object
         {{Region, users, NickName, name}, grb_lww},
         {{Region, users, NickName, lastname}, grb_lww},
         {{Region, users, NickName, rating}, grb_gcounter}
-    }],
+    ],
     {ok, Tx} = start_transaction(S0),
 
     %% Read up to limit from the list of comments to this user, and while it completes read the user object
@@ -135,7 +135,7 @@ run(view_user_info, _, _, S0=#state{coord_state=Coord}) ->
         CommentIds
     ),
     {ok, _, Tx3} = grb_client:read_key_snapshots(Coord, Tx2, CommentKeys),
-    {ok, CVC} = grb_client:commit(Coord, Tx3),
+    CVC = grb_client:commit(Coord, Tx3),
     {ok, incr_tx_id(S0#state{last_cvc=CVC})};
 
 run(view_bid_history, _, _, S0=#state{coord_state=Coord}) ->
@@ -159,17 +159,17 @@ run(view_bid_history, _, _, S0=#state{coord_state=Coord}) ->
         BidIds
     ),
     {ok, _, Tx3} = grb_client:read_key_snapshots(Coord, Tx2, BidKeys),
-    {ok, CVC} = grb_client:commit(Coord, Tx3),
+    CVC = grb_client:commit(Coord, Tx3),
     {ok, incr_tx_id(S0#state{last_cvc=CVC})};
 
 run(buy_now, _, _, S0=#state{coord_state=Coord}) ->
     {ItemRegion, ItemId} = random_item(S0),
     {UserRegion, Nickname} = random_user(S0),
-    ItemKeys = [{
+    ItemKeys = [
         {{ItemRegion, items, ItemId, name}, grb_lww},
         {{ItemRegion, items, ItemId, seller}, grb_lww},
         {{ItemRegion, items, ItemId, buy_now}, grb_lww}
-    }],
+    ],
     {ok, Tx} = start_transaction(S0),
     S1 = case try_auth(Coord, Tx, UserRegion, Nickname, Nickname) of
         {error, _} ->
@@ -177,7 +177,7 @@ run(buy_now, _, _, S0=#state{coord_state=Coord}) ->
             S0;
          {ok, Tx1} ->
              {ok, _, Tx2} = grb_client:read_key_snapshots(Coord, Tx1, ItemKeys),
-             {ok, CVC} = grb_client:commit(Coord, Tx2),
+             CVC = grb_client:commit(Coord, Tx2),
              S0#state{last_cvc=CVC}
     end,
     {ok, incr_tx_id(S1)};
@@ -188,13 +188,13 @@ run(store_buy_now, _, _, S) ->
 run(put_bid, _, _, S0=#state{coord_state=Coord}) ->
     {ItemRegion, ItemId} = random_item(S0),
     {UserRegion, Nickname} = random_user(S0),
-    ItemKeys = [{
+    ItemKeys = [
         {{ItemRegion, items, ItemId, name}, grb_lww},
         {{ItemRegion, items, ItemId, seller}, grb_lww},
         {{ItemRegion, items, ItemId, max_bid}, grb_maxtuple},
         {{ItemRegion, items, ItemId, bids_number}, grb_gcounter},
         {{ItemRegion, items, ItemId, initial_price}, grb_lww}
-    }],
+    ],
     {ok, Tx} = start_transaction(S0),
     S1 = case try_auth(Coord, Tx, UserRegion, Nickname, Nickname) of
         {error, _} ->
@@ -202,7 +202,7 @@ run(put_bid, _, _, S0=#state{coord_state=Coord}) ->
             S0;
          {ok, Tx1} ->
              {ok, _, Tx2} = grb_client:read_key_snapshots(Coord, Tx1, ItemKeys),
-             {ok, CVC} = grb_client:commit(Coord, Tx2),
+             CVC = grb_client:commit(Coord, Tx2),
              S0#state{last_cvc=CVC}
     end,
     {ok, incr_tx_id(S1)};
@@ -214,10 +214,10 @@ run(put_comment, _, _, S0=#state{coord_state=Coord}) ->
     {FromRegion, FromNickname} = random_user(S0),
     {_, ToNickname} = random_different_user(FromRegion, FromNickname, S0),
     {ItemRegion, ItemId} = random_item(S0),
-    Keys = [{
+    Keys = [
         {ToNickname, grb_lww},
         {{ItemRegion, items, ItemId, name}, grb_lww}
-    }],
+    ],
     {ok, Tx} = start_transaction(S0),
     S1 = case try_auth(Coord, Tx, FromRegion, FromNickname, FromNickname) of
         {error, _} ->
@@ -225,7 +225,7 @@ run(put_comment, _, _, S0=#state{coord_state=Coord}) ->
             S0;
          {ok, Tx1} ->
              {ok, _, Tx2} = grb_client:read_key_snapshots(Coord, Tx1, Keys),
-             {ok, CVC} = grb_client:commit(Coord, Tx2),
+             CVC = grb_client:commit(Coord, Tx2),
              S0#state{last_cvc=CVC}
     end,
     {ok, incr_tx_id(S1)};
@@ -244,7 +244,7 @@ run(store_comment, _, _, S0=#state{coord_state=Coord}) ->
     Rating = random_rating(),
     CommentText = random_binary(safe_uniform(hook_rubis:get_rubis_prop(comment_max_len))),
 
-    Updates = [{
+    Updates = [
         %% Comment Object
         { {ToRegion, comments, CommentId, from}, grb_crdt:make_op(grb_lww, SenderKey)},
         { {ToRegion, comments, CommentId, to}, grb_crdt:make_op(grb_lww, RecipientKey)},
@@ -255,12 +255,12 @@ run(store_comment, _, _, S0=#state{coord_state=Coord}) ->
         { {ToRegion, comments_to_user, RecipientKey}, grb_crdt:make_op(grb_gset, CommentKey)},
         %% Update recipient rating
         { {ToRegion, users, ToNickname, rating}, grb_crdt:make_op(grb_gcounter, Rating)}
-    }],
+    ],
     {ok, Tx} = start_transaction(S1),
     %% Claim the item key, read/write so we don't do any blind updates, should get back the same value
     {ok, CommentKey, Tx1} = grb_client:update_operation(Coord, Tx, CommentKey, grb_crdt:make_op(grb_lww, CommentKey)),
     {ok, Tx2} = grb_client:send_key_operations(Coord, Tx1, Updates),
-    {ok, CVC} = grb_client:commit(Coord, Tx2),
+    CVC = grb_client:commit(Coord, Tx2),
     {ok, incr_tx_id(S1#state{last_cvc=CVC})};
 
 run(select_category_to_sell_item, _, _, S0=#state{coord_state=Coord}) ->
@@ -273,7 +273,7 @@ run(select_category_to_sell_item, _, _, S0=#state{coord_state=Coord}) ->
             S0;
          {ok, Tx1} ->
              {ok, _, Tx2} = grb_client:read_key_snapshot(Coord, Tx1, {?global_indices, all_categories}, grb_gset),
-             {ok, CVC} = grb_client:commit(Coord, Tx2),
+             CVC = grb_client:commit(Coord, Tx2),
              S0#state{last_cvc=CVC}
     end,
     {ok, incr_tx_id(S1)};
@@ -298,7 +298,7 @@ run(register_item, _, _, S0=#state{coord_state=Coord}) ->
         true -> InitialPrice + ReservePrice + rand:uniform(10);
         false -> 0
     end,
-    Updates = [{
+    Updates = [
         %% Item Updates
         {{Region, items, ItemId, name}, grb_crdt:make_op(grb_lww, ItemId)},
         {{Region, items, ItemId, description}, grb_crdt:make_op(grb_lww, Description)},
@@ -314,12 +314,12 @@ run(register_item, _, _, S0=#state{coord_state=Coord}) ->
         {{Region, items_seller, Seller}, grb_crdt:make_op(grb_set, ItemKey)},
         %% append to ITEMS_region_category index
         {{Region, items_region_category, Category}, grb_crdt:make_op(grb_set, ItemKey)}
-    }],
+    ],
     {ok, Tx} = start_transaction(S1),
     %% Claim the item key, read/write so we don't do any blind updates, should get back the same value
     {ok, ItemKey, Tx1} = grb_client:update_operation(Coord, Tx, ItemKey, grb_crdt:make_op(grb_lww, ItemKey)),
     {ok, Tx2} = grb_client:send_key_operations(Coord, Tx1, Updates),
-    {ok, CVC} = grb_client:commit(Coord, Tx2),
+    CVC = grb_client:commit(Coord, Tx2),
     {ok, incr_tx_id(S1#state{last_cvc=CVC, last_generated_item={Region, ItemId}})};
 
 run(about_me, _, _, S0=#state{coord_state=Coord}) ->
@@ -398,7 +398,8 @@ run(about_me, _, _, S0=#state{coord_state=Coord}) ->
             end, Reads1, CommentIds),
 
             {ok, _Info, Tx4} = grb_client:read_key_snapshots(Coord, Tx3, Reads2),
-            grb_client:commit(Coord, Tx4)
+            CVC = grb_client:commit(Coord, Tx4),
+            S0#state{last_cvc=CVC}
     end,
     {ok, incr_tx_id(S1)};
 
@@ -431,7 +432,7 @@ run(get_auctions_ready_for_close, _, _, S=#state{coord_state=Coord}) ->
         TxAcc
     end, Tx1, KeyRequests),
 
-    {ok, CVC} = grb_client:commit(Coord, Tx2),
+    CVC = grb_client:commit(Coord, Tx2),
     {ok, incr_tx_id(S#state{last_cvc=CVC})};
 
 run(close_auction, _, _, S) ->
@@ -490,14 +491,14 @@ register_user_loop(S0=#state{coord_state=Coord, retry_until_commit=Retry}) ->
 
 -spec register_user(grb_client:coord(), grb_client:tx(), binary(), binary()) -> {ok, _} | {abort, _} | {error, user_taken}.
 register_user(Coord, Tx, Region, Nickname) ->
-    Updates = [{
+    Updates = [
         {Nickname, grb_crdt:make_op(grb_lww, Nickname)},
         {{Region, users, Nickname, name}, grb_crdt:make_op(grb_lww, Nickname)},
         {{Region, users, Nickname, lastname}, grb_crdt:make_op(grb_lww, Nickname)},
         {{Region, users, Nickname, password}, grb_crdt:make_op(grb_lww, Nickname)},
         {{Region, users, Nickname, email}, grb_crdt:make_op(grb_lww, Nickname)},
         {{Region, users, Nickname, rating}, grb_crdt:make_op(grb_gcounter, 0)}
-    }],
+    ],
     {ok, Index, Tx1} = grb_client:read_key_snapshot(Coord, Tx, Nickname, grb_lww),
     case Index of
         <<>> ->
@@ -597,7 +598,7 @@ store_bid(Coord, Tx, ItemKey={ItemRegion, items, ItemId}, UserKey={UserRegion, _
             {ok, Req} = grb_client:send_read_key(Coord, Tx1, UserKey, grb_lww),
 
             BidKey = {ItemRegion, bids, BidId},
-            Updates = [{
+            Updates = [
                 %% Bid object
                 { {ItemRegion, bids, BidId, item}, grb_crdt:make_op(grb_lww, ItemKey) },
                 { {ItemRegion, bids, BidId, quantity}, grb_crdt:make_op(grb_lww, Qty) },
@@ -611,7 +612,7 @@ store_bid(Coord, Tx, ItemKey={ItemRegion, items, ItemId}, UserKey={UserRegion, _
                 { {ItemRegion, bids_item, ItemKey}, grb_crdt:make_op(grb_gset, {BidKey, UserKey}) },
                 %% Update BIDS_user index (and include the amount)
                 { {UserRegion, bids_user, UserKey}, grb_crdt:make_op(grb_gset, {BidKey, Amount})}
-            }],
+            ],
 
             {ok, Tx2} = grb_client:send_key_operations(Coord, Tx1, Updates),
 
