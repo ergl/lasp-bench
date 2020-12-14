@@ -117,7 +117,7 @@
          next_state/1]).
 
 init([_Id, ArgMap = #{transition_table := FilePath}]) ->
-    Seed = maps:get(seed, ArgMap, erlang:timestamp()),
+    Seed = maps:get(transition_seed, ArgMap, erlang:timestamp()),
     TransitionLimit = maps:get(transition_limit, ArgMap, undefined),
     new(FilePath, Seed, TransitionLimit).
 
