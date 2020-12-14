@@ -55,7 +55,7 @@
 }).
 
 -type probability() :: integer() | float().
--type matrix() :: list(list(probability())).
+-type matrix() :: tuple().
 
 -record(state, {
     %% RNG State
@@ -232,7 +232,7 @@ back_to_previous_state(Table=#state{previous_states=PrevStates0}) ->
     end.
 
 -spec calc_next_state(Prob :: probability(),
-                      Matrix :: tuple(),
+                      Matrix :: matrix(),
                       Col :: non_neg_integer(),
                       NRows :: non_neg_integer()) -> {ok, non_neg_integer()} | {not_found, probability()}.
 
@@ -241,7 +241,7 @@ calc_next_state(Prob, Matrix, Col, NRows) ->
 
 -spec calc_next_state(Prob :: probability(),
                       AccProb :: probability(),
-                      Matrix :: tuple(),
+                      Matrix :: matrix(),
                       Col :: non_neg_integer(),
                       Row :: non_neg_integer(),
                       NRows :: non_neg_integer()) -> {ok, non_neg_integer()} | {not_found, probability()}.

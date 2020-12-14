@@ -36,7 +36,6 @@
     last_generated_item = undefined :: {Region :: binary(), Id :: binary()} | undefined
 }).
 -type state() :: #state{}.
--type tx_id() :: {non_neg_integer(), non_neg_integer()}.
 
 new(WorkerId) ->
     {ok, CoordState} = hook_rubis:make_coordinator(WorkerId),
@@ -379,31 +378,43 @@ run(about_me, _, _, S0=#state{coord_state=Coord}) ->
             } = IdxResults,
 
             %% Read info from the items we sell
-            Reads0 = lists:foldl(fun({_, _, ItemId}, Acc) ->
-                [ { {UserRegion, items, ItemId, name}, grb_lww },
-                  { {UserRegion, items, ItemId, bids_number}, grb_gcounter },
-                  { {UserRegion, items, ItemId, max_bid}, grb_maxtuple }
-                  | Acc ]
+            Reqs0 = lists:foldl(fun({_, _, ItemId}, Reqs) ->
+                Key0 = {UserRegion, items, ItemId, name},
+                Key1 = {UserRegion, items, ItemId, bids_number},
+                Key2 = {UserRegion, items, ItemId, max_bid},
+                {ok, R0} = grb_client:send_read_key(Coord, Tx3, Key0, grb_lww),
+                {ok, R1} = grb_client:send_read_key(Coord, Tx3, Key1, grb_gcounter),
+                {ok, R2} = grb_client:send_read_key(Coord, Tx3, Key2, grb_maxtuple),
+                [ {Key0, R0}, {Key1, R1}, {Key2, R2} | Reqs ]
             end, [], SoldItemIds),
 
-            %% TODO(borja): won items here
-
             %% Read info from the items we bought
-            Reads1 = lists:foldl(fun({_, {BoughtRegion, _, BoughtItemId}}, Acc) ->
-                [ { {BoughtRegion, items, BoughtItemId, name}, grb_lww },
-                  { {BoughtRegion, items, BoughtItemId, seller}, grb_lww },
-                  { {BoughtRegion, items, BoughtItemId, description}, grb_lww }
-                  | Acc ]
-            end, Reads0, BoughtIds),
+            Reqs1 = lists:foldl(fun({_, {BoughtRegion, _, BoughtItemId}}, Reqs) ->
+                Key0 = {BoughtRegion, items, BoughtItemId, name},
+                Key1 = {BoughtRegion, items, BoughtItemId, seller},
+                Key2 = {BoughtRegion, items, BoughtItemId, description},
+                {ok, R0} = grb_client:send_read_key(Coord, Tx3, Key0, grb_lww),
+                {ok, R1} = grb_client:send_read_key(Coord, Tx3, Key1, grb_lww),
+                {ok, R2} = grb_client:send_read_key(Coord, Tx3, Key2, grb_lww),
+                [ {Key0, R0}, {Key1, R1}, {Key2, R2} | Reqs ]
+            end, Reqs0, BoughtIds),
 
-            Reads2 = lists:foldl(fun({_, _, CommentId}, Acc) ->
-                [ { {UserRegion, comments, CommentId, from}, grb_lww },
-                  { {UserRegion, comments, CommentId, text}, grb_lww },
-                  { {UserRegion, comments, CommentId, rating}, grb_lww }
-                  | Acc]
-            end, Reads1, CommentIds),
+            Reqs2 = lists:foldl(fun({_, _, CommentId}, Reqs) ->
+                Key0 = {UserRegion, comments, CommentId, from},
+                Key1 = {UserRegion, comments, CommentId, text},
+                Key2 = {UserRegion, comments, CommentId, rating},
+                {ok, R0} = grb_client:send_read_key(Coord, Tx3, Key0, grb_lww),
+                {ok, R1} = grb_client:send_read_key(Coord, Tx3, Key1, grb_lww),
+                {ok, R2} = grb_client:send_read_key(Coord, Tx3, Key2, grb_lww),
+                [ {Key0, R0}, {Key1, R1}, {Key2, R2} | Reqs ]
+            end, Reqs1, CommentIds),
 
-            {ok, _Info, Tx4} = grb_client:read_key_snapshots(Coord, Tx3, Reads2),
+            Tx4 = lists:foldl(fun({Key, KeyReq}, TxAcc0) ->
+                %% We don't actually care about the result, so discard it
+                {ok, _, TxAcc} = grb_client:receive_read_key(Coord, TxAcc0, Key, KeyReq),
+                TxAcc
+            end, Tx3, Reqs2),
+
             CVC = grb_client:commit(Coord, Tx4),
             S0#state{last_cvc=CVC}
     end,
@@ -456,7 +467,7 @@ terminate(_Reason, _State) ->
 start_transaction(S=#state{coord_state=CoordState, last_cvc=VC}) ->
     grb_client:start_transaction(CoordState, next_tx_id(S), VC).
 
--spec next_tx_id(#state{}) -> tx_id().
+-spec next_tx_id(#state{}) -> non_neg_integer().
 next_tx_id(#state{transaction_count=N}) -> N.
 
 -spec incr_tx_id(#state{}) -> #state{}.
@@ -814,7 +825,7 @@ gen_new_bid_id(S=#state{local_ip_str=IPStr, worker_id=Id, bid_count=N}) ->
 random_page_size() ->
     safe_uniform(hook_rubis:get_rubis_prop(result_page_size)).
 
--spec safe_uniform(pos_integer()) -> pos_integer().
+-spec safe_uniform(non_neg_integer()) -> non_neg_integer().
 safe_uniform(0) -> 0;
 safe_uniform(X) when X >= 1 -> rand:uniform(X).
 
