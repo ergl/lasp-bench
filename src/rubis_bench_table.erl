@@ -246,10 +246,7 @@ calc_next_state(Prob, Matrix, Col, NRows) ->
                       Row :: non_neg_integer(),
                       NRows :: non_neg_integer()) -> {ok, non_neg_integer()} | {not_found, probability()}.
 
-calc_next_state(_Prob, AccProb, _Matrix, _Col, Row, Row) ->
-    {not_found, AccProb};
-
-calc_next_state(Prob, AccProb0, Matrix, Col, Row, NRows) ->
+calc_next_state(Prob, AccProb0, Matrix, Col, Row, NRows) when Row =< NRows ->
     MatrixProb = erlang:element(Col, erlang:element(Row, Matrix)),
     AccProb = AccProb0 + MatrixProb,
     if
@@ -257,7 +254,10 @@ calc_next_state(Prob, AccProb0, Matrix, Col, Row, NRows) ->
             {ok, Row};
         true ->
             calc_next_state(Prob, AccProb, Matrix, Col, Row + 1, NRows)
-    end.
+    end;
+
+calc_next_state(_Prob, AccProb, _Matrix, _Col, _Row, _NRows) ->
+    {not_found, AccProb}.
 
 %%
 %% FILE PARSING
