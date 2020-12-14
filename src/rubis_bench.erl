@@ -15,6 +15,9 @@
 -define(place_bid_label, <<"rubis/placeBid">>).
 -define(close_auction_label, <<"rubis/closeAuction">>).
 
+%% How often do we pick the latest generated item / autor, etc
+-define(REUSE_GENERATED_PROB, 0.25).
+
 -define(gset_limit_op(__S), grb_crdt:wrap_op(grb_gset, grb_gset:limit_op(__S))).
 
 -record(state, {
@@ -549,7 +552,7 @@ store_buy_now_loop(S0=#state{coord_state=Coord, retry_until_commit=RetryAbort,
     Start = os:timestamp(),
     {ItemRegion, ItemId} = random_item(S0),
     {UserRegion, NickName} = random_user(S0),
-    Qty = safe_uniform(hook_rubis:get_rubis_prop(item_max_quantity)),
+    Qty = safe_uniform(hook_rubis:get_rubis_prop(buy_now_max_quantity)),
     {BuyNowId, S1} = gen_new_buynow_id(S0),
     {ok, Tx} = start_transaction(S1),
     Res = store_buy_now(Coord, Tx, {ItemRegion, items, ItemId}, {UserRegion, users, NickName}, BuyNowId, Qty),
@@ -607,7 +610,7 @@ store_bid_loop(S0=#state{coord_state=Coord, retry_until_commit=RetryAbort,
     Start = os:timestamp(),
     {ItemRegion, ItemId} = random_item(S0),
     {UserRegion, NickName} = random_user(S0),
-    Qty = safe_uniform(hook_rubis:get_rubis_prop(item_max_quantity)),
+    Qty = safe_uniform(hook_rubis:get_rubis_prop(buy_now_max_quantity)),
     Amount = safe_uniform(hook_rubis:get_rubis_prop(item_max_initial_price)),
     {BidId, S1} = gen_new_bid_id(S0),
     {ok, Tx} = start_transaction(S1),
@@ -774,12 +777,16 @@ random_category_items() ->
 
 -spec random_user(state()) -> {Region :: binary(), Nickname :: binary()}.
 random_user(#state{last_generated_user={Region, NickName}}) ->
-    {Region, NickName};
+    Choose = choose_last_generated(),
+    if
+         Choose ->
+             {Region, NickName};
+        true ->
+            random_item_bypass()
+    end;
 
 random_user(#state{last_generated_user=undefined}) ->
-    Region = random_region(),
-    Id = rand:uniform(hook_rubis:get_rubis_prop(user_per_region)),
-    {Region, list_to_binary(io_lib:format("~s/user/preload_~b", [Region, Id]))}.
+    random_user_bypass().
 
 -spec random_different_user(binary(), binary()) -> {Region :: binary(), Nickname :: binary()}.
 random_different_user(Region, Nickname) ->
@@ -798,9 +805,18 @@ random_user_bypass() ->
     {Region, list_to_binary(io_lib:format("~s/user/preload_~b", [Region, Id]))}.
 
 random_item(#state{last_generated_item={Region, ItemId}}) ->
-    {Region, ItemId};
+    Choose = choose_last_generated(),
+    if
+         Choose ->
+            {Region, ItemId};
+        true ->
+            random_item_bypass()
+    end;
 
 random_item(#state{last_generated_item=undefined}) ->
+    random_item_bypass().
+
+random_item_bypass() ->
     {NReg, Reg} = hook_rubis:get_rubis_prop(regions),
     {Category, ItemsInCat} = random_category_items(),
     ItemIdNumeric = rand:uniform(ItemsInCat),
@@ -857,6 +873,10 @@ random_binary(N) ->
 random_rating() ->
     %% range: -5 to 5
     rand:uniform(11) - 6.
+
+-spec choose_last_generated() -> boolean().
+choose_last_generated() ->
+    rand:uniform() < ?REUSE_GENERATED_PROB.
 
 -spec random_string(Size :: non_neg_integer()) -> string().
 random_string(N) ->
