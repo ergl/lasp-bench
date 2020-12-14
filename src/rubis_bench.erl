@@ -491,16 +491,19 @@ try_auth(Coord, Tx0, Region, NickName, Password) ->
             {error, Tx1}
     end.
 
--spec register_user_loop(state()) -> {ok, state()} | {error, term(), state()}.
+-spec register_user_loop(state()) -> {ok, integer(), state()} | {error, term(), state()}.
 register_user_loop(State=#state{coord_state=Coord, retry_until_commit=RetryAbort,
                                 retry_on_bad_precondition=RetryData}) ->
 
+    Start = os:timestamp(),
     Region = random_region(),
     NickName = gen_new_nickname(),
     {ok, Tx} = start_transaction(State),
-    case register_user(Coord, Tx, Region, NickName) of
+    Res = register_user(Coord, Tx, Region, NickName),
+    ElapsedUs = erlang:max(0, timer:now_diff(os:timestamp(), Start)),
+    case Res of
         {ok, CVC} ->
-            {ok, incr_tx_id(State#state{last_cvc=CVC, last_generated_user={Region, NickName}})};
+            {ok, ElapsedUs, incr_tx_id(State#state{last_cvc=CVC, last_generated_user={Region, NickName}})};
 
         {error, _} when RetryData ->
             register_user_loop(incr_tx_id(State));
@@ -509,7 +512,7 @@ register_user_loop(State=#state{coord_state=Coord, retry_until_commit=RetryAbort
             register_user_loop(incr_tx_id(State));
 
         {error, _} ->
-            {ok, incr_tx_id(State)};
+            {ok, ElapsedUs, incr_tx_id(State)};
 
         {abort, _}=Abort ->
             {error, Abort, incr_tx_id(State)}
@@ -539,18 +542,21 @@ register_user(Coord, Tx, Region, Nickname) ->
             {error, user_taken}
     end.
 
--spec store_buy_now_loop(state()) -> {ok, state()} | {error, term(), state()}.
+-spec store_buy_now_loop(state()) -> {ok, integer(), state()} | {error, term(), state()}.
 store_buy_now_loop(S0=#state{coord_state=Coord, retry_until_commit=RetryAbort,
                              retry_on_bad_precondition=RetryData}) ->
 
+    Start = os:timestamp(),
     {ItemRegion, ItemId} = random_item(S0),
     {UserRegion, NickName} = random_user(S0),
     Qty = safe_uniform(hook_rubis:get_rubis_prop(item_max_quantity)),
     {BuyNowId, S1} = gen_new_buynow_id(S0),
     {ok, Tx} = start_transaction(S1),
-    case store_buy_now(Coord, Tx, {ItemRegion, items, ItemId}, {UserRegion, users, NickName}, BuyNowId, Qty) of
+    Res = store_buy_now(Coord, Tx, {ItemRegion, items, ItemId}, {UserRegion, users, NickName}, BuyNowId, Qty),
+    ElapsedUs = erlang:max(0, timer:now_diff(os:timestamp(), Start)),
+    case Res of
         {ok, CVC} ->
-            {ok, incr_tx_id(S1#state{last_cvc=CVC})};
+            {ok, ElapsedUs, incr_tx_id(S1#state{last_cvc=CVC})};
 
         {error, _} when RetryData ->
             store_buy_now_loop(incr_tx_id(S1));
@@ -559,7 +565,7 @@ store_buy_now_loop(S0=#state{coord_state=Coord, retry_until_commit=RetryAbort,
             store_buy_now_loop(incr_tx_id(S1));
 
         {error, _} ->
-            {ok, incr_tx_id(S1)};
+            {ok, ElapsedUs, incr_tx_id(S1)};
 
         {abort, _}=Abort ->
             {error, Abort, incr_tx_id(S1)}
@@ -594,19 +600,22 @@ store_buy_now(Coord, Tx, ItemKey={ItemRegion, items, ItemId}, UserKey={UserRegio
             grb_client:commit_red(Coord, Tx3, ?store_buy_now_label)
     end.
 
--spec store_bid_loop(state()) -> {ok, state()} | {error, term(), state()}.
+-spec store_bid_loop(state()) -> {ok, integer(), state()} | {error, term(), state()}.
 store_bid_loop(S0=#state{coord_state=Coord, retry_until_commit=RetryAbort,
                          retry_on_bad_precondition=RetryData}) ->
 
+    Start = os:timestamp(),
     {ItemRegion, ItemId} = random_item(S0),
     {UserRegion, NickName} = random_user(S0),
     Qty = safe_uniform(hook_rubis:get_rubis_prop(item_max_quantity)),
     Amount = safe_uniform(hook_rubis:get_rubis_prop(item_max_initial_price)),
     {BidId, S1} = gen_new_bid_id(S0),
     {ok, Tx} = start_transaction(S1),
-    case store_bid(Coord, Tx, {ItemRegion, items, ItemId}, {UserRegion, users, NickName}, BidId, Amount, Qty) of
+    Res = store_bid(Coord, Tx, {ItemRegion, items, ItemId}, {UserRegion, users, NickName}, BidId, Amount, Qty),
+    ElapsedUs = erlang:max(0, timer:now_diff(os:timestamp(), Start)),
+    case Res of
         {ok, CVC} ->
-            {ok, incr_tx_id(S1#state{last_cvc=CVC})};
+            {ok, ElapsedUs, incr_tx_id(S1#state{last_cvc=CVC})};
 
         {error, _} when RetryData ->
             store_bid_loop(incr_tx_id(S1));
@@ -615,7 +624,7 @@ store_bid_loop(S0=#state{coord_state=Coord, retry_until_commit=RetryAbort,
             store_bid_loop(incr_tx_id(S1));
 
         {error, _} ->
-            {ok, incr_tx_id(S1)};
+            {ok, ElapsedUs, incr_tx_id(S1)};
 
         {abort, _}=Abort ->
             {error, Abort, incr_tx_id(S1)}
@@ -665,15 +674,18 @@ store_bid(Coord, Tx, ItemKey={ItemRegion, items, ItemId}, UserKey={UserRegion, _
             grb_client:commit_red(Coord, Tx3, ?place_bid_label)
     end.
 
--spec close_auction_loop(state()) -> {ok, state()} | {error, term(), state()}.
+-spec close_auction_loop(state()) -> {ok, integer(), state()} | {error, term(), state()}.
 close_auction_loop(State=#state{coord_state=Coord, retry_until_commit=RetryAbort,
                                 retry_on_bad_precondition=RetryData}) ->
 
+    Start = os:timestamp(),
     {ItemRegion, Itemid} = random_item(State),
     {ok, Tx} = start_transaction(State),
-    case close_auction(Coord, Tx, {ItemRegion, items, Itemid}) of
+    Res = close_auction(Coord, Tx, {ItemRegion, items, Itemid}),
+    ElapsedUs = erlang:max(0, timer:now_diff(os:timestamp(), Start)),
+    case Res of
         {ok, CVC} ->
-            {ok, incr_tx_id(State#state{last_cvc=CVC})};
+            {ok, ElapsedUs, incr_tx_id(State#state{last_cvc=CVC})};
 
         {error, _} when RetryData ->
             close_auction_loop(incr_tx_id(State));
@@ -682,7 +694,7 @@ close_auction_loop(State=#state{coord_state=Coord, retry_until_commit=RetryAbort
             close_auction_loop(incr_tx_id(State));
 
         {error, _} ->
-            {ok, incr_tx_id(State)};
+            {ok, ElapsedUs, incr_tx_id(State)};
 
         {abort, _}=Abort ->
             {error, Abort, incr_tx_id(State)}

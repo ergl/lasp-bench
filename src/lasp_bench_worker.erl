@@ -254,7 +254,7 @@ worker_next_op_continue({_Label, OpTag}=Next, State) ->
         {ok, ElapsedT, DriverState} ->
             %% time is measured by external system
             lasp_bench_stats:op_complete(Next, ok, ElapsedT),
-            {ok, State#state { driver_state = DriverState}};
+            {ok, State#state { driver_state = hack_preprocess_driver_state(Next, DriverState) }};
 
         {error, Reason, DriverState} ->
             %% Driver encountered a recoverable error
