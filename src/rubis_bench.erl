@@ -26,7 +26,6 @@
     coord_state :: grb_client:coord(),
 
     %% Benchmark state
-    user_count = 1 :: pos_integer(),
     item_count = 1 :: pos_integer(),
     comment_count = 1 :: pos_integer(),
     buy_now_count = 1 :: pos_integer(),
@@ -490,24 +489,24 @@ try_auth(Coord, Tx0, Region, NickName, Password) ->
     end.
 
 -spec register_user_loop(state()) -> {ok, state()} | {error, term(), state()}.
-register_user_loop(S0=#state{coord_state=Coord, retry_until_commit=Retry}) ->
+register_user_loop(State=#state{coord_state=Coord, retry_until_commit=Retry}) ->
     Region = random_region(),
-    {NickName, S1} = gen_new_nickname(S0),
-    {ok, Tx} = start_transaction(S1),
+    NickName = gen_new_nickname(),
+    {ok, Tx} = start_transaction(State),
     case register_user(Coord, Tx, Region, NickName) of
         {ok, CVC} ->
-            {ok, incr_tx_id(S1#state{last_cvc=CVC, last_generated_user={Region, NickName}})};
+            {ok, incr_tx_id(State#state{last_cvc=CVC, last_generated_user={Region, NickName}})};
 
         Error ->
             if
                 Retry ->
-                    register_user_loop(incr_tx_id(S1));
+                    register_user_loop(incr_tx_id(State));
 
                 is_tuple(Error) andalso (element(1, Error) =:= abort) ->
-                    {error, Error, incr_tx_id(S1)};
+                    {error, Error, incr_tx_id(State)};
 
                 true ->
-                    {ok, incr_tx_id(S1)}
+                    {ok, incr_tx_id(State)}
             end
     end.
 
@@ -786,12 +785,8 @@ random_item(#state{last_generated_item=undefined}) ->
     ItemId = list_to_binary(io_lib:format("~s/items/preload_~b", [Category, ItemIdNumeric])),
     {Region, ItemId}.
 
--spec gen_new_nickname(state()) -> {binary(), state()}.
-gen_new_nickname(S=#state{local_ip_str=IPStr, worker_id=Id, user_count=N}) ->
-    {
-        list_to_binary(IPStr ++ integer_to_list(Id) ++ integer_to_list(N)),
-        S#state{user_count=N+1}
-    }.
+-spec gen_new_nickname() -> binary().
+gen_new_nickname() -> random_binary(24).
 
 -spec gen_new_item_id(state()) -> {binary(), state()}.
 gen_new_item_id(S=#state{local_ip_str=IPStr, worker_id=Id, item_count=N}) ->
