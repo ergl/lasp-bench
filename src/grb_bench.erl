@@ -9,7 +9,6 @@
 
 -include("lasp_bench.hrl").
 
--type tx_id() :: {non_neg_integer(), non_neg_integer()}.
 -type key_gen(T) :: fun(() -> T).
 
 -record(state, {
@@ -325,7 +324,7 @@ gen_updates(N, K, V) -> gen_updates(N, K, V, []).
 gen_updates(0, _, _, Acc) -> Acc;
 gen_updates(N, K, V, Acc) -> gen_updates(N - 1, K, V, [{K(), V()} | Acc]).
 
--spec next_tx_id(#state{}) -> tx_id().
+-spec next_tx_id(#state{}) -> non_neg_integer().
 next_tx_id(#state{transaction_count=N}) -> N.
 
 -spec incr_tx_id(#state{}) -> #state{}.
