@@ -57,7 +57,7 @@ new(WorkerId) ->
     {ok, State}.
 
 run(register_user, _, _, State) ->
-    {ok, register_user_loop(State)};
+    register_user_loop(State);
 
 run(browse_categories, _, _, S=#state{coord_state=Coord}) ->
     {ok, Tx} = start_transaction(S),
@@ -175,6 +175,7 @@ run(buy_now, _, _, S0=#state{coord_state=Coord}) ->
         {error, _} ->
             %% bail out, no need to clean up anything
             S0;
+
          {ok, Tx1} ->
              {ok, _, Tx2} = grb_client:read_key_snapshots(Coord, Tx1, ItemKeys),
              CVC = grb_client:commit(Coord, Tx2),
@@ -183,7 +184,7 @@ run(buy_now, _, _, S0=#state{coord_state=Coord}) ->
     {ok, incr_tx_id(S1)};
 
 run(store_buy_now, _, _, S) ->
-    {ok, store_buy_now_loop(S)};
+    store_buy_now_loop(S);
 
 run(put_bid, _, _, S0=#state{coord_state=Coord}) ->
     {ItemRegion, ItemId} = random_item(S0),
@@ -200,6 +201,7 @@ run(put_bid, _, _, S0=#state{coord_state=Coord}) ->
         {error, _} ->
             %% bail out, no need to clean up anything
             S0;
+
          {ok, Tx1} ->
              {ok, _, Tx2} = grb_client:read_key_snapshots(Coord, Tx1, ItemKeys),
              CVC = grb_client:commit(Coord, Tx2),
@@ -208,7 +210,7 @@ run(put_bid, _, _, S0=#state{coord_state=Coord}) ->
     {ok, incr_tx_id(S1)};
 
 run(store_bid, _, _, S) ->
-    {ok, store_bid_loop(S)};
+    store_bid_loop(S);
 
 run(put_comment, _, _, S0=#state{coord_state=Coord}) ->
     {FromRegion, FromNickname} = random_user(S0),
@@ -440,7 +442,7 @@ run(get_auctions_ready_for_close, _, _, S=#state{coord_state=Coord}) ->
     {ok, incr_tx_id(S#state{last_cvc=CVC})};
 
 run(close_auction, _, _, S) ->
-    {ok, close_auction_loop(S)}.
+    close_auction_loop(S).
 
 terminate(_Reason, _State) ->
     hook_rubis:stop(),
@@ -476,21 +478,26 @@ try_auth(Coord, Tx0, Region, NickName, Password) ->
             {error, Tx1}
     end.
 
--spec register_user_loop(state()) -> state().
+-spec register_user_loop(state()) -> {ok, state()} | {error, term(), state()}.
 register_user_loop(S0=#state{coord_state=Coord, retry_until_commit=Retry}) ->
     Region = random_region(),
     {NickName, S1} = gen_new_nickname(S0),
     {ok, Tx} = start_transaction(S1),
     case register_user(Coord, Tx, Region, NickName) of
-        {abort, _} when Retry =:= true ->
-            register_user_loop(incr_tx_id(S1));
-
         {ok, CVC} ->
-            incr_tx_id(S1#state{last_cvc=CVC, last_generated_user={Region, NickName}});
+            {ok, incr_tx_id(S1#state{last_cvc=CVC, last_generated_user={Region, NickName}})};
 
-        _ ->
-            %% todo(borja): What to do here? (user_taken)
-            incr_tx_id(S1)
+        Error ->
+            if
+                Retry ->
+                    register_user_loop(incr_tx_id(S1));
+
+                is_tuple(Error) andalso (element(1, Error) =:= abort) ->
+                    {error, Error, incr_tx_id(S1)};
+
+                true ->
+                    {ok, incr_tx_id(S1)}
+            end
     end.
 
 -spec register_user(grb_client:coord(), grb_client:tx(), binary(), binary()) -> {ok, _} | {abort, _} | {error, user_taken}.
@@ -517,7 +524,7 @@ register_user(Coord, Tx, Region, Nickname) ->
             {error, user_taken}
     end.
 
--spec store_buy_now_loop(state()) -> state().
+-spec store_buy_now_loop(state()) -> {ok, state()} | {error, term(), state()}.
 store_buy_now_loop(S0=#state{coord_state=Coord, retry_until_commit=Retry}) ->
     {ItemRegion, ItemId} = random_item(S0),
     {UserRegion, NickName} = random_user(S0),
@@ -525,13 +532,20 @@ store_buy_now_loop(S0=#state{coord_state=Coord, retry_until_commit=Retry}) ->
     {BuyNowId, S1} = gen_new_buynow_id(S0),
     {ok, Tx} = start_transaction(S1),
     case store_buy_now(Coord, Tx, {ItemRegion, items, ItemId}, {UserRegion, users, NickName}, BuyNowId, Qty) of
-        {abort, _} when Retry =:= true ->
-            store_buy_now_loop(incr_tx_id(S1));
         {ok, CVC} ->
-            incr_tx_id(S1#state{last_cvc=CVC});
-        _ ->
-            %% todo(borja): What to do here? (bad_quantity)
-            incr_tx_id(S1)
+            {ok, incr_tx_id(S1#state{last_cvc=CVC})};
+
+        Error ->
+            if
+                Retry ->
+                    store_buy_now_loop(incr_tx_id(S1));
+
+                is_tuple(Error) andalso (element(1, Error) =:= abort) ->
+                    {error, Error, incr_tx_id(S1)};
+
+                true ->
+                    {ok, incr_tx_id(S1)}
+            end
     end.
 
 -spec store_buy_now(grb_client:coord(), grb_client:tx(), _, _, binary(), non_neg_integer()) -> {ok, _} | {abort, _} | {error, bad_quantity}.
@@ -563,7 +577,7 @@ store_buy_now(Coord, Tx, ItemKey={ItemRegion, items, ItemId}, UserKey={UserRegio
             grb_client:commit_red(Coord, Tx3, ?store_buy_now_label)
     end.
 
--spec store_bid_loop(state()) -> state().
+-spec store_bid_loop(state()) -> {ok, state()} | {error, term(), state()}.
 store_bid_loop(S0=#state{coord_state=Coord, retry_until_commit=Retry}) ->
     {ItemRegion, ItemId} = random_item(S0),
     {UserRegion, NickName} = random_user(S0),
@@ -572,13 +586,20 @@ store_bid_loop(S0=#state{coord_state=Coord, retry_until_commit=Retry}) ->
     {BidId, S1} = gen_new_bid_id(S0),
     {ok, Tx} = start_transaction(S1),
     case store_bid(Coord, Tx, {ItemRegion, items, ItemId}, {UserRegion, users, NickName}, BidId, Amount, Qty) of
-        {abort, _} when Retry =:= true ->
-            store_bid_loop(incr_tx_id(S1));
         {ok, CVC} ->
-            incr_tx_id(S1#state{last_cvc=CVC});
-        _ ->
-            %% todo(borja): What to do here? (bad_data)
-            incr_tx_id(S1)
+            {ok, incr_tx_id(S1#state{last_cvc=CVC})};
+
+        Error ->
+            if
+                Retry ->
+                    store_bid_loop(incr_tx_id(S1));
+
+                is_tuple(Error) andalso (element(1, Error) =:= abort) ->
+                    {error, Error, incr_tx_id(S1)};
+
+                true ->
+                    {ok, incr_tx_id(S1)}
+            end
     end.
 
 -spec store_bid(grb_client:coord(), grb_client:tx(), _, _, binary(), non_neg_integer(), non_neg_integer()) -> {ok, _} | {abort, _} | {error, bad_data}.
@@ -625,18 +646,25 @@ store_bid(Coord, Tx, ItemKey={ItemRegion, items, ItemId}, UserKey={UserRegion, _
             grb_client:commit_red(Coord, Tx3, ?place_bid_label)
     end.
 
--spec close_auction_loop(state()) -> state().
+-spec close_auction_loop(state()) -> {ok, state()} | {error, term(), state()}.
 close_auction_loop(State=#state{coord_state=Coord, retry_until_commit=Retry}) ->
     {ItemRegion, Itemid} = random_item(State),
     {ok, Tx} = start_transaction(State),
     case close_auction(Coord, Tx, {ItemRegion, items, Itemid}) of
-        {abort, _} when Retry =:= true ->
-            close_auction_loop(incr_tx_id(State));
         {ok, CVC} ->
-            incr_tx_id(State#state{last_cvc=CVC});
-        _ ->
-            %% todo(borja): What to do here? (closed | no_bids)
-            incr_tx_id(State)
+            {ok, incr_tx_id(State#state{last_cvc=CVC})};
+
+        Error ->
+            if
+                Retry ->
+                    close_auction_loop(incr_tx_id(State));
+
+                is_tuple(Error) andalso (element(1, Error) =:= abort) ->
+                    {error, Error, incr_tx_id(State)};
+
+                true ->
+                    {ok, incr_tx_id(State)}
+            end
     end.
 
 -spec close_auction(grb_client:coord(), grb_client:tx(), {binary(), atom(), binary()}) -> {ok, _} | {abort, _} | {error, atom()}.
