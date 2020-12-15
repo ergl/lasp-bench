@@ -29,6 +29,10 @@
     retry_on_bad_precondition :: boolean(),
     coord_state :: grb_client:coord(),
 
+    %% Reusing commit vector for certain transactions
+    blue_reuse_cvc :: boolean(),
+    red_reuse_cvc :: boolean(),
+
     %% Benchmark state
     item_count = 1 :: pos_integer(),
     comment_count = 1 :: pos_integer(),
@@ -47,6 +51,9 @@ new(WorkerId) ->
     RetryUntilCommit = lasp_bench_config:get(retry_aborts, true),
     RetryOnBadData = lasp_bench_config:get(retry_on_bad_precondition, true),
 
+    BlueReuseCVC = lasp_bench_config:get(blue_reuse_cvc, true),
+    RedReuseCVC = lasp_bench_config:get(red_reuse_cvc, true),
+
     RandSeed = lasp_bench_config:get(worker_seed, os:timestamp()),
     _ = rand:seed(exsss, RandSeed),
 
@@ -56,6 +63,8 @@ new(WorkerId) ->
                    last_cvc=pvc_vclock:new(),
                    retry_until_commit=RetryUntilCommit,
                    retry_on_bad_precondition=RetryOnBadData,
+                   blue_reuse_cvc=BlueReuseCVC,
+                   red_reuse_cvc=RedReuseCVC,
                    coord_state=CoordState},
 
     {ok, State}.
@@ -64,38 +73,38 @@ run(register_user, _, _, State) ->
     register_user_loop(State);
 
 run(browse_categories, _, _, S=#state{coord_state=Coord}) ->
-    {ok, Tx} = start_transaction(S),
+    {ok, Tx} = start_blue_transaction(S),
     {ok, _, Tx1} = grb_client:read_key_snapshot(Coord, Tx, {?global_indices, all_categories}, grb_gset),
     CVC = grb_client:commit(Coord, Tx1),
     {ok, incr_tx_id(S#state{last_cvc=CVC})};
 
 run(search_items_in_category, _, _, S=#state{coord_state=Coord}) ->
     %% mostly the same as search_items_in_region
-    {ok, Tx} = start_transaction(S),
+    {ok, Tx} = start_blue_transaction(S),
     CVC = search_items_in_region_category(Coord, Tx, random_region(), random_category(), random_page_size()),
     {ok, incr_tx_id(S#state{last_cvc=CVC})};
 
 run(browse_regions, _, _, S=#state{coord_state=Coord}) ->
-    {ok, Tx} = start_transaction(S),
+    {ok, Tx} = start_blue_transaction(S),
     {ok, _, Tx1} = grb_client:read_key_snapshot(Coord, Tx, {?global_indices, all_regions}, grb_gset),
     CVC = grb_client:commit(Coord, Tx1),
     {ok, incr_tx_id(S#state{last_cvc=CVC})};
 
 run(browse_categories_in_region, _, _, S=#state{coord_state=Coord}) ->
     %% same as browse_categories
-    {ok, Tx} = start_transaction(S),
+    {ok, Tx} = start_blue_transaction(S),
     {ok, _, Tx1} = grb_client:read_key_snapshot(Coord, Tx, {?global_indices, all_categories}, grb_gset),
     CVC = grb_client:commit(Coord, Tx1),
     {ok, incr_tx_id(S#state{last_cvc=CVC})};
 
 run(search_items_in_region, _, _, S=#state{coord_state=Coord}) ->
-    {ok, Tx} = start_transaction(S),
+    {ok, Tx} = start_blue_transaction(S),
     CVC = search_items_in_region_category(Coord, Tx, random_region(), random_category(), random_page_size()),
     {ok, incr_tx_id(S#state{last_cvc=CVC})};
 
 run(view_item, _, _, S0=#state{coord_state=Coord}) ->
     {Region, ItemId} = random_item(S0),
-    {ok, Tx} = start_transaction(S0),
+    {ok, Tx} = start_blue_transaction(S0),
     {ok, _, Tx1} = grb_client:read_key_snapshots(Coord, Tx, [
         {{Region, items, ItemId, seller}, grb_lww},
         {{Region, items, ItemId, category}, grb_lww},
@@ -117,7 +126,7 @@ run(view_user_info, _, _, S0=#state{coord_state=Coord}) ->
         {{Region, users, NickName, lastname}, grb_lww},
         {{Region, users, NickName, rating}, grb_gcounter}
     ],
-    {ok, Tx} = start_transaction(S0),
+    {ok, Tx} = start_blue_transaction(S0),
 
     %% Read up to limit from the list of comments to this user, and while it completes read the user object
     {ok, Req} = grb_client:send_read_operation(Coord, Tx, CommentIndexKey, ?gset_limit_op(random_page_size())),
@@ -146,7 +155,7 @@ run(view_bid_history, _, _, S0=#state{coord_state=Coord}) ->
     {Region, ItemId} = random_item(S0),
     ItemNameKey = {Region, items, ItemId, name},
     BidIndexKey = {Region, bids_item, {Region, items, ItemId}},
-    {ok, Tx} = start_transaction(S0),
+    {ok, Tx} = start_blue_transaction(S0),
     {ok, Req} = grb_client:send_read_operation(Coord, Tx, BidIndexKey, ?gset_limit_op(random_page_size())),
     {ok, _, Tx1} = grb_client:read_key_snapshot(Coord, Tx, ItemNameKey, grb_lww),
     {ok, BidIds, Tx2} = grb_client:receive_read_operation(Coord, Tx1, BidIndexKey, Req),
@@ -174,7 +183,7 @@ run(buy_now, _, _, S0=#state{coord_state=Coord}) ->
         {{ItemRegion, items, ItemId, seller}, grb_lww},
         {{ItemRegion, items, ItemId, buy_now}, grb_lww}
     ],
-    {ok, Tx} = start_transaction(S0),
+    {ok, Tx} = start_blue_transaction(S0),
     S1 = case try_auth(Coord, Tx, UserRegion, Nickname, Nickname) of
         {error, _} ->
             %% bail out, no need to clean up anything
@@ -200,7 +209,7 @@ run(put_bid, _, _, S0=#state{coord_state=Coord}) ->
         {{ItemRegion, items, ItemId, bids_number}, grb_gcounter},
         {{ItemRegion, items, ItemId, initial_price}, grb_lww}
     ],
-    {ok, Tx} = start_transaction(S0),
+    {ok, Tx} = start_blue_transaction(S0),
     S1 = case try_auth(Coord, Tx, UserRegion, Nickname, Nickname) of
         {error, _} ->
             %% bail out, no need to clean up anything
@@ -224,7 +233,7 @@ run(put_comment, _, _, S0=#state{coord_state=Coord}) ->
         {ToNickname, grb_lww},
         {{ItemRegion, items, ItemId, name}, grb_lww}
     ],
-    {ok, Tx} = start_transaction(S0),
+    {ok, Tx} = start_blue_transaction(S0),
     S1 = case try_auth(Coord, Tx, FromRegion, FromNickname, FromNickname) of
         {error, _} ->
             %% bail out, no need to clean up anything
@@ -262,7 +271,7 @@ run(store_comment, _, _, S0=#state{coord_state=Coord}) ->
         %% Update recipient rating
         { {ToRegion, users, ToNickname, rating}, grb_crdt:make_op(grb_gcounter, Rating)}
     ],
-    {ok, Tx} = start_transaction(S1),
+    {ok, Tx} = start_blue_transaction(S1),
     %% Claim the item key, read/write so we don't do any blind updates, should get back the same value
     {ok, CommentKey, Tx1} = grb_client:update_operation(Coord, Tx, CommentKey, grb_crdt:make_op(grb_lww, CommentKey)),
     {ok, Tx2} = grb_client:send_key_operations(Coord, Tx1, Updates),
@@ -272,7 +281,7 @@ run(store_comment, _, _, S0=#state{coord_state=Coord}) ->
 run(select_category_to_sell_item, _, _, S0=#state{coord_state=Coord}) ->
     %% same as browse_categories, but with auth step
     {UserRegion, Nickname} = random_user(S0),
-    {ok, Tx} = start_transaction(S0),
+    {ok, Tx} = start_blue_transaction(S0),
     S1 = case try_auth(Coord, Tx, UserRegion, Nickname, Nickname) of
         {error, _} ->
             %% bail out, no need to clean up anything
@@ -325,7 +334,7 @@ run(register_item, _, _, S0=#state{coord_state=Coord}) ->
         %% append to ITEMS_region_category index
         {{Region, items_region_category, Category}, grb_crdt:make_op(grb_gset, ItemKey)}
     ],
-    {ok, Tx} = start_transaction(S1),
+    {ok, Tx} = start_blue_transaction(S1),
     %% Claim the item key, read/write so we don't do any blind updates, should get back the same value
     {ok, ItemKey, Tx1} = grb_client:update_operation(Coord, Tx, ItemKey, grb_crdt:make_op(grb_lww, ItemKey)),
     {ok, Tx2} = grb_client:send_key_operations(Coord, Tx1, Updates),
@@ -334,7 +343,7 @@ run(register_item, _, _, S0=#state{coord_state=Coord}) ->
 
 run(about_me, _, _, S0=#state{coord_state=Coord}) ->
     {UserRegion, Nickname} = random_user(S0),
-    {ok, Tx} = start_transaction(S0),
+    {ok, Tx} = start_blue_transaction(S0),
     S1 = case try_auth(Coord, Tx, UserRegion, Nickname, Nickname) of
         {error, _} ->
             %% bail out, no need to clean up anything
@@ -429,7 +438,7 @@ run(get_auctions_ready_for_close, _, _, S=#state{coord_state=Coord}) ->
     Region = random_region(),
     Category = random_category(),
 
-    {ok, Tx} = start_transaction(S),
+    {ok, Tx} = start_blue_transaction(S),
     {ok, ItemIds, Tx1} = grb_client:read_key_operation(Coord, Tx,
                                                        {Region, items_region_category, Category},
                                                        ?gset_limit_op(random_page_size())),
@@ -460,7 +469,8 @@ run(get_auctions_ready_for_close, _, _, S=#state{coord_state=Coord}) ->
 run(close_auction, _, _, S) ->
     close_auction_loop(S).
 
-terminate(_Reason, _State) ->
+terminate(Reason, #state{worker_id=Id}) ->
+    ?ERROR("Worker ~p (id ~b) terminated with reason ~p", [self(), Id, Reason]),
     hook_rubis:stop(),
     ok.
 
@@ -468,9 +478,15 @@ terminate(_Reason, _State) ->
 %%% Transaction Utils
 %%%===================================================================
 
--spec start_transaction(#state{}) -> {ok, grb_client:tx()}.
-start_transaction(S=#state{coord_state=CoordState, last_cvc=VC}) ->
-    grb_client:start_transaction(CoordState, next_tx_id(S), VC).
+-spec start_blue_transaction(state()) -> {ok, grb_client:tx()}.
+start_blue_transaction(S=#state{coord_state=CoordState, last_cvc=LastVC, blue_reuse_cvc=Reuse}) ->
+    SVC = if Reuse -> LastVC; true -> grb_vclock:new() end,
+    grb_client:start_transaction(CoordState, next_tx_id(S), SVC).
+
+-spec start_red_transaction(state()) -> {ok, grb_client:tx()}.
+start_red_transaction(S=#state{coord_state=CoordState, last_cvc=LastVC, red_reuse_cvc=Reuse}) ->
+    SVC = if Reuse -> LastVC; true -> grb_vclock:new() end,
+    grb_client:start_transaction(CoordState, next_tx_id(S), SVC).
 
 -spec next_tx_id(#state{}) -> non_neg_integer().
 next_tx_id(#state{transaction_count=N}) -> N.
@@ -501,7 +517,7 @@ register_user_loop(State=#state{coord_state=Coord, retry_until_commit=RetryAbort
     Start = os:timestamp(),
     Region = random_region(),
     NickName = gen_new_nickname(),
-    {ok, Tx} = start_transaction(State),
+    {ok, Tx} = start_red_transaction(State),
     Res = register_user(Coord, Tx, Region, NickName),
     ElapsedUs = erlang:max(0, timer:now_diff(os:timestamp(), Start)),
     case Res of
@@ -554,7 +570,7 @@ store_buy_now_loop(S0=#state{coord_state=Coord, retry_until_commit=RetryAbort,
     {UserRegion, NickName} = random_user(S0),
     Qty = safe_uniform(hook_rubis:get_rubis_prop(buy_now_max_quantity)),
     {BuyNowId, S1} = gen_new_buynow_id(S0),
-    {ok, Tx} = start_transaction(S1),
+    {ok, Tx} = start_red_transaction(S1),
     Res = store_buy_now(Coord, Tx, {ItemRegion, items, ItemId}, {UserRegion, users, NickName}, BuyNowId, Qty),
     ElapsedUs = erlang:max(0, timer:now_diff(os:timestamp(), Start)),
     case Res of
@@ -613,7 +629,7 @@ store_bid_loop(S0=#state{coord_state=Coord, retry_until_commit=RetryAbort,
     Qty = safe_uniform(hook_rubis:get_rubis_prop(buy_now_max_quantity)),
     Amount = safe_uniform(hook_rubis:get_rubis_prop(item_max_initial_price)),
     {BidId, S1} = gen_new_bid_id(S0),
-    {ok, Tx} = start_transaction(S1),
+    {ok, Tx} = start_red_transaction(S1),
     Res = store_bid(Coord, Tx, {ItemRegion, items, ItemId}, {UserRegion, users, NickName}, BidId, Amount, Qty),
     ElapsedUs = erlang:max(0, timer:now_diff(os:timestamp(), Start)),
     case Res of
@@ -683,7 +699,7 @@ close_auction_loop(State=#state{coord_state=Coord, retry_until_commit=RetryAbort
 
     Start = os:timestamp(),
     {ItemRegion, Itemid} = random_item(State),
-    {ok, Tx} = start_transaction(State),
+    {ok, Tx} = start_red_transaction(State),
     Res = close_auction(Coord, Tx, {ItemRegion, items, Itemid}),
     ElapsedUs = erlang:max(0, timer:now_diff(os:timestamp(), Start)),
     case Res of
@@ -776,21 +792,26 @@ random_category_items() ->
     erlang:element(rand:uniform(NCat), Cat).
 
 -spec random_user(state()) -> {Region :: binary(), Nickname :: binary()}.
-random_user(#state{last_generated_user={Region, NickName}}) ->
+random_user(#state{red_reuse_cvc=RedReuse, blue_reuse_cvc=BlueReuse,
+                   last_generated_user=LastGenUser}) ->
+    if
+        (RedReuse =:= false) orelse (BlueReuse =:= false) ->
+            random_preloaded_user();
+        true ->
+            random_user_try_last_generated(LastGenUser)
+    end.
+
+random_user_try_last_generated(undefined) -> random_preloaded_user();
+random_user_try_last_generated({Region, NickName}) ->
     Choose = choose_last_generated(),
     if
-         Choose ->
-             {Region, NickName};
-        true ->
-            random_item_bypass()
-    end;
-
-random_user(#state{last_generated_user=undefined}) ->
-    random_user_bypass().
+        Choose -> {Region, NickName};
+        true -> random_preloaded_user()
+    end.
 
 -spec random_different_user(binary(), binary()) -> {Region :: binary(), Nickname :: binary()}.
 random_different_user(Region, Nickname) ->
-    case random_user_bypass() of
+    case random_preloaded_user() of
         {Region, Nickname} ->
             random_different_user(Region, Nickname);
 
@@ -798,25 +819,31 @@ random_different_user(Region, Nickname) ->
             Other
     end.
 
--spec random_user_bypass() -> {Region :: binary(), Nickname :: binary()}.
-random_user_bypass() ->
+-spec random_preloaded_user() -> {Region :: binary(), Nickname :: binary()}.
+random_preloaded_user() ->
     Region = random_region(),
     Id = rand:uniform(hook_rubis:get_rubis_prop(user_per_region)),
     {Region, list_to_binary(io_lib:format("~s/user/preload_~b", [Region, Id]))}.
 
-random_item(#state{last_generated_item={Region, ItemId}}) ->
+random_item(#state{red_reuse_cvc=RedReuse, blue_reuse_cvc=BlueReuse,
+                   last_generated_item=LastGenItem}) ->
+    if
+        (RedReuse =:= false) orelse (BlueReuse =:= false) ->
+            random_preloaded_item();
+        true ->
+            random_item_try_last_generated(LastGenItem)
+    end.
+
+random_item_try_last_generated(undefined) -> random_preloaded_item();
+random_item_try_last_generated({Region, ItemId}) ->
     Choose = choose_last_generated(),
     if
-         Choose ->
-            {Region, ItemId};
-        true ->
-            random_item_bypass()
-    end;
+        Choose -> {Region, ItemId};
+        true -> random_preloaded_item()
+    end.
 
-random_item(#state{last_generated_item=undefined}) ->
-    random_item_bypass().
-
-random_item_bypass() ->
+-spec random_preloaded_item() -> {Region :: binary(), ItemId :: binary()}.
+random_preloaded_item() ->
     {NReg, Reg} = hook_rubis:get_rubis_prop(regions),
     {Category, ItemsInCat} = random_category_items(),
     ItemIdNumeric = rand:uniform(ItemsInCat),
