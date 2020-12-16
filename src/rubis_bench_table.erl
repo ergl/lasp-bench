@@ -129,7 +129,9 @@ next_operation(S0) ->
         stop ->
             {error, stop};
         {ok, State, S} ->
-            {ok, {State, State}, S}
+            {ok, {State, State}, S};
+        {ok, State, WaitTime, S} ->
+            {ok, {State, State}, WaitTime, S}
     end.
 
 terminate(_) ->
@@ -146,7 +148,7 @@ new(FilePath, Seed, TransitionLimit) ->
     ok = file:close(Fd),
     make_table(Seed, TransitionLimit, ParseState).
 
--spec next_state(t()) -> {ok, state_name(), t()} | stop.
+-spec next_state(t()) -> {ok, state_name(), t()} | {ok, state_name(), non_neg_integer(), t()} | stop.
 next_state(#state{reached_end_of_session=true}) ->
     stop;
 
@@ -162,7 +164,13 @@ next_state(S0) ->
             StateName = state_name(NextState),
             case lists:member(StateName, ?SHOULD_DISCARD) of
                 false ->
-                    {ok, StateName, decr_steps(NextState)};
+                    Wait = wait_time(NextState),
+                    if
+                        Wait =/= 0 ->
+                            {ok, StateName, Wait, decr_steps(NextState)};
+                        true ->
+                            {ok, StateName, decr_steps(NextState)}
+                    end;
                 true ->
                     %% loop until we reach another transaction, but don't consume steps
                     next_state(NextState)
@@ -371,8 +379,13 @@ make_table(Seed, TransitionLimit, #parse_state{rows=Rows,
 %%  UTIL FUNCTIONS
 %%
 
+-spec state_name(t()) -> atom().
 state_name(#state{current_state=CState,state_names=SNames}) ->
     erlang:element(CState, SNames).
+
+-spec wait_time(t()) -> non_neg_integer().
+wait_time(#state{current_state=CState,waiting_times=WaitTimes}) ->
+    erlang:element(CState, WaitTimes).
 
 -spec bin_to_numeric(binary()) -> integer() | float().
 bin_to_numeric(N) ->

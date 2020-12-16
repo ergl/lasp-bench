@@ -2,7 +2,9 @@
 
 -callback init(Args :: [Id :: non_neg_integer(), ...]) -> term().
 -callback operations() -> [{atom(), atom()}].
--callback next_operation(term()) -> {ok, {atom(), atom()}, term()} | {error, atom()}.
+-callback next_operation(term()) -> {ok, {atom(), atom()}, term()}
+                                  | {ok, {atom(), atom()}, non_neg_integer(), term()}
+                                  | {error, atom()}.
 -callback terminate(term()) -> ok.
 
 -optional_callbacks([terminate/1]).
@@ -86,7 +88,10 @@ init_ops(T=#distribution{seed=Seed}) ->
 init_ops(T=#ops_mod{mod=Mod, init_args=Args}) ->
     T#ops_mod{mod_state=Mod:init(Args), init_args=undefined}.
 
--spec next_op(t()) -> {ok, {term(), term()}, t()} | {error, term()}.
+-spec next_op(t()) -> {ok, NextOp :: {term(), term()}, NextOpDriver :: t()}
+                    | {ok, NextOp :: {term(), term()}, WaitTime :: non_neg_integer(), NextOpDriver :: t()}
+                    | {error, Reason :: term()}.
+
 next_op(T=#distribution{ops=Ops, ops_len=Len}) ->
     {ok, erlang:element(rand:uniform(Len), Ops), T};
 
@@ -96,5 +101,8 @@ next_op(T=#ops_mod{mod=Mod, mod_state=S0}) ->
             {error, Reason};
 
         {ok, NextOp, S} ->
-            {ok, NextOp, T#ops_mod{mod_state=S}}
+            {ok, NextOp, T#ops_mod{mod_state=S}};
+
+        {ok, NextOp, WaitTime, S} ->
+            {ok, NextOp, WaitTime, T#ops_mod{mod_state=S}}
     end.

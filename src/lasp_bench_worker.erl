@@ -219,6 +219,7 @@ worker_idle_loop(State) ->
             end
     end.
 
+-spec worker_next_op(State :: #state{}) -> {ok, NewState :: #state{}} | {error, ExitReason :: term()}.
 worker_next_op(State) ->
     case lasp_bench_ops:next_op(State#state.driver_ops) of
         {error, Reason} ->
@@ -228,10 +229,18 @@ worker_next_op(State) ->
             ?INFO("Driver ~p (~p) has requested stop: ~p\n", [State#state.driver, self(), Reason]),
             %% Give the driver a chance to cleanup
             (catch (State#state.driver):terminate(normal, State#state.driver_state)),
-            normal;
+            {error, normal};
 
         {ok, Next, NextOps} ->
-            worker_next_op_continue(Next, State#state{driver_ops=NextOps})
+            worker_next_op_continue(Next, State#state{driver_ops=NextOps});
+
+        {ok, Next, WaitTime, NextOps} ->
+            Res = worker_next_op_continue(Next, State#state{driver_ops=NextOps}),
+            if
+                element(1, Res) =:= ok -> timer:sleep(WaitTime);
+                true -> ok
+            end,
+            Res
     end.
 
 worker_next_op2(State, OpTag) ->
@@ -239,6 +248,7 @@ worker_next_op2(State, OpTag) ->
     catch Driver:run(OpTag, State#state.keygen,
                      State#state.valgen, State#state.driver_state).
 
+-spec worker_next_op_continue({term(), term()}, #state{}) -> {ok, #state{}} | {error, Reason :: term()}.
 worker_next_op_continue({_Label, OpTag}=Next, State) ->
     Start = os:timestamp(),
     Result = worker_next_op2(State, OpTag),
@@ -286,7 +296,7 @@ worker_next_op_continue({_Label, OpTag}=Next, State) ->
                                       {shutdown, "Shutdown on errors requested", 2}),
                     {ok, State};
                 false ->
-                    crash
+                    {error, crash}
             end;
 
         {stop, Reason} ->
@@ -297,7 +307,7 @@ worker_next_op_continue({_Label, OpTag}=Next, State) ->
             %% Give the driver a chance to cleanup
             (catch (State#state.driver):terminate(normal, State#state.driver_state)),
 
-            normal
+            {error, normal}
     end.
 
 hack_preprocess_driver_state({_, read_write_blue_track}=Op, Payload) ->
@@ -382,7 +392,7 @@ max_worker_run_loop(State) ->
                 false ->
                     max_worker_run_loop(State2)
             end;
-        ExitReason ->
+        {error, ExitReason} ->
             exit(ExitReason)
     end.
 
@@ -398,6 +408,6 @@ rate_worker_run_loop(State, Lambda) ->
                 false ->
                     rate_worker_run_loop(State2, Lambda)
             end;
-        ExitReason ->
+        {error, ExitReason} ->
             exit(ExitReason)
     end.
