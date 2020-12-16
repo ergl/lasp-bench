@@ -75,7 +75,7 @@ run(register_user, _, _, State) ->
 run(browse_categories, _, _, S=#state{coord_state=Coord}) ->
     {ok, Tx} = start_blue_transaction(S),
     {ok, _, Tx1} = grb_client:read_key_snapshot(Coord, Tx, {?global_indices, all_categories}, grb_gset),
-    CVC = grb_client:commit(Coord, Tx1),
+    CVC = commit_blue(Coord, Tx1),
     {ok, incr_tx_id(S#state{last_cvc=CVC})};
 
 run(search_items_in_category, _, _, S=#state{coord_state=Coord}) ->
@@ -87,14 +87,14 @@ run(search_items_in_category, _, _, S=#state{coord_state=Coord}) ->
 run(browse_regions, _, _, S=#state{coord_state=Coord}) ->
     {ok, Tx} = start_blue_transaction(S),
     {ok, _, Tx1} = grb_client:read_key_snapshot(Coord, Tx, {?global_indices, all_regions}, grb_gset),
-    CVC = grb_client:commit(Coord, Tx1),
+    CVC = commit_blue(Coord, Tx1),
     {ok, incr_tx_id(S#state{last_cvc=CVC})};
 
 run(browse_categories_in_region, _, _, S=#state{coord_state=Coord}) ->
     %% same as browse_categories
     {ok, Tx} = start_blue_transaction(S),
     {ok, _, Tx1} = grb_client:read_key_snapshot(Coord, Tx, {?global_indices, all_categories}, grb_gset),
-    CVC = grb_client:commit(Coord, Tx1),
+    CVC = commit_blue(Coord, Tx1),
     {ok, incr_tx_id(S#state{last_cvc=CVC})};
 
 run(search_items_in_region, _, _, S=#state{coord_state=Coord}) ->
@@ -114,7 +114,7 @@ run(view_item, _, _, S0=#state{coord_state=Coord}) ->
         {{Region, items, ItemId, buy_now}, grb_lww},
         {{Region, items, ItemId, closed}, grb_lww}
     ]),
-    CVC = grb_client:commit(Coord, Tx1),
+    CVC = commit_blue(Coord, Tx1),
     {ok, incr_tx_id(S0#state{last_cvc=CVC})};
 
 run(view_user_info, _, _, S0=#state{coord_state=Coord}) ->
@@ -148,7 +148,7 @@ run(view_user_info, _, _, S0=#state{coord_state=Coord}) ->
         CommentIds
     ),
     {ok, _, Tx3} = grb_client:read_key_snapshots(Coord, Tx2, CommentKeys),
-    CVC = grb_client:commit(Coord, Tx3),
+    CVC = commit_blue(Coord, Tx3),
     {ok, incr_tx_id(S0#state{last_cvc=CVC})};
 
 run(view_bid_history, _, _, S0=#state{coord_state=Coord}) ->
@@ -172,7 +172,7 @@ run(view_bid_history, _, _, S0=#state{coord_state=Coord}) ->
         BidIds
     ),
     {ok, _, Tx3} = grb_client:read_key_snapshots(Coord, Tx2, BidKeys),
-    CVC = grb_client:commit(Coord, Tx3),
+    CVC = commit_blue(Coord, Tx3),
     {ok, incr_tx_id(S0#state{last_cvc=CVC})};
 
 run(buy_now, _, _, S0=#state{coord_state=Coord}) ->
@@ -191,7 +191,7 @@ run(buy_now, _, _, S0=#state{coord_state=Coord}) ->
 
         {ok, Tx1} ->
             {ok, _, Tx2} = grb_client:read_key_snapshots(Coord, Tx1, ItemKeys),
-             CVC = grb_client:commit(Coord, Tx2),
+             CVC = commit_blue(Coord, Tx2),
              S0#state{last_cvc=CVC}
     end,
     {ok, incr_tx_id(S1)};
@@ -217,7 +217,7 @@ run(put_bid, _, _, S0=#state{coord_state=Coord}) ->
 
          {ok, Tx1} ->
              {ok, _, Tx2} = grb_client:read_key_snapshots(Coord, Tx1, ItemKeys),
-             CVC = grb_client:commit(Coord, Tx2),
+             CVC = commit_blue(Coord, Tx2),
              S0#state{last_cvc=CVC}
     end,
     {ok, incr_tx_id(S1)};
@@ -240,7 +240,7 @@ run(put_comment, _, _, S0=#state{coord_state=Coord}) ->
             S0;
          {ok, Tx1} ->
              {ok, _, Tx2} = grb_client:read_key_snapshots(Coord, Tx1, Keys),
-             CVC = grb_client:commit(Coord, Tx2),
+             CVC = commit_blue(Coord, Tx2),
              S0#state{last_cvc=CVC}
     end,
     {ok, incr_tx_id(S1)};
@@ -275,7 +275,7 @@ run(store_comment, _, _, S0=#state{coord_state=Coord}) ->
     %% Claim the item key, read/write so we don't do any blind updates, should get back the same value
     {ok, CommentKey, Tx1} = grb_client:update_operation(Coord, Tx, CommentKey, grb_crdt:make_op(grb_lww, CommentKey)),
     {ok, Tx2} = grb_client:send_key_operations(Coord, Tx1, Updates),
-    CVC = grb_client:commit(Coord, Tx2),
+    CVC = commit_blue(Coord, Tx2),
     {ok, incr_tx_id(S1#state{last_cvc=CVC})};
 
 run(select_category_to_sell_item, _, _, S0=#state{coord_state=Coord}) ->
@@ -288,7 +288,7 @@ run(select_category_to_sell_item, _, _, S0=#state{coord_state=Coord}) ->
             S0;
          {ok, Tx1} ->
              {ok, _, Tx2} = grb_client:read_key_snapshot(Coord, Tx1, {?global_indices, all_categories}, grb_gset),
-             CVC = grb_client:commit(Coord, Tx2),
+             CVC = commit_blue(Coord, Tx2),
              S0#state{last_cvc=CVC}
     end,
     {ok, incr_tx_id(S1)};
@@ -338,7 +338,7 @@ run(register_item, _, _, S0=#state{coord_state=Coord}) ->
     %% Claim the item key, read/write so we don't do any blind updates, should get back the same value
     {ok, ItemKey, Tx1} = grb_client:update_operation(Coord, Tx, ItemKey, grb_crdt:make_op(grb_lww, ItemKey)),
     {ok, Tx2} = grb_client:send_key_operations(Coord, Tx1, Updates),
-    CVC = grb_client:commit(Coord, Tx2),
+    CVC = commit_blue(Coord, Tx2),
     {ok, incr_tx_id(S1#state{last_cvc=CVC, last_generated_item={Region, ItemId}})};
 
 run(about_me, _, _, S0=#state{coord_state=Coord}) ->
@@ -429,7 +429,7 @@ run(about_me, _, _, S0=#state{coord_state=Coord}) ->
                 TxAcc
             end, Tx3, Reqs2),
 
-            CVC = grb_client:commit(Coord, Tx4),
+            CVC = commit_blue(Coord, Tx4),
             S0#state{last_cvc=CVC}
     end,
     {ok, incr_tx_id(S1)};
@@ -463,7 +463,7 @@ run(get_auctions_ready_for_close, _, _, S=#state{coord_state=Coord}) ->
         TxAcc
     end, Tx1, KeyRequests),
 
-    CVC = grb_client:commit(Coord, Tx2),
+    CVC = commit_blue(Coord, Tx2),
     {ok, incr_tx_id(S#state{last_cvc=CVC})};
 
 run(close_auction, _, _, S) ->
@@ -487,6 +487,23 @@ start_blue_transaction(S=#state{coord_state=CoordState, last_cvc=LastVC, blue_re
 start_red_transaction(S=#state{coord_state=CoordState, last_cvc=LastVC, red_reuse_cvc=Reuse}) ->
     SVC = if Reuse -> LastVC; true -> grb_vclock:new() end,
     grb_client:start_transaction(CoordState, next_tx_id(S), SVC).
+
+-spec commit_blue(
+    Coord :: grb_client:coordd(),
+    Tx :: grb_client:tx()
+) -> CVC :: grb_client:rvc().
+
+commit_blue(Coord, Tx) ->
+    grb_client:commit(Coord, Tx).
+
+-spec commit_red(
+    Coord :: grb_client:coordd(),
+    Tx :: grb_client:tx(),
+    Label :: grb_client:tx_label()
+) -> {ok, CVC :: grb_client:rvc()} | {abort, Reason :: term()}.
+
+commit_red(Coord, Tx, Label) ->
+    grb_client:commit_red(Coord, Tx, Label).
 
 -spec next_tx_id(#state{}) -> non_neg_integer().
 next_tx_id(#state{transaction_count=N}) -> N.
@@ -555,7 +572,7 @@ register_user(Coord, Tx, Region, Nickname) ->
             {ok, Req} = grb_client:send_key_update(Coord, Tx1, UserKey, grb_crdt:make_op(grb_lww, Nickname)),
             {ok, Tx2} = grb_client:send_key_operations(Coord, Tx1, Updates),
             {ok, Nickname, Tx3} = grb_client:receive_key_update(Coord, Tx2, UserKey, Req),
-            grb_client:commit_red(Coord, Tx3, ?register_user_label);
+            commit_red(Coord, Tx3, ?register_user_label);
         _ ->
             %% let the caller choose what to do
             {error, user_taken}
@@ -616,7 +633,7 @@ store_buy_now(Coord, Tx, ItemKey={ItemRegion, items, ItemId}, UserKey={UserRegio
             ]),
             %% now receive it, but ignore the data
             {ok, _, Tx3} = grb_client:receive_read_key(Coord, Tx2, UserKey, NickReq),
-            grb_client:commit_red(Coord, Tx3, ?store_buy_now_label)
+            commit_red(Coord, Tx3, ?store_buy_now_label)
     end.
 
 -spec store_bid_loop(state()) -> {ok, integer(), state()} | {error, term(), state()}.
@@ -690,7 +707,7 @@ store_bid(Coord, Tx, ItemKey={ItemRegion, items, ItemId}, UserKey={UserRegion, _
 
             %% this should have finished by now
             {ok, _, Tx3} = grb_client:receive_read_key(Coord, Tx2, UserKey, Req),
-            grb_client:commit_red(Coord, Tx3, ?place_bid_label)
+            commit_red(Coord, Tx3, ?place_bid_label)
     end.
 
 -spec close_auction_loop(state()) -> {ok, integer(), state()} | {error, term(), state()}.
@@ -745,7 +762,7 @@ close_auction(Coord, Tx, ItemKey={ItemRegion, _, ItemId}) ->
                 {{BidderRegion, wins_user, BidderKey}, grb_crdt:make_op(grb_gset, {ItemKey, ItemSeller, MaxBidKey, MaxBidAmount})}
             ]),
             {ok, _, Tx3} = grb_client:receive_read_key(Coord, Tx2, BidderKey, Req),
-            grb_client:commit_red(Coord, Tx3, ?close_auction_label)
+            commit_red(Coord, Tx3, ?close_auction_label)
     end.
 
 %% Get all non-closed items (up to page size) belonging to a category, and with sellers in region, up to `Limit`
@@ -770,7 +787,7 @@ search_items_in_region_category(Coord, Tx, Region, Category, Limit) ->
             ]
     end, [], Items),
     {ok, _, Tx3} = grb_client:read_key_snapshots(Coord, Tx2, OpenKeyTypes),
-    grb_client:commit(Coord, Tx3).
+    commit_blue(Coord, Tx3).
 
 %%%===================================================================
 %%% Random Utils
