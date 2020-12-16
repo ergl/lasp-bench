@@ -91,7 +91,11 @@ make_coordinator(WorkerId) ->
 worker_generator(Id) ->
     fun() -> make_worker_key(get_config(local_ip), Id) end.
 
--spec generator(non_neg_integer(), #{}) -> fun(() -> binary()).
+-spec generator(
+    Id :: non_neg_integer(),
+    Opts :: #{shared_key := any(), conflict_ration := float(), _ => _}
+) -> Gen :: fun(() -> binary()).
+
 generator(Id, Opts=#{shared_key := SharedKey, conflict_ratio := Ratio}) ->
     GeneratorOpts = maps:get(generator, Opts, undefined),
     LocalIP = get_config(local_ip),

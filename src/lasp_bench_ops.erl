@@ -86,7 +86,7 @@ init_ops(T=#distribution{seed=Seed}) ->
     T;
 
 init_ops(T=#ops_mod{mod=Mod, init_args=Args}) ->
-    T#ops_mod{mod_state=Mod:init(Args), init_args=undefined}.
+    T#ops_mod{mod_state=Mod:init(Args), init_args=[]}.
 
 -spec next_op(t()) -> {ok, NextOp :: {term(), term()}, NextOpDriver :: t()}
                     | {ok, NextOp :: {term(), term()}, WaitTime :: non_neg_integer(), NextOpDriver :: t()}

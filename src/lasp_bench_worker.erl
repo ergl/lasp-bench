@@ -42,7 +42,7 @@
     driver_ops :: lasp_bench_ops:t(),
     shutdown_on_error :: boolean(),
     parent_pid :: pid(),
-    worker_pid :: pid(),
+    worker_pid :: pid() | undefined,
     sup_id :: pid()
 }).
 
@@ -97,6 +97,7 @@ init([SupChild, Id]) ->
                    driver_ops=Ops,
                    shutdown_on_error=ShutdownOnError,
                    parent_pid=self(),
+                   worker_pid=undefined, %% will be overwritten later
                    sup_id=SupChild},
 
     %% Use a dedicated sub-process to do the actual work. The work loop may need
