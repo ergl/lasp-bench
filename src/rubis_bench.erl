@@ -494,12 +494,12 @@ start_red_transaction(S=#state{coord_state=CoordState, last_cvc=LastVC, red_reus
     Tx :: grb_client:tx()
 ) -> CVC :: grb_client:rvc().
 
-%%commit_blue(Coord, Tx) ->
-%%    grb_client:commit(Coord, Tx).
-
 commit_blue(Coord, Tx) ->
-    {ok, CVC} = grb_client:commit_red(Coord, Tx, ?no_conflict_label),
-    CVC.
+    grb_client:commit(Coord, Tx).
+
+%%commit_blue(Coord, Tx) ->
+%%    {ok, CVC} = grb_client:commit_red(Coord, Tx, ?no_conflict_label),
+%%    CVC.
 
 -spec commit_red(
     Coord :: grb_client:coordd(),
