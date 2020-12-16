@@ -14,6 +14,7 @@
 -define(store_buy_now_label, <<"rubis/storeBuyNow">>).
 -define(place_bid_label, <<"rubis/placeBid">>).
 -define(close_auction_label, <<"rubis/closeAuction">>).
+-define(no_conflict_label, <<"rubis/no_conflict">>).
 
 %% How often do we pick the latest generated item / autor, etc
 -define(REUSE_GENERATED_PROB, 0.25).
@@ -493,8 +494,12 @@ start_red_transaction(S=#state{coord_state=CoordState, last_cvc=LastVC, red_reus
     Tx :: grb_client:tx()
 ) -> CVC :: grb_client:rvc().
 
+%%commit_blue(Coord, Tx) ->
+%%    grb_client:commit(Coord, Tx).
+
 commit_blue(Coord, Tx) ->
-    grb_client:commit(Coord, Tx).
+    {ok, CVC} = grb_client:commit_red(Coord, Tx, ?no_conflict_label),
+    CVC.
 
 -spec commit_red(
     Coord :: grb_client:coordd(),
