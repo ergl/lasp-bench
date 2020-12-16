@@ -25,12 +25,6 @@ compile:
 clean:
 	${REBAR} clean
 
-load: compile
-	./rubis-load.sh $(RUBIS_IP) $(RUBIS_PORT)
-
-generate:
-	./rubis-generate.sh $(RUBIS_IP) $(RUBIS_PORT) $(RUBIS_TABLE_CONFIG)
-
 bench:
 	./_build/default/bin/lasp_bench $(RUBIS_TABLE_CONFIG)
 
