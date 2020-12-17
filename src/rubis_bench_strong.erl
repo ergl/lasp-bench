@@ -1,4 +1,4 @@
--module(rubis_bench).
+-module(rubis_bench_strong).
 
 %% Ignore xref for all lasp bench drivers
 -ignore_xref([new/1, run/4]).
@@ -10,10 +10,7 @@
 -include("lasp_bench.hrl").
 
 -define(global_indices, <<"global_index">>).
--define(register_user_label, <<"rubis/registerUser">>).
--define(store_buy_now_label, <<"rubis/storeBuyNow">>).
--define(place_bid_label, <<"rubis/placeBid">>).
--define(close_auction_label, <<"rubis/closeAuction">>).
+-define(all_conflict_label, <<"default">>).
 
 %% How often do we pick the latest generated item / autor, etc
 -define(REUSE_GENERATED_PROB, 0.25).
@@ -30,7 +27,6 @@
     coord_state :: grb_client:coord(),
 
     %% Reusing commit vector for certain transactions
-    blue_reuse_cvc :: boolean(),
     red_reuse_cvc :: boolean(),
 
     %% Benchmark state
@@ -51,7 +47,6 @@ new(WorkerId) ->
     RetryUntilCommit = lasp_bench_config:get(retry_aborts, true),
     RetryOnBadData = lasp_bench_config:get(retry_on_bad_precondition, true),
 
-    BlueReuseCVC = lasp_bench_config:get(blue_reuse_cvc, true),
     RedReuseCVC = lasp_bench_config:get(red_reuse_cvc, true),
 
     RandSeed = lasp_bench_config:get(worker_seed, os:timestamp()),
@@ -63,408 +58,417 @@ new(WorkerId) ->
                    last_cvc=pvc_vclock:new(),
                    retry_until_commit=RetryUntilCommit,
                    retry_on_bad_precondition=RetryOnBadData,
-                   blue_reuse_cvc=BlueReuseCVC,
                    red_reuse_cvc=RedReuseCVC,
                    coord_state=CoordState},
 
     {ok, State}.
 
+retry_loop(S0=#state{retry_until_commit=RetryCommit,
+                     retry_on_bad_precondition=RetryData}, Fun) ->
+
+    Start = os:timestamp(),
+    {ok, Tx} = start_red_transaction(S0),
+    {Res, State} = Fun(S0, Tx),
+    ElapsedUs = erlang:max(0, timer:now_diff(os:timestamp(), Start)),
+    case Res of
+        {ok, CVC} ->
+            {ok, ElapsedUs, incr_tx_id(State#state{last_cvc=CVC})};
+
+        {error, _} when RetryData ->
+            retry_loop(incr_tx_id(State), Fun);
+
+        {abort, _} when RetryCommit ->
+            retry_loop(incr_tx_id(State), Fun);
+
+        {error, _} ->
+            {ok, ElapsedUs, incr_tx_id(State)};
+
+        {abort, _}=Abort ->
+            {error, Abort, incr_tx_id(State)}
+    end.
+
 run(register_user, _, _, State) ->
     register_user_loop(State);
 
-run(browse_categories, _, _, S=#state{coord_state=Coord}) ->
-    {ok, Tx} = start_blue_transaction(S),
-    {ok, _, Tx1} = grb_client:read_key_snapshot(Coord, Tx, {?global_indices, all_categories}, grb_gset),
-    CVC = commit_blue(Coord, Tx1),
-    {ok, incr_tx_id(S#state{last_cvc=CVC})};
+run(browse_categories, _, _, State) ->
+    retry_loop(State, fun(S=#state{coord_state=Coord}, Tx) ->
+        {ok, _, Tx1} = grb_client:read_key_snapshot(Coord, Tx, {?global_indices, all_categories}, grb_gset),
+        {commit_red(Coord, Tx1), S}
+    end);
 
-run(search_items_in_category, _, _, S=#state{coord_state=Coord}) ->
-    %% mostly the same as search_items_in_region
-    {ok, Tx} = start_blue_transaction(S),
-    CVC = search_items_in_region_category(Coord, Tx, random_region(), random_category(), random_page_size()),
-    {ok, incr_tx_id(S#state{last_cvc=CVC})};
+run(search_items_in_category, _, _, State) ->
+    retry_loop(State, fun(S=#state{coord_state=Coord}, Tx) ->
+        Res = search_items_in_region_category(Coord, Tx, random_region(), random_category(), random_page_size()),
+        {Res, S}
+    end);
 
-run(browse_regions, _, _, S=#state{coord_state=Coord}) ->
-    {ok, Tx} = start_blue_transaction(S),
-    {ok, _, Tx1} = grb_client:read_key_snapshot(Coord, Tx, {?global_indices, all_regions}, grb_gset),
-    CVC = commit_blue(Coord, Tx1),
-    {ok, incr_tx_id(S#state{last_cvc=CVC})};
+run(browse_regions, _, _, State) ->
+    retry_loop(State, fun(S=#state{coord_state=Coord}, Tx) ->
+        {ok, _, Tx1} = grb_client:read_key_snapshot(Coord, Tx, {?global_indices, all_regions}, grb_gset),
+        {commit_red(Coord, Tx1), S}
+    end);
 
-run(browse_categories_in_region, _, _, S=#state{coord_state=Coord}) ->
-    %% same as browse_categories
-    {ok, Tx} = start_blue_transaction(S),
-    {ok, _, Tx1} = grb_client:read_key_snapshot(Coord, Tx, {?global_indices, all_categories}, grb_gset),
-    CVC = commit_blue(Coord, Tx1),
-    {ok, incr_tx_id(S#state{last_cvc=CVC})};
+run(browse_categories_in_region, _, _, State) ->
+    retry_loop(State, fun(S=#state{coord_state=Coord}, Tx) ->
+        {ok, _, Tx1} = grb_client:read_key_snapshot(Coord, Tx, {?global_indices, all_categories}, grb_gset),
+        {commit_red(Coord, Tx1), S}
+    end);
 
-run(search_items_in_region, _, _, S=#state{coord_state=Coord}) ->
-    {ok, Tx} = start_blue_transaction(S),
-    CVC = search_items_in_region_category(Coord, Tx, random_region(), random_category(), random_page_size()),
-    {ok, incr_tx_id(S#state{last_cvc=CVC})};
+run(search_items_in_region, _, _, State) ->
+    retry_loop(State, fun(S=#state{coord_state=Coord}, Tx) ->
+        Res = search_items_in_region_category(Coord, Tx, random_region(), random_category(), random_page_size()),
+        {Res, S}
+    end);
 
-run(view_item, _, _, S0=#state{coord_state=Coord}) ->
-    {Region, ItemId} = random_item(S0),
-    {ok, Tx} = start_blue_transaction(S0),
-    {ok, _, Tx1} = grb_client:read_key_snapshots(Coord, Tx, [
-        {{Region, items, ItemId, seller}, grb_lww},
-        {{Region, items, ItemId, category}, grb_lww},
-        {{Region, items, ItemId, initial_price}, grb_lww},
-        {{Region, items, ItemId, quantity}, grb_lww},
-        {{Region, items, ItemId, reserve_price}, grb_lww},
-        {{Region, items, ItemId, buy_now}, grb_lww},
-        {{Region, items, ItemId, closed}, grb_lww}
-    ]),
-    CVC = commit_blue(Coord, Tx1),
-    {ok, incr_tx_id(S0#state{last_cvc=CVC})};
+run(view_item, _, _, State) ->
+    retry_loop(State, fun(S=#state{coord_state=Coord}, Tx) ->
+        {Region, ItemId} = random_item(S),
+        {ok, _, Tx1} = grb_client:read_key_snapshots(Coord, Tx, [
+            {{Region, items, ItemId, seller}, grb_lww},
+            {{Region, items, ItemId, category}, grb_lww},
+            {{Region, items, ItemId, initial_price}, grb_lww},
+            {{Region, items, ItemId, quantity}, grb_lww},
+            {{Region, items, ItemId, reserve_price}, grb_lww},
+            {{Region, items, ItemId, buy_now}, grb_lww},
+            {{Region, items, ItemId, closed}, grb_lww}
+        ]),
+        {commit_red(Coord, Tx1), S}
+    end);
 
-run(view_user_info, _, _, S0=#state{coord_state=Coord}) ->
-    {Region, NickName} = random_user(S0),
-    CommentIndexKey = {Region, comments_to_user, {Region, users, NickName}},
-    UserKeys = [
-        %% User object
-        {{Region, users, NickName, name}, grb_lww},
-        {{Region, users, NickName, lastname}, grb_lww},
-        {{Region, users, NickName, rating}, grb_gcounter}
-    ],
-    {ok, Tx} = start_blue_transaction(S0),
+run(view_user_info, _, _, State) ->
+    retry_loop(State, fun(S=#state{coord_state=Coord}, Tx) ->
+        {Region, NickName} = random_user(S),
+        CommentIndexKey = {Region, comments_to_user, {Region, users, NickName}},
+        UserKeys = [
+            %% User object
+            {{Region, users, NickName, name}, grb_lww},
+            {{Region, users, NickName, lastname}, grb_lww},
+            {{Region, users, NickName, rating}, grb_gcounter}
+        ],
 
-    %% Read up to limit from the list of comments to this user, and while it completes read the user object
-    {ok, Req} = grb_client:send_read_operation(Coord, Tx, CommentIndexKey, ?gset_limit_op(random_page_size())),
-    {ok, _, Tx1} = grb_client:read_key_snapshots(Coord, Tx, UserKeys),
-    {ok, CommentIds, Tx2} = grb_client:receive_read_operation(Coord, Tx1, CommentIndexKey, Req),
+        {ok, Req} = grb_client:send_read_operation(Coord, Tx, CommentIndexKey, ?gset_limit_op(random_page_size())),
+        {ok, _, Tx1} = grb_client:read_key_snapshots(Coord, Tx, UserKeys),
+        {ok, CommentIds, Tx2} = grb_client:receive_read_operation(Coord, Tx1, CommentIndexKey, Req),
 
-    %% Comments written to this user are stored in the same region
-    CommentKeys = lists:foldl(
-        fun({CommentRegion, comments, CommentId}, Acc)
-            when CommentRegion =:= Region ->
-                [
-                    {{CommentRegion, comments, CommentId, from}, grb_lww},
-                    {{CommentRegion, comments, CommentId, rating}, grb_lww},
-                    {{CommentRegion, comments, CommentId, text}, grb_lww}
-                    | Acc
-                ]
-        end,
-        [],
-        CommentIds
-    ),
-    {ok, _, Tx3} = grb_client:read_key_snapshots(Coord, Tx2, CommentKeys),
-    CVC = commit_blue(Coord, Tx3),
-    {ok, incr_tx_id(S0#state{last_cvc=CVC})};
+        %% Comments written to this user are stored in the same region
+        CommentKeys = lists:foldl(
+            fun({CommentRegion, comments, CommentId}, Acc)
+                when CommentRegion =:= Region ->
+                    [
+                        {{CommentRegion, comments, CommentId, from}, grb_lww},
+                        {{CommentRegion, comments, CommentId, rating}, grb_lww},
+                        {{CommentRegion, comments, CommentId, text}, grb_lww}
+                        | Acc
+                    ]
+            end,
+            [],
+            CommentIds
+        ),
+        {ok, _, Tx3} = grb_client:read_key_snapshots(Coord, Tx2, CommentKeys),
+        {commit_red(Coord, Tx3), S}
+    end);
 
-run(view_bid_history, _, _, S0=#state{coord_state=Coord}) ->
-    {Region, ItemId} = random_item(S0),
-    ItemNameKey = {Region, items, ItemId, name},
-    BidIndexKey = {Region, bids_item, {Region, items, ItemId}},
-    {ok, Tx} = start_blue_transaction(S0),
-    {ok, Req} = grb_client:send_read_operation(Coord, Tx, BidIndexKey, ?gset_limit_op(random_page_size())),
-    {ok, _, Tx1} = grb_client:read_key_snapshot(Coord, Tx, ItemNameKey, grb_lww),
-    {ok, BidIds, Tx2} = grb_client:receive_read_operation(Coord, Tx1, BidIndexKey, Req),
-    BidKeys = lists:foldl(
-        fun({{BidRegion, bids, BidId}, _BidderKey}, Acc)
-            when BidRegion =:= Region->
-                [
-                    {{BidRegion, bids, BidId, amount}, grb_lww},
-                    {{BidRegion, bids, BidId, quantity}, grb_lww}
-                    | Acc
-                ]
-        end,
-        [],
-        BidIds
-    ),
-    {ok, _, Tx3} = grb_client:read_key_snapshots(Coord, Tx2, BidKeys),
-    CVC = commit_blue(Coord, Tx3),
-    {ok, incr_tx_id(S0#state{last_cvc=CVC})};
+run(view_bid_history, _, _, State) ->
+    retry_loop(State, fun(S=#state{coord_state=Coord}, Tx) ->
+        {Region, ItemId} = random_item(S),
+        ItemNameKey = {Region, items, ItemId, name},
+        BidIndexKey = {Region, bids_item, {Region, items, ItemId}},
+        {ok, Req} = grb_client:send_read_operation(Coord, Tx, BidIndexKey, ?gset_limit_op(random_page_size())),
+        {ok, _, Tx1} = grb_client:read_key_snapshot(Coord, Tx, ItemNameKey, grb_lww),
+        {ok, BidIds, Tx2} = grb_client:receive_read_operation(Coord, Tx1, BidIndexKey, Req),
+        BidKeys = lists:foldl(
+            fun({{BidRegion, bids, BidId}, _BidderKey}, Acc)
+                when BidRegion =:= Region->
+                    [
+                        {{BidRegion, bids, BidId, amount}, grb_lww},
+                        {{BidRegion, bids, BidId, quantity}, grb_lww}
+                        | Acc
+                    ]
+            end,
+            [],
+            BidIds
+        ),
+        {ok, _, Tx3} = grb_client:read_key_snapshots(Coord, Tx2, BidKeys),
+        {commit_red(Coord, Tx3), S}
+    end);
 
-run(buy_now, _, _, S0=#state{coord_state=Coord}) ->
-    {ItemRegion, ItemId} = random_item(S0),
-    {UserRegion, Nickname} = random_user(S0),
-    ItemKeys = [
-        {{ItemRegion, items, ItemId, name}, grb_lww},
-        {{ItemRegion, items, ItemId, seller}, grb_lww},
-        {{ItemRegion, items, ItemId, buy_now}, grb_lww}
-    ],
-    {ok, Tx} = start_blue_transaction(S0),
-    S1 = case try_auth(Coord, Tx, UserRegion, Nickname, Nickname) of
-        {error, _} ->
-            %% bail out, no need to clean up anything
-            S0;
+run(buy_now, _, _, State) ->
+    retry_loop(State, fun(S=#state{coord_state=Coord}, Tx) ->
+        {ItemRegion, ItemId} = random_item(S),
+        {UserRegion, Nickname} = random_user(S),
+        ItemKeys = [
+            {{ItemRegion, items, ItemId, name}, grb_lww},
+            {{ItemRegion, items, ItemId, seller}, grb_lww},
+            {{ItemRegion, items, ItemId, buy_now}, grb_lww}
+        ],
+        case try_auth(Coord, Tx, UserRegion, Nickname, Nickname) of
+            {error, _} ->
+                {{error, auth}, S};
 
-        {ok, Tx1} ->
-            {ok, _, Tx2} = grb_client:read_key_snapshots(Coord, Tx1, ItemKeys),
-             CVC = commit_blue(Coord, Tx2),
-             S0#state{last_cvc=CVC}
-    end,
-    {ok, incr_tx_id(S1)};
+            {ok, Tx1} ->
+                {ok, _, Tx2} = grb_client:read_key_snapshots(Coord, Tx1, ItemKeys),
+                {commit_red(Coord, Tx2), S}
+        end
+    end);
 
 run(store_buy_now, _, _, S) ->
     store_buy_now_loop(S);
 
-run(put_bid, _, _, S0=#state{coord_state=Coord}) ->
-    {ItemRegion, ItemId} = random_item(S0),
-    {UserRegion, Nickname} = random_user(S0),
-    ItemKeys = [
-        {{ItemRegion, items, ItemId, name}, grb_lww},
-        {{ItemRegion, items, ItemId, seller}, grb_lww},
-        {{ItemRegion, items, ItemId, max_bid}, grb_maxtuple},
-        {{ItemRegion, items, ItemId, bids_number}, grb_gcounter},
-        {{ItemRegion, items, ItemId, initial_price}, grb_lww}
-    ],
-    {ok, Tx} = start_blue_transaction(S0),
-    S1 = case try_auth(Coord, Tx, UserRegion, Nickname, Nickname) of
-        {error, _} ->
-            %% bail out, no need to clean up anything
-            S0;
+run(put_bid, _, _, State) ->
+    retry_loop(State, fun(S=#state{coord_state=Coord}, Tx) ->
+        {ItemRegion, ItemId} = random_item(S),
+        {UserRegion, Nickname} = random_user(S),
+        ItemKeys = [
+            {{ItemRegion, items, ItemId, name}, grb_lww},
+            {{ItemRegion, items, ItemId, seller}, grb_lww},
+            {{ItemRegion, items, ItemId, max_bid}, grb_maxtuple},
+            {{ItemRegion, items, ItemId, bids_number}, grb_gcounter},
+            {{ItemRegion, items, ItemId, initial_price}, grb_lww}
+        ],
+        case try_auth(Coord, Tx, UserRegion, Nickname, Nickname) of
+            {error, _} ->
+                {{error, auth}, S};
 
-         {ok, Tx1} ->
-             {ok, _, Tx2} = grb_client:read_key_snapshots(Coord, Tx1, ItemKeys),
-             CVC = commit_blue(Coord, Tx2),
-             S0#state{last_cvc=CVC}
-    end,
-    {ok, incr_tx_id(S1)};
+             {ok, Tx1} ->
+                 {ok, _, Tx2} = grb_client:read_key_snapshots(Coord, Tx1, ItemKeys),
+                 {commit_red(Coord, Tx2), S}
+        end
+    end);
 
 run(store_bid, _, _, S) ->
     store_bid_loop(S);
 
-run(put_comment, _, _, S0=#state{coord_state=Coord}) ->
-    {FromRegion, FromNickname} = random_user(S0),
-    {_, ToNickname} = random_different_user(FromRegion, FromNickname),
-    {ItemRegion, ItemId} = random_item(S0),
-    Keys = [
-        {ToNickname, grb_lww},
-        {{ItemRegion, items, ItemId, name}, grb_lww}
-    ],
-    {ok, Tx} = start_blue_transaction(S0),
-    S1 = case try_auth(Coord, Tx, FromRegion, FromNickname, FromNickname) of
-        {error, _} ->
-            %% bail out, no need to clean up anything
-            S0;
-         {ok, Tx1} ->
-             {ok, _, Tx2} = grb_client:read_key_snapshots(Coord, Tx1, Keys),
-             CVC = commit_blue(Coord, Tx2),
-             S0#state{last_cvc=CVC}
-    end,
-    {ok, incr_tx_id(S1)};
+run(put_comment, _, _, State) ->
+    retry_loop(State, fun(S=#state{coord_state=Coord}, Tx) ->
+        {FromRegion, FromNickname} = random_user(S),
+        {_, ToNickname} = random_different_user(FromRegion, FromNickname),
+        {ItemRegion, ItemId} = random_item(S),
+        Keys = [
+            {ToNickname, grb_lww},
+            {{ItemRegion, items, ItemId, name}, grb_lww}
+        ],
+        case try_auth(Coord, Tx, FromRegion, FromNickname, FromNickname) of
+            {error, _} ->
+                {{error, auth}, S};
 
-run(store_comment, _, _, S0=#state{coord_state=Coord}) ->
-    {FromRegion, FromNickname} = random_user(S0),
-    {ToRegion, ToNickname} = random_different_user(FromRegion, FromNickname),
-    {ItemRegion, ItemId} = random_item(S0),
-
-    SenderKey = {FromRegion, users, FromNickname},
-    RecipientKey = {ToRegion, users, ToNickname},
-    ItemKey = {ItemRegion, items, ItemId},
-
-    {CommentId, S1} = gen_new_comment_id(S0),
-    CommentKey = {ToRegion, comments, CommentId},
-    Rating = random_rating(),
-    CommentText = random_binary(safe_uniform(hook_rubis:get_rubis_prop(comment_max_len))),
-
-    Updates = [
-        %% Comment Object
-        { {ToRegion, comments, CommentId, from}, grb_crdt:make_op(grb_lww, SenderKey)},
-        { {ToRegion, comments, CommentId, to}, grb_crdt:make_op(grb_lww, RecipientKey)},
-        { {ToRegion, comments, CommentId, on_item}, grb_crdt:make_op(grb_lww, ItemKey)},
-        { {ToRegion, comments, CommentId, rating}, grb_crdt:make_op(grb_lww, Rating)},
-        { {ToRegion, comments, CommentId, text}, grb_crdt:make_op(grb_lww, CommentText)},
-        %% Append to COMMENTS_to_user index
-        { {ToRegion, comments_to_user, RecipientKey}, grb_crdt:make_op(grb_gset, CommentKey)},
-        %% Update recipient rating
-        { {ToRegion, users, ToNickname, rating}, grb_crdt:make_op(grb_gcounter, Rating)}
-    ],
-    {ok, Tx} = start_blue_transaction(S1),
-    %% Claim the item key, read/write so we don't do any blind updates, should get back the same value
-    {ok, CommentKey, Tx1} = grb_client:update_operation(Coord, Tx, CommentKey, grb_crdt:make_op(grb_lww, CommentKey)),
-    {ok, Tx2} = grb_client:send_key_operations(Coord, Tx1, Updates),
-    CVC = commit_blue(Coord, Tx2),
-    {ok, incr_tx_id(S1#state{last_cvc=CVC})};
-
-run(select_category_to_sell_item, _, _, S0=#state{coord_state=Coord}) ->
-    %% same as browse_categories, but with auth step
-    {UserRegion, Nickname} = random_user(S0),
-    {ok, Tx} = start_blue_transaction(S0),
-    S1 = case try_auth(Coord, Tx, UserRegion, Nickname, Nickname) of
-        {error, _} ->
-            %% bail out, no need to clean up anything
-            S0;
-         {ok, Tx1} ->
-             {ok, _, Tx2} = grb_client:read_key_snapshot(Coord, Tx1, {?global_indices, all_categories}, grb_gset),
-             CVC = commit_blue(Coord, Tx2),
-             S0#state{last_cvc=CVC}
-    end,
-    {ok, incr_tx_id(S1)};
-
-run(register_item, _, _, S0=#state{coord_state=Coord}) ->
-    Category = random_category(),
-    {Region, SellerNickname} = random_user(S0),
-    Seller = {Region, users, SellerNickname},
-    {ItemId, S1} = gen_new_item_id(S0),
-    ItemKey = {Region, items, ItemId},
-    InitialPrice = rand:uniform(100),
-    Quantity = safe_uniform(hook_rubis:get_rubis_prop(item_max_quantity)),
-    Description = case safe_uniform(hook_rubis:get_rubis_prop(item_description_max_len)) of
-        N when N >= 1 -> random_binary(N);
-        _ -> <<>>
-    end,
-    ReservePrice = InitialPrice + begin
-        case (rand:uniform(100) =< hook_rubis:get_rubis_prop(item_reserve_percentage)) of
-            true -> rand:uniform(10);
-            false -> 0
+             {ok, Tx1} ->
+                 {ok, _, Tx2} = grb_client:read_key_snapshots(Coord, Tx1, Keys),
+                 {commit_red(Coord, Tx2), S}
         end
-    end,
-    BuyNow = begin
-        case (rand:uniform(100) =< hook_rubis:get_rubis_prop(item_buy_now_percentage)) of
-            true -> rand:uniform(10);
-            false -> 0
+    end);
+
+run(store_comment, _, _, State) ->
+    retry_loop(State, fun(S=#state{coord_state=Coord}, Tx) ->
+        {FromRegion, FromNickname} = random_user(S),
+        {ToRegion, ToNickname} = random_different_user(FromRegion, FromNickname),
+        {ItemRegion, ItemId} = random_item(S),
+
+        SenderKey = {FromRegion, users, FromNickname},
+        RecipientKey = {ToRegion, users, ToNickname},
+        ItemKey = {ItemRegion, items, ItemId},
+
+        {CommentId, S1} = gen_new_comment_id(S),
+        CommentKey = {ToRegion, comments, CommentId},
+        Rating = random_rating(),
+        CommentText = random_binary(safe_uniform(hook_rubis:get_rubis_prop(comment_max_len))),
+
+        Updates = [
+            %% Comment Object
+            { {ToRegion, comments, CommentId, from}, grb_crdt:make_op(grb_lww, SenderKey)},
+            { {ToRegion, comments, CommentId, to}, grb_crdt:make_op(grb_lww, RecipientKey)},
+            { {ToRegion, comments, CommentId, on_item}, grb_crdt:make_op(grb_lww, ItemKey)},
+            { {ToRegion, comments, CommentId, rating}, grb_crdt:make_op(grb_lww, Rating)},
+            { {ToRegion, comments, CommentId, text}, grb_crdt:make_op(grb_lww, CommentText)},
+            %% Append to COMMENTS_to_user index
+            { {ToRegion, comments_to_user, RecipientKey}, grb_crdt:make_op(grb_gset, CommentKey)},
+            %% Update recipient rating
+            { {ToRegion, users, ToNickname, rating}, grb_crdt:make_op(grb_gcounter, Rating)}
+        ],
+
+        %% Claim the item key, read/write so we don't do any blind updates, should get back the same value
+        {ok, CommentKey, Tx1} = grb_client:update_operation(Coord, Tx, CommentKey, grb_crdt:make_op(grb_lww, CommentKey)),
+        {ok, Tx2} = grb_client:send_key_operations(Coord, Tx1, Updates),
+        {commit_red(Coord, Tx2), S1}
+    end);
+
+run(select_category_to_sell_item, _, _, State) ->
+    retry_loop(State, fun(S=#state{coord_state=Coord}, Tx) ->
+        %% same as browse_categories, but with auth step
+        {UserRegion, Nickname} = random_user(S),
+        case try_auth(Coord, Tx, UserRegion, Nickname, Nickname) of
+            {error, _} ->
+                {{error, auth}, S};
+             {ok, Tx1} ->
+                 {ok, _, Tx2} = grb_client:read_key_snapshot(Coord, Tx1, {?global_indices, all_categories}, grb_gset),
+                 {commit_red(Coord, Tx2), S}
         end
-    end,
-    Updates = [
-        %% Item Updates
-        {{Region, items, ItemId, name}, grb_crdt:make_op(grb_lww, ItemId)},
-        {{Region, items, ItemId, description}, grb_crdt:make_op(grb_lww, Description)},
-        {{Region, items, ItemId, seller}, grb_crdt:make_op(grb_lww, {Region, users, Seller})},
-        {{Region, items, ItemId, category}, grb_crdt:make_op(grb_lww, Category)},
-        {{Region, items, ItemId, max_bid}, grb_crdt:make_op(grb_maxtuple, {-1, <<>>})},
-        {{Region, items, ItemId, initial_price}, grb_crdt:make_op(grb_lww, InitialPrice)},
-        {{Region, items, ItemId, quantity}, grb_crdt:make_op(grb_lww, Quantity)},
-        {{Region, items, ItemId, reserve_price}, grb_crdt:make_op(grb_lww, ReservePrice)},
-        {{Region, items, ItemId, buy_now}, grb_crdt:make_op(grb_lww, BuyNow)},
-        {{Region, items, ItemId, closed}, grb_crdt:make_op(grb_lww, false)},
-        %% append to ITEMS_seller index
-        {{Region, items_seller, Seller}, grb_crdt:make_op(grb_gset, ItemKey)},
-        %% append to ITEMS_region_category index
-        {{Region, items_region_category, Category}, grb_crdt:make_op(grb_gset, ItemKey)}
-    ],
-    {ok, Tx} = start_blue_transaction(S1),
-    %% Claim the item key, read/write so we don't do any blind updates, should get back the same value
-    {ok, ItemKey, Tx1} = grb_client:update_operation(Coord, Tx, ItemKey, grb_crdt:make_op(grb_lww, ItemKey)),
-    {ok, Tx2} = grb_client:send_key_operations(Coord, Tx1, Updates),
-    CVC = commit_blue(Coord, Tx2),
-    {ok, incr_tx_id(S1#state{last_cvc=CVC, last_generated_item={Region, ItemId}})};
+    end);
 
-run(about_me, _, _, S0=#state{coord_state=Coord}) ->
-    {UserRegion, Nickname} = random_user(S0),
-    {ok, Tx} = start_blue_transaction(S0),
-    S1 = case try_auth(Coord, Tx, UserRegion, Nickname, Nickname) of
-        {error, _} ->
-            %% bail out, no need to clean up anything
-             S0;
-        {ok, Tx1} ->
-            %% First, read data from the user (name, last name, email, rating)
-            %% Then, read bid amounts (use BID_user index, colocated with region)
-            %% Then, read item info from ITEMS_user index. At least name, number of bids, max bid
-            %% Then, read won items using WINS_user index. Should contain iten name and name of the seller
-            %% Then, read item info from BUY_NOW_user index. Contain item info and name of the seller
-            %% Then, comments from COMMENTS_to_user index. Contain comment info and name of commenter
-            PageSize = random_page_size(),
-            UserProfileReads = [
-                { {UserRegion, users, Nickname, name}, grb_lww },
-                { {UserRegion, users, Nickname, lastname}, grb_lww },
-                { {UserRegion, users, Nickname, email}, grb_lww },
-                { {UserRegion, users, Nickname, rating}, grb_gcounter }
-            ],
-            %% We can read this at once, everything is in the same partition
-            {ok, Req} = grb_client:send_read_partition(Coord, Tx1, UserProfileReads),
-
-            UserKey = {UserRegion, users, Nickname},
-            SoldItemsIdxKey = {UserRegion, items_seller, UserKey},
-            WonItemsIdxKey = {UserRegion, wins_user, UserKey},
-            BuyNowsIdxKey = {UserRegion, buy_nows_buyer, UserKey},
-            CommentIdxKey = {UserRegion, comments_to_user, UserKey},
-            IndexReadOps = [
-                %% This already contains bid amount, so no need to do another roundtrip
-                { {UserRegion, bids_user, UserKey}, ?gset_limit_op(PageSize) },
-                %% Read items sold by this user. Later, we will read info from here
-                { SoldItemsIdxKey, ?gset_limit_op(PageSize) },
-                %% Read items won by this user. This already contains everything we want (item seller, paid amount, etc)
-                { WonItemsIdxKey, ?gset_limit_op(PageSize) },
-                %% BUY_nows put by this user. Later, we will read info from here
-                { BuyNowsIdxKey, ?gset_limit_op(PageSize) },
-                %% Comments send to this user. Later we will read info from here
-                { CommentIdxKey, ?gset_limit_op(PageSize) }
-            ],
-
-            {ok, IdxResults, Tx2} = grb_client:read_key_operations(Coord, Tx1, IndexReadOps),
-            {ok, _UserInfo, Tx3} = grb_client:receive_read_partition(Coord, Tx2, Req),
-            #{
-                SoldItemsIdxKey := SoldItemIds,
-                BuyNowsIdxKey := BoughtIds,
-                CommentIdxKey := CommentIds
-            } = IdxResults,
-
-            %% Read info from the items we sell
-            Reqs0 = lists:foldl(fun({_, _, ItemId}, Reqs) ->
-                Key0 = {UserRegion, items, ItemId, name},
-                Key1 = {UserRegion, items, ItemId, bids_number},
-                Key2 = {UserRegion, items, ItemId, max_bid},
-                {ok, R0} = grb_client:send_read_key(Coord, Tx3, Key0, grb_lww),
-                {ok, R1} = grb_client:send_read_key(Coord, Tx3, Key1, grb_gcounter),
-                {ok, R2} = grb_client:send_read_key(Coord, Tx3, Key2, grb_maxtuple),
-                [ {Key0, R0}, {Key1, R1}, {Key2, R2} | Reqs ]
-            end, [], SoldItemIds),
-
-            %% Read info from the items we bought
-            Reqs1 = lists:foldl(fun({_, {BoughtRegion, _, BoughtItemId}}, Reqs) ->
-                Key0 = {BoughtRegion, items, BoughtItemId, name},
-                Key1 = {BoughtRegion, items, BoughtItemId, seller},
-                Key2 = {BoughtRegion, items, BoughtItemId, description},
-                {ok, R0} = grb_client:send_read_key(Coord, Tx3, Key0, grb_lww),
-                {ok, R1} = grb_client:send_read_key(Coord, Tx3, Key1, grb_lww),
-                {ok, R2} = grb_client:send_read_key(Coord, Tx3, Key2, grb_lww),
-                [ {Key0, R0}, {Key1, R1}, {Key2, R2} | Reqs ]
-            end, Reqs0, BoughtIds),
-
-            Reqs2 = lists:foldl(fun({_, _, CommentId}, Reqs) ->
-                Key0 = {UserRegion, comments, CommentId, from},
-                Key1 = {UserRegion, comments, CommentId, text},
-                Key2 = {UserRegion, comments, CommentId, rating},
-                {ok, R0} = grb_client:send_read_key(Coord, Tx3, Key0, grb_lww),
-                {ok, R1} = grb_client:send_read_key(Coord, Tx3, Key1, grb_lww),
-                {ok, R2} = grb_client:send_read_key(Coord, Tx3, Key2, grb_lww),
-                [ {Key0, R0}, {Key1, R1}, {Key2, R2} | Reqs ]
-            end, Reqs1, CommentIds),
-
-            Tx4 = lists:foldl(fun({Key, KeyReq}, TxAcc0) ->
-                %% We don't actually care about the result, so discard it
-                {ok, _, TxAcc} = grb_client:receive_read_key(Coord, TxAcc0, Key, KeyReq),
-                TxAcc
-            end, Tx3, Reqs2),
-
-            CVC = commit_blue(Coord, Tx4),
-            S0#state{last_cvc=CVC}
-    end,
-    {ok, incr_tx_id(S1)};
-
-run(get_auctions_ready_for_close, _, _, S=#state{coord_state=Coord}) ->
-    Region = random_region(),
-    Category = random_category(),
-
-    {ok, Tx} = start_blue_transaction(S),
-    {ok, ItemIds, Tx1} = grb_client:read_key_operation(Coord, Tx,
-                                                       {Region, items_region_category, Category},
-                                                       ?gset_limit_op(random_page_size())),
-
-    KeyRequests = lists:foldl(
-        fun({ItemRegion, items, ItemId}, Reqs)
-            when ItemRegion =:= Region ->
-                %% Here we read if they're open and check that the those items are over the limit
-                ClosedKey = {ItemRegion, items, ItemId, closed},
-                NBidsKey = {ItemRegion, items, ItemId, bids_number},
-                {ok, Req1} = grb_client:send_read_key(Coord, Tx1, ClosedKey, grb_lww),
-                {ok, Req2} = grb_client:send_read_key(Coord, Tx1, NBidsKey, grb_gcounter),
-                [ {ClosedKey, Req1}, {NBidsKey, Req2} | Reqs]
+run(register_item, _, _, State) ->
+    retry_loop(State, fun(S=#state{coord_state=Coord}, Tx) ->
+        Category = random_category(),
+        {Region, SellerNickname} = random_user(S),
+        Seller = {Region, users, SellerNickname},
+        {ItemId, S1} = gen_new_item_id(S),
+        ItemKey = {Region, items, ItemId},
+        InitialPrice = rand:uniform(100),
+        Quantity = safe_uniform(hook_rubis:get_rubis_prop(item_max_quantity)),
+        Description = case safe_uniform(hook_rubis:get_rubis_prop(item_description_max_len)) of
+            N when N >= 1 -> random_binary(N);
+            _ -> <<>>
         end,
-        [],
-        ItemIds
-    ),
+        ReservePrice = InitialPrice + begin
+            case (rand:uniform(100) =< hook_rubis:get_rubis_prop(item_reserve_percentage)) of
+                true -> rand:uniform(10);
+                false -> 0
+            end
+        end,
+        BuyNow = begin
+            case (rand:uniform(100) =< hook_rubis:get_rubis_prop(item_buy_now_percentage)) of
+                true -> rand:uniform(10);
+                false -> 0
+            end
+        end,
+        Updates = [
+            %% Item Updates
+            {{Region, items, ItemId, name}, grb_crdt:make_op(grb_lww, ItemId)},
+            {{Region, items, ItemId, description}, grb_crdt:make_op(grb_lww, Description)},
+            {{Region, items, ItemId, seller}, grb_crdt:make_op(grb_lww, {Region, users, Seller})},
+            {{Region, items, ItemId, category}, grb_crdt:make_op(grb_lww, Category)},
+            {{Region, items, ItemId, max_bid}, grb_crdt:make_op(grb_maxtuple, {-1, <<>>})},
+            {{Region, items, ItemId, initial_price}, grb_crdt:make_op(grb_lww, InitialPrice)},
+            {{Region, items, ItemId, quantity}, grb_crdt:make_op(grb_lww, Quantity)},
+            {{Region, items, ItemId, reserve_price}, grb_crdt:make_op(grb_lww, ReservePrice)},
+            {{Region, items, ItemId, buy_now}, grb_crdt:make_op(grb_lww, BuyNow)},
+            {{Region, items, ItemId, closed}, grb_crdt:make_op(grb_lww, false)},
+            %% append to ITEMS_seller index
+            {{Region, items_seller, Seller}, grb_crdt:make_op(grb_gset, ItemKey)},
+            %% append to ITEMS_region_category index
+            {{Region, items_region_category, Category}, grb_crdt:make_op(grb_gset, ItemKey)}
+        ],
+        %% Claim the item key, read/write so we don't do any blind updates, should get back the same value
+        {ok, ItemKey, Tx1} = grb_client:update_operation(Coord, Tx, ItemKey, grb_crdt:make_op(grb_lww, ItemKey)),
+        {ok, Tx2} = grb_client:send_key_operations(Coord, Tx1, Updates),
+        {commit_red(Coord, Tx2), S1#state{last_generated_item={Region, ItemId}}}
+    end);
 
-    Tx2 = lists:foldl(fun({Key, Req}, TxAcc0) ->
-        %% We don't actually care about the result, so discard it
-        {ok, _, TxAcc} = grb_client:receive_read_key(Coord, TxAcc0, Key, Req),
-        TxAcc
-    end, Tx1, KeyRequests),
+run(about_me, _, _, State) ->
+    retry_loop(State, fun(S=#state{coord_state=Coord}, Tx) ->
+        {UserRegion, Nickname} = random_user(S),
+        case try_auth(Coord, Tx, UserRegion, Nickname, Nickname) of
+            {error, _} ->
+                {{error, auth}, S};
 
-    CVC = commit_blue(Coord, Tx2),
-    {ok, incr_tx_id(S#state{last_cvc=CVC})};
+            {ok, Tx1} ->
+                PageSize = random_page_size(),
+                UserProfileReads = [
+                    { {UserRegion, users, Nickname, name}, grb_lww },
+                    { {UserRegion, users, Nickname, lastname}, grb_lww },
+                    { {UserRegion, users, Nickname, email}, grb_lww },
+                    { {UserRegion, users, Nickname, rating}, grb_gcounter }
+                ],
+                %% We can read this at once, everything is in the same partition
+                {ok, Req} = grb_client:send_read_partition(Coord, Tx1, UserProfileReads),
+
+                UserKey = {UserRegion, users, Nickname},
+                SoldItemsIdxKey = {UserRegion, items_seller, UserKey},
+                WonItemsIdxKey = {UserRegion, wins_user, UserKey},
+                BuyNowsIdxKey = {UserRegion, buy_nows_buyer, UserKey},
+                CommentIdxKey = {UserRegion, comments_to_user, UserKey},
+                IndexReadOps = [
+                    %% This already contains bid amount, so no need to do another roundtrip
+                    { {UserRegion, bids_user, UserKey}, ?gset_limit_op(PageSize) },
+                    %% Read items sold by this user. Later, we will read info from here
+                    { SoldItemsIdxKey, ?gset_limit_op(PageSize) },
+                    %% Read items won by this user. This already contains everything we want (item seller, paid amount, etc)
+                    { WonItemsIdxKey, ?gset_limit_op(PageSize) },
+                    %% BUY_nows put by this user. Later, we will read info from here
+                    { BuyNowsIdxKey, ?gset_limit_op(PageSize) },
+                    %% Comments send to this user. Later we will read info from here
+                    { CommentIdxKey, ?gset_limit_op(PageSize) }
+                ],
+
+                {ok, IdxResults, Tx2} = grb_client:read_key_operations(Coord, Tx1, IndexReadOps),
+                {ok, _UserInfo, Tx3} = grb_client:receive_read_partition(Coord, Tx2, Req),
+                #{
+                    SoldItemsIdxKey := SoldItemIds,
+                    BuyNowsIdxKey := BoughtIds,
+                    CommentIdxKey := CommentIds
+                } = IdxResults,
+
+                %% Read info from the items we sell
+                Reqs0 = lists:foldl(fun({_, _, ItemId}, Reqs) ->
+                    Key0 = {UserRegion, items, ItemId, name},
+                    Key1 = {UserRegion, items, ItemId, bids_number},
+                    Key2 = {UserRegion, items, ItemId, max_bid},
+                    {ok, R0} = grb_client:send_read_key(Coord, Tx3, Key0, grb_lww),
+                    {ok, R1} = grb_client:send_read_key(Coord, Tx3, Key1, grb_gcounter),
+                    {ok, R2} = grb_client:send_read_key(Coord, Tx3, Key2, grb_maxtuple),
+                    [ {Key0, R0}, {Key1, R1}, {Key2, R2} | Reqs ]
+                end, [], SoldItemIds),
+
+                %% Read info from the items we bought
+                Reqs1 = lists:foldl(fun({_, {BoughtRegion, _, BoughtItemId}}, Reqs) ->
+                    Key0 = {BoughtRegion, items, BoughtItemId, name},
+                    Key1 = {BoughtRegion, items, BoughtItemId, seller},
+                    Key2 = {BoughtRegion, items, BoughtItemId, description},
+                    {ok, R0} = grb_client:send_read_key(Coord, Tx3, Key0, grb_lww),
+                    {ok, R1} = grb_client:send_read_key(Coord, Tx3, Key1, grb_lww),
+                    {ok, R2} = grb_client:send_read_key(Coord, Tx3, Key2, grb_lww),
+                    [ {Key0, R0}, {Key1, R1}, {Key2, R2} | Reqs ]
+                end, Reqs0, BoughtIds),
+
+                Reqs2 = lists:foldl(fun({_, _, CommentId}, Reqs) ->
+                    Key0 = {UserRegion, comments, CommentId, from},
+                    Key1 = {UserRegion, comments, CommentId, text},
+                    Key2 = {UserRegion, comments, CommentId, rating},
+                    {ok, R0} = grb_client:send_read_key(Coord, Tx3, Key0, grb_lww),
+                    {ok, R1} = grb_client:send_read_key(Coord, Tx3, Key1, grb_lww),
+                    {ok, R2} = grb_client:send_read_key(Coord, Tx3, Key2, grb_lww),
+                    [ {Key0, R0}, {Key1, R1}, {Key2, R2} | Reqs ]
+                end, Reqs1, CommentIds),
+
+                Tx4 = lists:foldl(fun({Key, KeyReq}, TxAcc0) ->
+                    %% We don't actually care about the result, so discard it
+                    {ok, _, TxAcc} = grb_client:receive_read_key(Coord, TxAcc0, Key, KeyReq),
+                    TxAcc
+                end, Tx3, Reqs2),
+
+                {commit_red(Coord, Tx4), S}
+        end
+    end);
+
+run(get_auctions_ready_for_close, _, _, State) ->
+    retry_loop(State, fun(S=#state{coord_state=Coord}, Tx) ->
+        Region = random_region(),
+        Category = random_category(),
+
+        {ok, ItemIds, Tx1} = grb_client:read_key_operation(Coord, Tx,
+                                                           {Region, items_region_category, Category},
+                                                           ?gset_limit_op(random_page_size())),
+
+        KeyRequests = lists:foldl(
+            fun({ItemRegion, items, ItemId}, Reqs)
+                when ItemRegion =:= Region ->
+                    %% Here we read if they're open and check that the those items are over the limit
+                    ClosedKey = {ItemRegion, items, ItemId, closed},
+                    NBidsKey = {ItemRegion, items, ItemId, bids_number},
+                    {ok, Req1} = grb_client:send_read_key(Coord, Tx1, ClosedKey, grb_lww),
+                    {ok, Req2} = grb_client:send_read_key(Coord, Tx1, NBidsKey, grb_gcounter),
+                    [ {ClosedKey, Req1}, {NBidsKey, Req2} | Reqs]
+            end,
+            [],
+            ItemIds
+        ),
+
+        Tx2 = lists:foldl(fun({Key, Req}, TxAcc0) ->
+            %% We don't actually care about the result, so discard it
+            {ok, _, TxAcc} = grb_client:receive_read_key(Coord, TxAcc0, Key, Req),
+            TxAcc
+        end, Tx1, KeyRequests),
+
+        {commit_red(Coord, Tx2), S}
+    end);
 
 run(close_auction, _, _, S) ->
     close_auction_loop(S).
@@ -478,32 +482,18 @@ terminate(Reason, #state{worker_id=Id}) ->
 %%% Transaction Utils
 %%%===================================================================
 
--spec start_blue_transaction(state()) -> {ok, grb_client:tx()}.
-start_blue_transaction(S=#state{coord_state=CoordState, last_cvc=LastVC, blue_reuse_cvc=Reuse}) ->
-    SVC = if Reuse -> LastVC; true -> grb_vclock:new() end,
-    grb_client:start_transaction(CoordState, next_tx_id(S), SVC).
-
 -spec start_red_transaction(state()) -> {ok, grb_client:tx()}.
 start_red_transaction(S=#state{coord_state=CoordState, last_cvc=LastVC, red_reuse_cvc=Reuse}) ->
     SVC = if Reuse -> LastVC; true -> grb_vclock:new() end,
     grb_client:start_transaction(CoordState, next_tx_id(S), SVC).
 
--spec commit_blue(
-    Coord :: grb_client:coordd(),
-    Tx :: grb_client:tx()
-) -> CVC :: grb_client:rvc().
-
-commit_blue(Coord, Tx) ->
-    grb_client:commit(Coord, Tx).
-
 -spec commit_red(
     Coord :: grb_client:coordd(),
-    Tx :: grb_client:tx(),
-    Label :: grb_client:tx_label()
+    Tx :: grb_client:tx()
 ) -> {ok, CVC :: grb_client:rvc()} | {abort, Reason :: term()}.
 
-commit_red(Coord, Tx, Label) ->
-    grb_client:commit_red(Coord, Tx, Label).
+commit_red(Coord, Tx) ->
+    grb_client:commit_red(Coord, Tx, ?all_conflict_label).
 
 -spec next_tx_id(#state{}) -> non_neg_integer().
 next_tx_id(#state{transaction_count=N}) -> N.
@@ -572,7 +562,7 @@ register_user(Coord, Tx, Region, Nickname) ->
             {ok, Req} = grb_client:send_key_update(Coord, Tx1, UserKey, grb_crdt:make_op(grb_lww, Nickname)),
             {ok, Tx2} = grb_client:send_key_operations(Coord, Tx1, Updates),
             {ok, Nickname, Tx3} = grb_client:receive_key_update(Coord, Tx2, UserKey, Req),
-            commit_red(Coord, Tx3, ?register_user_label);
+            commit_red(Coord, Tx3);
         _ ->
             %% let the caller choose what to do
             {error, user_taken}
@@ -633,7 +623,7 @@ store_buy_now(Coord, Tx, ItemKey={ItemRegion, items, ItemId}, UserKey={UserRegio
             ]),
             %% now receive it, but ignore the data
             {ok, _, Tx3} = grb_client:receive_read_key(Coord, Tx2, UserKey, NickReq),
-            commit_red(Coord, Tx3, ?store_buy_now_label)
+            commit_red(Coord, Tx3)
     end.
 
 -spec store_bid_loop(state()) -> {ok, integer(), state()} | {error, term(), state()}.
@@ -707,7 +697,7 @@ store_bid(Coord, Tx, ItemKey={ItemRegion, items, ItemId}, UserKey={UserRegion, _
 
             %% this should have finished by now
             {ok, _, Tx3} = grb_client:receive_read_key(Coord, Tx2, UserKey, Req),
-            commit_red(Coord, Tx3, ?place_bid_label)
+            commit_red(Coord, Tx3)
     end.
 
 -spec close_auction_loop(state()) -> {ok, integer(), state()} | {error, term(), state()}.
@@ -762,7 +752,7 @@ close_auction(Coord, Tx, ItemKey={ItemRegion, _, ItemId}) ->
                 {{BidderRegion, wins_user, BidderKey}, grb_crdt:make_op(grb_gset, {ItemKey, ItemSeller, MaxBidKey, MaxBidAmount})}
             ]),
             {ok, _, Tx3} = grb_client:receive_read_key(Coord, Tx2, BidderKey, Req),
-            commit_red(Coord, Tx3, ?close_auction_label)
+            commit_red(Coord, Tx3)
     end.
 
 %% Get all non-closed items (up to page size) belonging to a category, and with sellers in region, up to `Limit`
@@ -787,7 +777,7 @@ search_items_in_region_category(Coord, Tx, Region, Category, Limit) ->
             ]
     end, [], Items),
     {ok, _, Tx3} = grb_client:read_key_snapshots(Coord, Tx2, OpenKeyTypes),
-    commit_blue(Coord, Tx3).
+    commit_red(Coord, Tx3).
 
 %%%===================================================================
 %%% Random Utils
@@ -809,10 +799,9 @@ random_category_items() ->
     erlang:element(rand:uniform(NCat), Cat).
 
 -spec random_user(state()) -> {Region :: binary(), Nickname :: binary()}.
-random_user(#state{red_reuse_cvc=RedReuse, blue_reuse_cvc=BlueReuse,
-                   last_generated_user=LastGenUser}) ->
+random_user(#state{red_reuse_cvc=RedReuse, last_generated_user=LastGenUser}) ->
     if
-        (RedReuse =:= false) orelse (BlueReuse =:= false) ->
+        RedReuse =:= false ->
             random_preloaded_user();
         true ->
             random_user_try_last_generated(LastGenUser)
@@ -842,10 +831,9 @@ random_preloaded_user() ->
     Id = rand:uniform(hook_rubis:get_rubis_prop(user_per_region)),
     {Region, list_to_binary(io_lib:format("~s/user/preload_~b", [Region, Id]))}.
 
-random_item(#state{red_reuse_cvc=RedReuse, blue_reuse_cvc=BlueReuse,
-                   last_generated_item=LastGenItem}) ->
+random_item(#state{red_reuse_cvc=RedReuse, last_generated_item=LastGenItem}) ->
     if
-        (RedReuse =:= false) orelse (BlueReuse =:= false) ->
+        RedReuse =:= false ->
             random_preloaded_item();
         true ->
             random_item_try_last_generated(LastGenItem)

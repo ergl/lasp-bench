@@ -48,6 +48,13 @@
 
 -include("lasp_bench.hrl").
 
+-ifdef('IGNORE_SELF_REPORTED_LATENCY').
+-define(report_latency(__ST, __ET, __N), _ = __ET, lasp_bench_stats:op_complete(__N, ok, __ST)).
+-else.
+%% time is measured by external system
+-define(report_latency(__ST, __ET, __N), lasp_bench_stats:op_complete(__N, ok, __ET)).
+-endif.
+
 %% ====================================================================
 %% API
 %% ====================================================================
@@ -263,8 +270,7 @@ worker_next_op_continue({_Label, OpTag}=Next, State) ->
             {ok, State#state { driver_state = DriverState}};
 
         {ok, ElapsedT, DriverState} ->
-            %% time is measured by external system
-            lasp_bench_stats:op_complete(Next, ok, ElapsedT),
+            ?report_latency(ElapsedUs, ElapsedT, Next),
             {ok, State#state { driver_state = hack_preprocess_driver_state(Next, DriverState) }};
 
         {error, Reason, DriverState} ->

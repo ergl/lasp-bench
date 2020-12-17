@@ -1,5 +1,5 @@
 REPO            ?= lasp_bench
-
+BASEDIR = $(shell pwd)
 PKG_REVISION    ?= $(shell git describe --tags)
 PKG_VERSION     ?= $(shell git describe --tags | tr - .)
 PKG_ID           = basho-bench-$(PKG_VERSION)
@@ -8,25 +8,18 @@ BASE_DIR         = $(shell pwd)
 ERLANG_BIN       = $(shell dirname $(shell which erl))
 REBAR           ?= $(BASE_DIR)/rebar3
 OVERLAY_VARS    ?=
+BASIC_PROFILE = default
 
-RUBIS_IP ?= "127.0.0.1"
-RUBIS_PORT ?= "7878"
-
-RUBIS_TABLE_CONFIG ?= "examples/rubis.config"
-
-REBAR := ./rebar3
+REBAR = $(BASEDIR)/rebar3
 
 all: compile
-	${REBAR} escriptize
+	$(REBAR) as $(BASIC_PROFILE) escriptize
 
 compile:
-	(${REBAR} compile)
+	$(REBAR) as $(BASIC_PROFILE) compile
 
 clean:
-	${REBAR} clean
-
-bench:
-	./_build/default/bin/lasp_bench $(RUBIS_TABLE_CONFIG)
+	$(REBAR) clean
 
 results:
 	Rscript --vanilla priv/summary.r -x 1500 -y 2500 -i tests/current
