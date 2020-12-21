@@ -118,7 +118,7 @@ generator(Id, Opts=#{shared_key := SharedKey, conflict_ratio := Ratio}) ->
                         SharedKey;
                     true ->
                         NextKey = InnerGen(),
-                        <<WorkerKey/binary, "_", NextKey/binary>>
+                        <<WorkerKey/binary, "_", (integer_to_binary(NextKey))/binary>>
                 end
             end
     end.
