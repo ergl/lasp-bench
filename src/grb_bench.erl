@@ -291,8 +291,8 @@ multiupdate_method(Type, true) ->
 multiupdate_method(Type, false) ->
     fun(C, T, KS) ->
         lists:foldl(fun({K, V}, {ok, Vs, AccTx}) ->
-            {ok, V, Next} = grb_client:update_operation(C, AccTx, K, grb_crdt:make_op(Type, V)),
-            {ok, Vs#{K => V}, Next}
+            {ok, _, Next} = grb_client:update_operation(C, AccTx, K, grb_crdt:make_op(Type, V)),
+            {ok, Vs, Next}
         end, {ok, #{}, T}, KS)
     end.
 

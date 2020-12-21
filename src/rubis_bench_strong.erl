@@ -286,7 +286,7 @@ run(store_comment, _, _, State) ->
         ],
 
         %% Claim the item key, read/write so we don't do any blind updates, should get back the same value
-        {ok, CommentKey, Tx1} = grb_client:update_operation(Coord, Tx, CommentKey, grb_crdt:make_op(grb_lww, CommentKey)),
+        {ok, _, Tx1} = grb_client:update_operation(Coord, Tx, CommentKey, grb_crdt:make_op(grb_lww, CommentKey)),
         {ok, Tx2} = grb_client:send_key_operations(Coord, Tx1, Updates),
         {commit_red(Coord, Tx2), S1}
     end);
@@ -347,7 +347,7 @@ run(register_item, _, _, State) ->
             {{Region, items_region_category, Category}, grb_crdt:make_op(grb_gset, ItemKey)}
         ],
         %% Claim the item key, read/write so we don't do any blind updates, should get back the same value
-        {ok, ItemKey, Tx1} = grb_client:update_operation(Coord, Tx, ItemKey, grb_crdt:make_op(grb_lww, ItemKey)),
+        {ok, _, Tx1} = grb_client:update_operation(Coord, Tx, ItemKey, grb_crdt:make_op(grb_lww, ItemKey)),
         {ok, Tx2} = grb_client:send_key_operations(Coord, Tx1, Updates),
         {commit_red(Coord, Tx2), S1#state{last_generated_item={Region, ItemId}}}
     end);

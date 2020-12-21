@@ -273,7 +273,7 @@ run(store_comment, _, _, S0=#state{coord_state=Coord}) ->
     ],
     {ok, Tx} = start_blue_transaction(S1),
     %% Claim the item key, read/write so we don't do any blind updates, should get back the same value
-    {ok, CommentKey, Tx1} = grb_client:update_operation(Coord, Tx, CommentKey, grb_crdt:make_op(grb_lww, CommentKey)),
+    {ok, _, Tx1} = grb_client:update_operation(Coord, Tx, CommentKey, grb_crdt:make_op(grb_lww, CommentKey)),
     {ok, Tx2} = grb_client:send_key_operations(Coord, Tx1, Updates),
     CVC = commit_blue(Coord, Tx2),
     {ok, incr_tx_id(S1#state{last_cvc=CVC})};
@@ -336,7 +336,7 @@ run(register_item, _, _, S0=#state{coord_state=Coord}) ->
     ],
     {ok, Tx} = start_blue_transaction(S1),
     %% Claim the item key, read/write so we don't do any blind updates, should get back the same value
-    {ok, ItemKey, Tx1} = grb_client:update_operation(Coord, Tx, ItemKey, grb_crdt:make_op(grb_lww, ItemKey)),
+    {ok, _, Tx1} = grb_client:update_operation(Coord, Tx, ItemKey, grb_crdt:make_op(grb_lww, ItemKey)),
     {ok, Tx2} = grb_client:send_key_operations(Coord, Tx1, Updates),
     CVC = commit_blue(Coord, Tx2),
     {ok, incr_tx_id(S1#state{last_cvc=CVC, last_generated_item={Region, ItemId}})};
