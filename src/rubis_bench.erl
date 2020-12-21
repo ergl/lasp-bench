@@ -571,7 +571,7 @@ register_user(Coord, Tx, Region, Nickname) ->
             %% username not claimed, send our operations. Pay the price of reading once (no blind writes to Region)
             {ok, Req} = grb_client:send_key_update(Coord, Tx1, UserKey, grb_crdt:make_op(grb_lww, Nickname)),
             {ok, Tx2} = grb_client:send_key_operations(Coord, Tx1, Updates),
-            {ok, Nickname, Tx3} = grb_client:receive_key_update(Coord, Tx2, UserKey, Req),
+            {ok, _, Tx3} = grb_client:receive_key_update(Coord, Tx2, UserKey, Req),
             commit_red(Coord, Tx3, ?register_user_label);
         _ ->
             %% let the caller choose what to do
