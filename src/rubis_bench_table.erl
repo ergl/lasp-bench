@@ -64,6 +64,9 @@
     %% Limit?
     steps_until_stop :: pos_integer() | undefined,
 
+    %% Override thinking time
+    thinking_time :: non_neg_integer() | undefined,
+
     rows :: non_neg_integer(),
     columns :: non_neg_integer(),
     matrix :: matrix(),
@@ -113,13 +116,17 @@
 
 %% API
 -export([new/1,
-         new/3,
+         new/4,
          next_state/1]).
 
 init([_Id, ArgMap = #{transition_table := FilePath}]) ->
     Seed = maps:get(transition_seed, ArgMap, erlang:timestamp()),
     TransitionLimit = maps:get(transition_limit, ArgMap, undefined),
-    new(FilePath, Seed, TransitionLimit).
+    ThinkingTime = case ArgMap of
+        #{thinking_time := Time} when Time > 0 -> Time;
+        _ -> undefined
+    end,
+    new(FilePath, Seed, TransitionLimit, ThinkingTime).
 
 operations() ->
     [{OpTag, OpTag} || OpTag <- (tuple_to_list(?STATE_NAMES) -- ?SHOULD_DISCARD)].
@@ -139,14 +146,14 @@ terminate(_) ->
 
 -spec new(string()) -> t().
 new(FilePath) ->
-    new(FilePath, erlang:timestamp(), undefined).
+    new(FilePath, erlang:timestamp(), undefined, undefined).
 
--spec new(string(), rand:seed(), pos_integer() | undefined) -> t().
-new(FilePath, Seed, TransitionLimit) ->
+-spec new(string(), rand:seed(), pos_integer() | undefined, non_neg_integer() | undefined) -> t().
+new(FilePath, Seed, TransitionLimit, ThinkingTime) ->
     {ok, Fd} = file:open(FilePath, [read, binary]),
     ParseState = parse_table(Fd, #parse_state{}),
     ok = file:close(Fd),
-    make_table(Seed, TransitionLimit, ParseState).
+    make_table(Seed, TransitionLimit, ThinkingTime, ParseState).
 
 -spec next_state(t()) -> {ok, state_name(), t()} | {ok, state_name(), non_neg_integer(), t()} | stop.
 next_state(#state{reached_end_of_session=true}) ->
@@ -164,8 +171,11 @@ next_state(S0) ->
             StateName = state_name(NextState),
             case lists:member(StateName, ?SHOULD_DISCARD) of
                 false ->
+                    WaitDefault = wait_time_default(NextState),
                     Wait = wait_time(NextState),
                     if
+                        WaitDefault =/= undefined ->
+                            {ok, StateName, WaitDefault, decr_steps(NextState)};
                         Wait =/= 0 ->
                             {ok, StateName, Wait, decr_steps(NextState)};
                         true ->
@@ -352,17 +362,17 @@ append_row([_RowName | Data], State0 = #parse_state{current_row=NRow,
             State0#parse_state{current_row=NRow + 1}
     end.
 
-make_table(Seed, TransitionLimit, #parse_state{rows=Rows,
-                                               cols=Cols,
-                                               matrix=Matrix,
-                                               table_name=TableName,
-                                               state_names=Names,
-                                               back_probability=BackProbs,
-                                               end_probability=EndProbs,
-                                               waiting_times=WaitTimes}) ->
-
+make_table(Seed, TransitionLimit, ThinkingTime, #parse_state{rows=Rows,
+                                                             cols=Cols,
+                                                             matrix=Matrix,
+                                                             table_name=TableName,
+                                                             state_names=Names,
+                                                             back_probability=BackProbs,
+                                                             end_probability=EndProbs,
+                                                             waiting_times=WaitTimes}) ->
     #state{random=rand:seed(exsss, Seed),
            steps_until_stop=TransitionLimit,
+           thinking_time=ThinkingTime,
            rows=Rows,
            columns=Cols,
            matrix=Matrix,
@@ -386,6 +396,10 @@ state_name(#state{current_state=CState,state_names=SNames}) ->
 -spec wait_time(t()) -> non_neg_integer().
 wait_time(#state{current_state=CState,waiting_times=WaitTimes}) ->
     erlang:element(CState, WaitTimes).
+
+-spec wait_time_default(t()) -> non_neg_integer() | undefined.
+wait_time_default(#state{thinking_time=Time}) ->
+    Time.
 
 -spec bin_to_numeric(binary()) -> integer() | float().
 bin_to_numeric(N) ->
