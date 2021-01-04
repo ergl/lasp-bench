@@ -1,7 +1,7 @@
 -module(rubis_bench_strong).
 
 %% Ignore xref for all lasp bench drivers
--ignore_xref([new/1, run/4]).
+-ignore_xref([new/1, run/4, terminate/2]).
 
 -export([new/1,
          run/4,
