@@ -67,6 +67,9 @@
     %% Override thinking time
     thinking_time :: non_neg_integer() | undefined,
 
+    %% +/- ms to apply to thinking time
+    sleep_noise :: non_neg_integer(),
+
     rows :: non_neg_integer(),
     columns :: non_neg_integer(),
     matrix :: matrix(),
@@ -116,17 +119,19 @@
 
 %% API
 -export([new/1,
-         new/4,
+         new/5,
          next_state/1]).
 
 init([_Id, ArgMap = #{transition_table := FilePath}]) ->
-    Seed = maps:get(transition_seed, ArgMap, erlang:timestamp()),
+    SleepNoise = maps:get(thinking_noise, ArgMap, 5),
+    <<A:32, B:32, C:32>> = crypto:strong_rand_bytes(12),
+    Seed = maps:get(transition_seed, ArgMap, {A, B, C}),
     TransitionLimit = maps:get(transition_limit, ArgMap, undefined),
     ThinkingTime = case ArgMap of
         #{thinking_time := Time} when Time > 0 -> Time;
         _ -> undefined
     end,
-    new(FilePath, Seed, TransitionLimit, ThinkingTime).
+    new(FilePath, Seed, TransitionLimit, ThinkingTime, SleepNoise).
 
 operations() ->
     [{OpTag, OpTag} || OpTag <- (tuple_to_list(?STATE_NAMES) -- ?SHOULD_DISCARD)].
@@ -146,14 +151,15 @@ terminate(_) ->
 
 -spec new(string()) -> t().
 new(FilePath) ->
-    new(FilePath, erlang:timestamp(), undefined, undefined).
+    <<A:32, B:32, C:32>> = crypto:strong_rand_bytes(12),
+    new(FilePath, {A, B, C}, undefined, undefined, 5).
 
--spec new(string(), rand:seed(), pos_integer() | undefined, non_neg_integer() | undefined) -> t().
-new(FilePath, Seed, TransitionLimit, ThinkingTime) ->
+-spec new(string(), rand:seed(), pos_integer() | undefined, non_neg_integer() | undefined, non_neg_integer()) -> t().
+new(FilePath, Seed, TransitionLimit, ThinkingTime, SleepNoise)  ->
     {ok, Fd} = file:open(FilePath, [read, binary]),
     ParseState = parse_table(Fd, #parse_state{}),
     ok = file:close(Fd),
-    make_table(Seed, TransitionLimit, ThinkingTime, ParseState).
+    make_table(Seed, TransitionLimit, ThinkingTime, SleepNoise, ParseState).
 
 -spec next_state(t()) -> {ok, state_name(), t()} | {ok, state_name(), non_neg_integer(), t()} | stop.
 next_state(#state{reached_end_of_session=true}) ->
@@ -171,15 +177,15 @@ next_state(S0) ->
             StateName = state_name(NextState),
             case lists:member(StateName, ?SHOULD_DISCARD) of
                 false ->
-                    WaitDefault = wait_time_default(NextState),
-                    Wait = wait_time(NextState),
+                    {WaitDefault, NextState1}  = wait_time_default(NextState),
+                    {Wait, NextState2} = wait_time(NextState1),
                     if
                         WaitDefault =/= undefined ->
-                            {ok, StateName, WaitDefault, decr_steps(NextState)};
+                            {ok, StateName, WaitDefault, decr_steps(NextState2)};
                         Wait =/= 0 ->
-                            {ok, StateName, Wait, decr_steps(NextState)};
+                            {ok, StateName, Wait, decr_steps(NextState2)};
                         true ->
-                            {ok, StateName, decr_steps(NextState)}
+                            {ok, StateName, decr_steps(NextState2)}
                     end;
                 true ->
                     %% loop until we reach another transaction, but don't consume steps
@@ -362,17 +368,18 @@ append_row([_RowName | Data], State0 = #parse_state{current_row=NRow,
             State0#parse_state{current_row=NRow + 1}
     end.
 
-make_table(Seed, TransitionLimit, ThinkingTime, #parse_state{rows=Rows,
-                                                             cols=Cols,
-                                                             matrix=Matrix,
-                                                             table_name=TableName,
-                                                             state_names=Names,
-                                                             back_probability=BackProbs,
-                                                             end_probability=EndProbs,
-                                                             waiting_times=WaitTimes}) ->
+make_table(Seed, TransitionLimit, ThinkingTime, SleepNoise, #parse_state{rows=Rows,
+                                                                         cols=Cols,
+                                                                         matrix=Matrix,
+                                                                         table_name=TableName,
+                                                                         state_names=Names,
+                                                                         back_probability=BackProbs,
+                                                                         end_probability=EndProbs,
+                                                                         waiting_times=WaitTimes}) ->
     #state{random=rand:seed(exsss, Seed),
            steps_until_stop=TransitionLimit,
            thinking_time=ThinkingTime,
+           sleep_noise=SleepNoise,
            rows=Rows,
            columns=Cols,
            matrix=Matrix,
@@ -393,13 +400,28 @@ make_table(Seed, TransitionLimit, ThinkingTime, #parse_state{rows=Rows,
 state_name(#state{current_state=CState,state_names=SNames}) ->
     erlang:element(CState, SNames).
 
--spec wait_time(t()) -> non_neg_integer().
-wait_time(#state{current_state=CState,waiting_times=WaitTimes}) ->
-    erlang:element(CState, WaitTimes).
+-spec wait_time(t()) -> {non_neg_integer(), t()}.
+wait_time(S=#state{current_state=CState, waiting_times=WaitTimes}) ->
+    dither(erlang:element(CState, WaitTimes), S).
 
--spec wait_time_default(t()) -> non_neg_integer() | undefined.
-wait_time_default(#state{thinking_time=Time}) ->
-    Time.
+-spec wait_time_default(t()) -> {non_neg_integer() | undefined, t()}.
+wait_time_default(S=#state{thinking_time=Time}) ->
+    dither(Time, S).
+
+-spec dither(non_neg_integer() | undefined, t()) -> {non_neg_integer() | undefined, t()}.
+dither(undefined, S) ->
+    {undefined, S};
+dither(Time, S=#state{sleep_noise=0}) ->
+    {Time, S};
+dither(Time, S=#state{random=R0, sleep_noise=Noise}) ->
+    {Steps, R1} = rand:uniform_s(Noise, R0),
+    {SignP, R2} = rand:uniform_s(16, R1),
+    if
+        SignP > 8 ->
+            {Time + Steps, S#state{random=R2}};
+        true ->
+            {Time - Steps, S#state{random=R2}}
+    end.
 
 -spec bin_to_numeric(binary()) -> integer() | float().
 bin_to_numeric(N) ->
