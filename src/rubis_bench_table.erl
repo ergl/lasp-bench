@@ -423,7 +423,7 @@ wait_time_exp(S=#state{random=R0}) ->
         true ->
             (-7000.0 * math:log(Step)) + 0.5
     end,
-    {SleepTime, S#state{random=R1}}.
+    {erlang:round(SleepTime), S#state{random=R1}}.
 
 -spec dither(non_neg_integer() | undefined, t()) -> {non_neg_integer() | undefined, t()}.
 dither(undefined, S) ->
