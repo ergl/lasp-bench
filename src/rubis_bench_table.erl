@@ -122,6 +122,10 @@
          new/5,
          next_state/1]).
 
+-export([wait_time/1,
+         wait_time_exp/1,
+         wait_time_default/1]).
+
 init([_Id, ArgMap = #{transition_table := FilePath}]) ->
     SleepNoise = maps:get(thinking_noise, ArgMap, 5),
     <<A:32, B:32, C:32>> = crypto:strong_rand_bytes(12),
@@ -178,7 +182,7 @@ next_state(S0) ->
             case lists:member(StateName, ?SHOULD_DISCARD) of
                 false ->
                     {WaitDefault, NextState1}  = wait_time_default(NextState),
-                    {Wait, NextState2} = wait_time(NextState1),
+                    {Wait, NextState2} = wait_time_exp(NextState1),
                     if
                         WaitDefault =/= undefined ->
                             {ok, StateName, WaitDefault, decr_steps(NextState2)};
@@ -407,6 +411,19 @@ wait_time(S=#state{current_state=CState, waiting_times=WaitTimes}) ->
 -spec wait_time_default(t()) -> {non_neg_integer() | undefined, t()}.
 wait_time_default(S=#state{thinking_time=Time}) ->
     dither(Time, S).
+
+%% Negative exponential distribution used by
+%% TPC-W spec for Think Time (Clause 5.3.2.1) and USMD (Clause 6.1.9.2)
+-spec wait_time_exp(t()) -> {non_neg_integer(), t()}.
+wait_time_exp(S=#state{random=R0}) ->
+    {Step, R1} = rand:uniform_s(R0),
+    SleepTime = if
+        Step < 4.54e-5 ->
+            Step + 0.5;
+        true ->
+            (-7000.0 * math:log(Step)) + 0.5
+    end,
+    {SleepTime, S#state{random=R1}}.
 
 -spec dither(non_neg_integer() | undefined, t()) -> {non_neg_integer() | undefined, t()}.
 dither(undefined, S) ->
