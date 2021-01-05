@@ -514,14 +514,14 @@ register_user_loop(State=#state{coord_state=Coord,
     Res = register_user(Coord, Tx, Region, NickName),
     ElapsedUs = erlang:max(0, timer:now_diff(os:timestamp(), Start)),
     case Res of
-        {ok, CVC} ->
-            {ok, ElapsedUs, incr_tx_id(State#state{last_cvc=CVC, last_generated_user={Region, NickName}})};
-
         {error, _} when RetryData ->
             register_user_loop(incr_tx_id(State));
 
         {error, _} ->
-            {ok, ElapsedUs, incr_tx_id(State)}
+            {ok, ElapsedUs, incr_tx_id(State)};
+
+        CVC ->
+            {ok, ElapsedUs, incr_tx_id(State#state{last_cvc=CVC, last_generated_user={Region, NickName}})}
     end.
 
 -spec register_user(grb_client:coord(), grb_client:tx(), binary(), binary()) -> {ok, _} | {error, user_taken}.
@@ -561,14 +561,14 @@ store_buy_now_loop(S0=#state{coord_state=Coord,
     Res = store_buy_now(Coord, Tx, {ItemRegion, items, ItemId}, {UserRegion, users, NickName}, BuyNowId, Qty),
     ElapsedUs = erlang:max(0, timer:now_diff(os:timestamp(), Start)),
     case Res of
-        {ok, CVC} ->
-            {ok, ElapsedUs, incr_tx_id(S1#state{last_cvc=CVC})};
-
         {error, _} when RetryData ->
             store_buy_now_loop(incr_tx_id(S1));
 
         {error, _} ->
-            {ok, ElapsedUs, incr_tx_id(S1)}
+            {ok, ElapsedUs, incr_tx_id(S1)};
+
+        CVC ->
+            {ok, ElapsedUs, incr_tx_id(S1#state{last_cvc=CVC})}
     end.
 
 -spec store_buy_now(grb_client:coord(), grb_client:tx(), _, _, binary(), non_neg_integer()) -> {ok, _}  | {error, bad_quantity}.
@@ -614,14 +614,14 @@ store_bid_loop(S0=#state{coord_state=Coord,
     Res = store_bid(Coord, Tx, {ItemRegion, items, ItemId}, {UserRegion, users, NickName}, BidId, Amount, Qty),
     ElapsedUs = erlang:max(0, timer:now_diff(os:timestamp(), Start)),
     case Res of
-        {ok, CVC} ->
-            {ok, ElapsedUs, incr_tx_id(S1#state{last_cvc=CVC})};
-
         {error, _} when RetryData ->
             store_bid_loop(incr_tx_id(S1));
 
         {error, _} ->
-            {ok, ElapsedUs, incr_tx_id(S1)}
+            {ok, ElapsedUs, incr_tx_id(S1)};
+
+        CVC ->
+            {ok, ElapsedUs, incr_tx_id(S1#state{last_cvc=CVC})}
     end.
 
 -spec store_bid(grb_client:coord(), grb_client:tx(), _, _, binary(), non_neg_integer(), non_neg_integer()) -> {ok, _} | {error, bad_data}.
@@ -678,14 +678,14 @@ close_auction_loop(State=#state{coord_state=Coord,
     Res = close_auction(Coord, Tx, {ItemRegion, items, Itemid}),
     ElapsedUs = erlang:max(0, timer:now_diff(os:timestamp(), Start)),
     case Res of
-        {ok, CVC} ->
-            {ok, ElapsedUs, incr_tx_id(State#state{last_cvc=CVC})};
-
         {error, _} when RetryData ->
             close_auction_loop(incr_tx_id(State));
 
         {error, _} ->
-            {ok, ElapsedUs, incr_tx_id(State)}
+            {ok, ElapsedUs, incr_tx_id(State)};
+
+        CVC ->
+            {ok, ElapsedUs, incr_tx_id(State#state{last_cvc=CVC})}
     end.
 
 -spec close_auction(grb_client:coord(), grb_client:tx(), {binary(), atom(), binary()}) -> {ok, _} | {error, atom()}.
