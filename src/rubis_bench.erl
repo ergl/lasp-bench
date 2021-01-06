@@ -9,7 +9,18 @@
 
 -include("lasp_bench.hrl").
 
--define(global_indices, <<"global_index">>).
+-define(global_indices, [
+    <<"global_index_0">>,
+    <<"global_index_1">>,
+    <<"global_index_2">>,
+    <<"global_index_3">>,
+    <<"global_index_4">>,
+    <<"global_index_5">>,
+    <<"global_index_6">>,
+    <<"global_index_7">>,
+    <<"global_index_8">>,
+    <<"global_index_9">>
+]).
 -define(register_user_label, <<"rubis/registerUser">>).
 -define(store_buy_now_label, <<"rubis/storeBuyNow">>).
 -define(place_bid_label, <<"rubis/placeBid">>).
@@ -74,7 +85,7 @@ run(register_user, _, _, State) ->
 
 run(browse_categories, _, _, S=#state{coord_state=Coord}) ->
     {ok, Tx} = start_blue_transaction(S),
-    {ok, _, Tx1} = grb_client:read_key_snapshot(Coord, Tx, {?global_indices, all_categories}, grb_gset),
+    {ok, _, Tx1} = grb_client:read_key_snapshot(Coord, Tx, {random_global_index(), all_categories}, grb_gset),
     CVC = commit_blue(Coord, Tx1),
     {ok, incr_tx_id(S#state{last_cvc=CVC})};
 
@@ -86,14 +97,14 @@ run(search_items_in_category, _, _, S=#state{coord_state=Coord}) ->
 
 run(browse_regions, _, _, S=#state{coord_state=Coord}) ->
     {ok, Tx} = start_blue_transaction(S),
-    {ok, _, Tx1} = grb_client:read_key_snapshot(Coord, Tx, {?global_indices, all_regions}, grb_gset),
+    {ok, _, Tx1} = grb_client:read_key_snapshot(Coord, Tx, {random_global_index(), all_regions}, grb_gset),
     CVC = commit_blue(Coord, Tx1),
     {ok, incr_tx_id(S#state{last_cvc=CVC})};
 
 run(browse_categories_in_region, _, _, S=#state{coord_state=Coord}) ->
     %% same as browse_categories
     {ok, Tx} = start_blue_transaction(S),
-    {ok, _, Tx1} = grb_client:read_key_snapshot(Coord, Tx, {?global_indices, all_categories}, grb_gset),
+    {ok, _, Tx1} = grb_client:read_key_snapshot(Coord, Tx, {random_global_index(), all_categories}, grb_gset),
     CVC = commit_blue(Coord, Tx1),
     {ok, incr_tx_id(S#state{last_cvc=CVC})};
 
@@ -287,7 +298,7 @@ run(select_category_to_sell_item, _, _, S0=#state{coord_state=Coord}) ->
             %% bail out, no need to clean up anything
             S0;
          {ok, Tx1} ->
-             {ok, _, Tx2} = grb_client:read_key_snapshot(Coord, Tx1, {?global_indices, all_categories}, grb_gset),
+             {ok, _, Tx2} = grb_client:read_key_snapshot(Coord, Tx1, {random_global_index(), all_categories}, grb_gset),
              CVC = commit_blue(Coord, Tx2),
              S0#state{last_cvc=CVC}
     end,
@@ -928,3 +939,7 @@ random_string(N) ->
     lists:foldl(fun(_, Acc) ->
         [lists:nth(rand:uniform(length(Chars)), Chars)] ++ Acc
     end, [], lists:seq(1, N)).
+
+-spec random_global_index() -> binary().
+random_global_index() ->
+    lists:nth(rand:uniform(length(?global_indices)), ?global_indices).
