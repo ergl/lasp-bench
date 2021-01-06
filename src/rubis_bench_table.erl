@@ -68,7 +68,10 @@
     thinking_time :: non_neg_integer() | undefined,
 
     %% +/- ms to apply to thinking time
-    sleep_noise :: non_neg_integer(),
+    thinking_jitter :: non_neg_integer(),
+
+    %% use tcp-w thinking time instead
+    override_neg_exp :: boolean(),
 
     rows :: non_neg_integer(),
     columns :: non_neg_integer(),
@@ -119,15 +122,12 @@
 
 %% API
 -export([new/1,
-         new/5,
+         new/6,
          next_state/1]).
 
--export([wait_time/1,
-         wait_time_exp/1,
-         wait_time_default/1]).
-
 init([_Id, ArgMap = #{transition_table := FilePath}]) ->
-    SleepNoise = maps:get(thinking_noise, ArgMap, 5),
+    Jitter = maps:get(thinking_jitter_ms, ArgMap, 5),
+    OverrideTime = maps:get(use_tcpw_time, ArgMap, false),
     <<A:32, B:32, C:32>> = crypto:strong_rand_bytes(12),
     Seed = maps:get(transition_seed, ArgMap, {A, B, C}),
     TransitionLimit = maps:get(transition_limit, ArgMap, undefined),
@@ -135,7 +135,7 @@ init([_Id, ArgMap = #{transition_table := FilePath}]) ->
         #{thinking_time := Time} when Time > 0 -> Time;
         _ -> undefined
     end,
-    new(FilePath, Seed, TransitionLimit, ThinkingTime, SleepNoise).
+    new(FilePath, Seed, TransitionLimit, ThinkingTime, Jitter, OverrideTime).
 
 operations() ->
     [{OpTag, OpTag} || OpTag <- (tuple_to_list(?STATE_NAMES) -- ?SHOULD_DISCARD)].
@@ -156,14 +156,14 @@ terminate(_) ->
 -spec new(string()) -> t().
 new(FilePath) ->
     <<A:32, B:32, C:32>> = crypto:strong_rand_bytes(12),
-    new(FilePath, {A, B, C}, undefined, undefined, 5).
+    new(FilePath, {A, B, C}, undefined, undefined, 5, false).
 
--spec new(string(), rand:seed(), pos_integer() | undefined, non_neg_integer() | undefined, non_neg_integer()) -> t().
-new(FilePath, Seed, TransitionLimit, ThinkingTime, SleepNoise)  ->
+-spec new(string(), rand:seed(), pos_integer() | undefined, non_neg_integer() | undefined, non_neg_integer(), boolean()) -> t().
+new(FilePath, Seed, TransitionLimit, ThinkingTime, Jitter, OverrideTime)  ->
     {ok, Fd} = file:open(FilePath, [read, binary]),
     ParseState = parse_table(Fd, #parse_state{}),
     ok = file:close(Fd),
-    make_table(Seed, TransitionLimit, ThinkingTime, SleepNoise, ParseState).
+    make_table(Seed, TransitionLimit, ThinkingTime, Jitter, OverrideTime, ParseState).
 
 -spec next_state(t()) -> {ok, state_name(), t()} | {ok, state_name(), non_neg_integer(), t()} | stop.
 next_state(#state{reached_end_of_session=true}) ->
@@ -182,7 +182,7 @@ next_state(S0) ->
             case lists:member(StateName, ?SHOULD_DISCARD) of
                 false ->
                     {WaitDefault, NextState1}  = wait_time_default(NextState),
-                    {Wait, NextState2} = wait_time_exp(NextState1),
+                    {Wait, NextState2} = wait_state_time(NextState1),
                     if
                         WaitDefault =/= undefined ->
                             {ok, StateName, WaitDefault, decr_steps(NextState2)};
@@ -372,18 +372,19 @@ append_row([_RowName | Data], State0 = #parse_state{current_row=NRow,
             State0#parse_state{current_row=NRow + 1}
     end.
 
-make_table(Seed, TransitionLimit, ThinkingTime, SleepNoise, #parse_state{rows=Rows,
-                                                                         cols=Cols,
-                                                                         matrix=Matrix,
-                                                                         table_name=TableName,
-                                                                         state_names=Names,
-                                                                         back_probability=BackProbs,
-                                                                         end_probability=EndProbs,
-                                                                         waiting_times=WaitTimes}) ->
+make_table(Seed, TransitionLimit, ThinkingTime, Jitter, Override, #parse_state{rows=Rows,
+                                                                               cols=Cols,
+                                                                               matrix=Matrix,
+                                                                               table_name=TableName,
+                                                                               state_names=Names,
+                                                                               back_probability=BackProbs,
+                                                                               end_probability=EndProbs,
+                                                                               waiting_times=WaitTimes}) ->
     #state{random=rand:seed(exsss, Seed),
            steps_until_stop=TransitionLimit,
            thinking_time=ThinkingTime,
-           sleep_noise=SleepNoise,
+           thinking_jitter=Jitter,
+           override_neg_exp=Override,
            rows=Rows,
            columns=Cols,
            matrix=Matrix,
@@ -404,13 +405,15 @@ make_table(Seed, TransitionLimit, ThinkingTime, SleepNoise, #parse_state{rows=Ro
 state_name(#state{current_state=CState,state_names=SNames}) ->
     erlang:element(CState, SNames).
 
--spec wait_time(t()) -> {non_neg_integer(), t()}.
-wait_time(S=#state{current_state=CState, waiting_times=WaitTimes}) ->
-    dither(erlang:element(CState, WaitTimes), S).
-
 -spec wait_time_default(t()) -> {non_neg_integer() | undefined, t()}.
 wait_time_default(S=#state{thinking_time=Time}) ->
-    dither(Time, S).
+    jitter(Time, S).
+
+-spec wait_state_time(t()) -> {non_neg_integer(), t()}.
+wait_state_time(S=#state{override_neg_exp=true}) ->
+    wait_time_exp(S);
+wait_state_time(S=#state{override_neg_exp=false, current_state=CState, waiting_times=WaitTimes}) ->
+    jitter(erlang:element(CState, WaitTimes), S).
 
 %% Negative exponential distribution used by
 %% TPC-W spec for Think Time (Clause 5.3.2.1) and USMD (Clause 6.1.9.2)
@@ -425,12 +428,12 @@ wait_time_exp(S=#state{random=R0}) ->
     end,
     {erlang:round(SleepTime), S#state{random=R1}}.
 
--spec dither(non_neg_integer() | undefined, t()) -> {non_neg_integer() | undefined, t()}.
-dither(undefined, S) ->
+-spec jitter(non_neg_integer() | undefined, t()) -> {non_neg_integer() | undefined, t()}.
+jitter(undefined, S) ->
     {undefined, S};
-dither(Time, S=#state{sleep_noise=0}) ->
+jitter(Time, S=#state{thinking_jitter=0}) ->
     {Time, S};
-dither(Time, S=#state{random=R0, sleep_noise=Noise}) ->
+jitter(Time, S=#state{random=R0, thinking_jitter=Noise}) ->
     {Steps, R1} = rand:uniform_s(Noise, R0),
     {SignP, R2} = rand:uniform_s(16, R1),
     if
