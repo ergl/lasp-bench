@@ -440,7 +440,7 @@ jitter(Time, S=#state{random=R0, thinking_jitter=Noise}) ->
         SignP > 8 ->
             {Time + Steps, S#state{random=R2}};
         true ->
-            {Time - Steps, S#state{random=R2}}
+            {erlang:max(Time - Steps, 0), S#state{random=R2}}
     end.
 
 -spec bin_to_numeric(binary()) -> integer() | float().
