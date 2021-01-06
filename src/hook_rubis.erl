@@ -8,7 +8,8 @@
 
 -export([get_config/1,
          get_rubis_prop/1,
-         make_coordinator/1]).
+         make_coordinator/1,
+         random_global_index/1]).
 
 start(Args) ->
     logger:info("~p:~p(~p)", [?MODULE, ?FUNCTION_NAME, Args]),
@@ -52,3 +53,7 @@ get_rubis_prop(Key) ->
 
 make_coordinator(Id) ->
     hook_grb:make_coordinator(Id).
+
+-spec random_global_index(grb_client:coord()) -> tuple().
+random_global_index(Coordinator) ->
+    {rand:uniform(grb_client:ring_size(Coordinator)), global_index}.
