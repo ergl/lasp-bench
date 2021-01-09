@@ -273,6 +273,11 @@ worker_next_op_continue({_Label, OpTag}=Next, State) ->
             ?report_latency(ElapsedUs, ElapsedT, Next),
             {ok, State#state { driver_state = hack_preprocess_driver_state(Next, DriverState) }};
 
+        {ok, ElapsedT, Retries, Total, DriverState} ->
+            lasp_bench_stats:op_complete(Next, {ok, Total}, ElapsedT),
+            lasp_bench_stats:op_complete(Next, {error, abort, Retries}, ElapsedT),
+            {ok, State#state {driver_state = hack_preprocess_driver_state(Next, DriverState) }};
+
         {error, Reason, DriverState} ->
             %% Driver encountered a recoverable error
             lasp_bench_stats:op_complete(Next, {error, Reason}, ElapsedUs),

@@ -187,6 +187,11 @@ handle_call(run, _From, State) ->
 handle_call({op, Op, {error, Reason}, _ElapsedUs}, _From, State) ->
     increment_error_counter(Op),
     increment_error_counter({Op, Reason}),
+    {reply, ok, State#state { errors_since_last_report = true }};
+
+handle_call({op, Op, {error, Reason, Count}, _ElapsedUs}, _From, State) ->
+    increment_error_counter(Op, Count),
+    increment_error_counter({Op, Reason}, Count),
     {reply, ok, State#state { errors_since_last_report = true }}.
 
 handle_cast({Op, {ok, Units}, ElapsedUs}, State = #state{last_write_time = LWT, report_interval = RI}) ->
@@ -224,8 +229,6 @@ terminate(_Reason, #state{stats_writer=Module}=State) ->
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
-
-
 %% ====================================================================
 %% Internal functions
 %% ====================================================================
@@ -248,27 +251,15 @@ get_distributed() ->
 increment_error_counter(Key) ->
     ets_increment(lasp_bench_errors, Key, 1).
 
+increment_error_counter(Key, Incr) ->
+    ets_increment(lasp_bench_errors, Key, Incr).
+
 ets_increment(Tab, Key, Incr) when is_integer(Incr) ->
-    %% Increment the counter for this specific key. We have to deal with
-    %% missing keys, so catch the update if it fails and init as necessary
-    case catch(ets:update_counter(Tab, Key, Incr)) of
-        Value when is_integer(Value) ->
-            ok;
-        {'EXIT', _} ->
-            case ets:insert_new(Tab, {Key, Incr}) of
-                true ->
-                    ok;
-                _ ->
-                    %% Race with another load gen proc, so retry
-                    ets_increment(Tab, Key, Incr)
-            end
-    end;
+    _ = ets:update_counter(Tab, Key, {2, Incr}, {Key, Incr}),
+    ok;
 ets_increment(Tab, Key, Incr) when is_float(Incr) ->
-    Old = case ets:lookup(Tab, Key) of
-              [{_, Val}] -> Val;
-              []         -> 0
-          end,
-    true = ets:insert(Tab, {Key, Old + Incr}).
+    _ = ets:select_replace(Tab, [{ {Key, '$1'}, [], [{{Key, {'+', Incr, '$1'}}}]  }]),
+    ok.
 
 error_counter(Key) ->
     lookup_or_zero(lasp_bench_errors, Key).
@@ -280,7 +271,6 @@ lookup_or_zero(Tab, Key) ->
         Value ->
             Value
     end.
-
 
 process_stats(Now, #state{stats_writer=Module}=State) ->
     %% Determine how much time has elapsed (seconds) since our last report
