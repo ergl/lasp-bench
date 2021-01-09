@@ -50,9 +50,11 @@
 
 -ifdef('IGNORE_SELF_REPORTED_LATENCY').
 -define(report_latency(__ST, __ET, __N), _ = __ET, lasp_bench_stats:op_complete(__N, ok, __ST)).
+-define(report_latency(__ST, __ET, __N, __T), _ = __ET, lasp_bench_stats:op_complete(__N, {ok, __T}, __ST)).
 -else.
 %% time is measured by external system
 -define(report_latency(__ST, __ET, __N), lasp_bench_stats:op_complete(__N, ok, __ET)).
+-define(report_latency(__ST, __ET, __N, __T), lasp_bench_stats:op_complete(__N, {ok, __T}, __ET)).
 -endif.
 
 %% ====================================================================
@@ -274,7 +276,7 @@ worker_next_op_continue({_Label, OpTag}=Next, State) ->
             {ok, State#state { driver_state = hack_preprocess_driver_state(Next, DriverState) }};
 
         {ok, ElapsedT, Retries, Total, DriverState} ->
-            lasp_bench_stats:op_complete(Next, {ok, Total}, ElapsedT),
+            ?report_latency(ElapsedUs, ElapsedT, Next, Total),
             lasp_bench_stats:op_complete(Next, {error, abort, Retries}, ElapsedT),
             {ok, State#state {driver_state = hack_preprocess_driver_state(Next, DriverState) }};
 
