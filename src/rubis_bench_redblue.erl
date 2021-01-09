@@ -24,10 +24,8 @@
     <<"global_index_8">>,
     <<"global_index_9">>
 ]).
--define(register_user_label, <<"rubis/registerUser">>).
--define(store_buy_now_label, <<"rubis/storeBuyNow">>).
--define(place_bid_label, <<"rubis/placeBid">>).
--define(close_auction_label, <<"rubis/closeAuction">>).
+
+-define(all_conflict_label, <<"default">>).
 
 %% How often do we pick the latest generated item / autor, etc
 -define(REUSE_GENERATED_PROB, 0.25).
@@ -513,12 +511,11 @@ commit_blue(Coord, Tx) ->
 
 -spec commit_red(
     Coord :: grb_client:coordd(),
-    Tx :: grb_client:tx(),
-    Label :: grb_client:tx_label()
+    Tx :: grb_client:tx()
 ) -> {ok, CVC :: grb_client:rvc()} | {abort, Reason :: term()}.
 
-commit_red(Coord, Tx, Label) ->
-    grb_client:commit_red(Coord, Tx, Label).
+commit_red(Coord, Tx) ->
+    grb_client:commit_red(Coord, Tx, ?all_conflict_label).
 
 -spec next_tx_id(#state{}) -> non_neg_integer().
 next_tx_id(#state{transaction_count=N}) -> N.
@@ -542,10 +539,13 @@ try_auth(Coord, Tx0, Region, NickName, Password) ->
             {error, Tx1}
     end.
 
--spec register_user_loop(state()) -> {ok, integer(), state()} | {error, term(), state()}.
-register_user_loop(State=#state{coord_state=Coord, retry_until_commit=RetryAbort,
-                                retry_on_bad_precondition=RetryData}) ->
+-spec register_user_loop(state()) -> {ok, integer(), integer(), integer(), state()} | {error, term(), state()}.
+register_user_loop(State) ->
+    register_user_loop(State, 0, 0).
 
+register_user_loop(State=#state{coord_state=Coord, retry_until_commit=RetryAbort,
+                                retry_on_bad_precondition=RetryData}, Aborted0, Total0) ->
+    Total = Total0 + 1,
     Start = os:timestamp(),
     Region = random_region(),
     NickName = gen_new_nickname(),
@@ -554,16 +554,17 @@ register_user_loop(State=#state{coord_state=Coord, retry_until_commit=RetryAbort
     ElapsedUs = erlang:max(0, timer:now_diff(os:timestamp(), Start)),
     case Res of
         {ok, CVC} ->
-            {ok, ElapsedUs, incr_tx_id(State#state{last_cvc=CVC, last_generated_user={Region, NickName}})};
+            {ok, ElapsedUs, Aborted0, Total,
+                incr_tx_id(State#state{last_cvc=CVC, last_generated_user={Region, NickName}})};
 
         {error, _} when RetryData ->
-            register_user_loop(incr_tx_id(State));
+            register_user_loop(incr_tx_id(State), Aborted0, Total);
 
         {abort, _} when RetryAbort ->
-            register_user_loop(incr_tx_id(State));
+            register_user_loop(incr_tx_id(State), Aborted0 + 1, Total);
 
         {error, _} ->
-            {ok, ElapsedUs, incr_tx_id(State)};
+            {ok, ElapsedUs, Aborted0, Total, incr_tx_id(State)};
 
         {abort, _}=Abort ->
             {error, Abort, incr_tx_id(State)}
@@ -587,16 +588,20 @@ register_user(Coord, Tx, Region, Nickname) ->
             {ok, Req} = grb_client:send_key_update(Coord, Tx1, UserKey, grb_crdt:make_op(grb_lww, Nickname)),
             {ok, Tx2} = grb_client:send_key_operations(Coord, Tx1, Updates),
             {ok, _, Tx3} = grb_client:receive_key_update(Coord, Tx2, UserKey, Req),
-            commit_red(Coord, Tx3, ?register_user_label);
+            commit_red(Coord, Tx3);
         _ ->
             %% let the caller choose what to do
             {error, user_taken}
     end.
 
--spec store_buy_now_loop(state()) -> {ok, integer(), state()} | {error, term(), state()}.
-store_buy_now_loop(S0=#state{coord_state=Coord, retry_until_commit=RetryAbort,
-                             retry_on_bad_precondition=RetryData}) ->
+-spec store_buy_now_loop(state()) -> {ok, integer(), integer(), integer(), state()} | {error, term(), state()}.
+store_buy_now_loop(State) ->
+    store_buy_now_loop(State, 0, 0).
 
+store_buy_now_loop(S0=#state{coord_state=Coord, retry_until_commit=RetryAbort,
+                             retry_on_bad_precondition=RetryData}, Aborted0, Total0) ->
+
+    Total = Total0 + 1,
     Start = os:timestamp(),
     {ItemRegion, ItemId} = random_item(S0),
     {UserRegion, NickName} = random_user(S0),
@@ -607,16 +612,17 @@ store_buy_now_loop(S0=#state{coord_state=Coord, retry_until_commit=RetryAbort,
     ElapsedUs = erlang:max(0, timer:now_diff(os:timestamp(), Start)),
     case Res of
         {ok, CVC} ->
-            {ok, ElapsedUs, incr_tx_id(S1#state{last_cvc=CVC})};
+            {ok, ElapsedUs, Aborted0, Total,
+                incr_tx_id(S1#state{last_cvc=CVC})};
 
         {error, _} when RetryData ->
-            store_buy_now_loop(incr_tx_id(S1));
+            store_buy_now_loop(incr_tx_id(S1), Aborted0, Total);
 
         {abort, _} when RetryAbort ->
-            store_buy_now_loop(incr_tx_id(S1));
+            store_buy_now_loop(incr_tx_id(S1), Aborted0 + 1, Total);
 
         {error, _} ->
-            {ok, ElapsedUs, incr_tx_id(S1)};
+            {ok, ElapsedUs, Aborted0, Total, incr_tx_id(S1)};
 
         {abort, _}=Abort ->
             {error, Abort, incr_tx_id(S1)}
@@ -648,13 +654,17 @@ store_buy_now(Coord, Tx, ItemKey={ItemRegion, items, ItemId}, UserKey={UserRegio
             ]),
             %% now receive it, but ignore the data
             {ok, _, Tx3} = grb_client:receive_read_key(Coord, Tx2, UserKey, NickReq),
-            commit_red(Coord, Tx3, ?store_buy_now_label)
+            commit_red(Coord, Tx3)
     end.
 
--spec store_bid_loop(state()) -> {ok, integer(), state()} | {error, term(), state()}.
-store_bid_loop(S0=#state{coord_state=Coord, retry_until_commit=RetryAbort,
-                         retry_on_bad_precondition=RetryData}) ->
+-spec store_bid_loop(state()) -> {ok, integer(), integer(), integer(), state()} | {error, term(), state()}.
+store_bid_loop(State) ->
+    store_bid_loop(State, 0, 0).
 
+store_bid_loop(S0=#state{coord_state=Coord, retry_until_commit=RetryAbort,
+                         retry_on_bad_precondition=RetryData}, Aborted0, Total0) ->
+
+    Total = Total0 + 1,
     Start = os:timestamp(),
     {ItemRegion, ItemId} = random_item(S0),
     {UserRegion, NickName} = random_user(S0),
@@ -666,16 +676,17 @@ store_bid_loop(S0=#state{coord_state=Coord, retry_until_commit=RetryAbort,
     ElapsedUs = erlang:max(0, timer:now_diff(os:timestamp(), Start)),
     case Res of
         {ok, CVC} ->
-            {ok, ElapsedUs, incr_tx_id(S1#state{last_cvc=CVC})};
+            {ok, ElapsedUs, Aborted0, Total,
+                incr_tx_id(S1#state{last_cvc=CVC})};
 
         {error, _} when RetryData ->
-            store_bid_loop(incr_tx_id(S1));
+            store_bid_loop(incr_tx_id(S1), Aborted0, Total);
 
         {abort, _} when RetryAbort ->
-            store_bid_loop(incr_tx_id(S1));
+            store_bid_loop(incr_tx_id(S1), Aborted0 + 1, Total);
 
         {error, _} ->
-            {ok, ElapsedUs, incr_tx_id(S1)};
+            {ok, ElapsedUs, Aborted0, Total, incr_tx_id(S1)};
 
         {abort, _}=Abort ->
             {error, Abort, incr_tx_id(S1)}
@@ -722,13 +733,17 @@ store_bid(Coord, Tx, ItemKey={ItemRegion, items, ItemId}, UserKey={UserRegion, _
 
             %% this should have finished by now
             {ok, _, Tx3} = grb_client:receive_read_key(Coord, Tx2, UserKey, Req),
-            commit_red(Coord, Tx3, ?place_bid_label)
+            commit_red(Coord, Tx3)
     end.
 
--spec close_auction_loop(state()) -> {ok, integer(), state()} | {error, term(), state()}.
-close_auction_loop(State=#state{coord_state=Coord, retry_until_commit=RetryAbort,
-                                retry_on_bad_precondition=RetryData}) ->
+-spec close_auction_loop(state()) -> {ok, integer(), integer(), integer(), state()} | {error, term(), state()}.
+close_auction_loop(State) ->
+    close_auction_loop(State, 0, 0).
 
+close_auction_loop(State=#state{coord_state=Coord, retry_until_commit=RetryAbort,
+                                retry_on_bad_precondition=RetryData}, Aborted0, Total0) ->
+
+    Total = Total0 + 1,
     Start = os:timestamp(),
     {ItemRegion, Itemid} = random_item(State),
     {ok, Tx} = start_red_transaction(State),
@@ -736,16 +751,17 @@ close_auction_loop(State=#state{coord_state=Coord, retry_until_commit=RetryAbort
     ElapsedUs = erlang:max(0, timer:now_diff(os:timestamp(), Start)),
     case Res of
         {ok, CVC} ->
-            {ok, ElapsedUs, incr_tx_id(State#state{last_cvc=CVC})};
+            {ok, ElapsedUs, Aborted0, Total,
+                incr_tx_id(State#state{last_cvc=CVC})};
 
         {error, _} when RetryData ->
-            close_auction_loop(incr_tx_id(State));
+            close_auction_loop(incr_tx_id(State), Aborted0, Total);
 
         {abort, _} when RetryAbort ->
-            close_auction_loop(incr_tx_id(State));
+            close_auction_loop(incr_tx_id(State), Aborted0 + 1, Total);
 
         {error, _} ->
-            {ok, ElapsedUs, incr_tx_id(State)};
+            {ok, ElapsedUs, Aborted0, Total, incr_tx_id(State)};
 
         {abort, _}=Abort ->
             {error, Abort, incr_tx_id(State)}
@@ -777,7 +793,7 @@ close_auction(Coord, Tx, ItemKey={ItemRegion, _, ItemId}) ->
                 {{BidderRegion, wins_user, BidderKey}, grb_crdt:make_op(grb_gset, {ItemKey, ItemSeller, MaxBidKey, MaxBidAmount})}
             ]),
             {ok, _, Tx3} = grb_client:receive_read_key(Coord, Tx2, BidderKey, Req),
-            commit_red(Coord, Tx3, ?close_auction_label)
+            commit_red(Coord, Tx3)
     end.
 
 %% Get all non-closed items (up to page size) belonging to a category, and with sellers in region, up to `Limit`
