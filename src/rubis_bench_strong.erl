@@ -9,18 +9,7 @@
 
 -include("lasp_bench.hrl").
 
--define(global_indices, [
-    <<"global_index_0">>,
-    <<"global_index_1">>,
-    <<"global_index_2">>,
-    <<"global_index_3">>,
-    <<"global_index_4">>,
-    <<"global_index_5">>,
-    <<"global_index_6">>,
-    <<"global_index_7">>,
-    <<"global_index_8">>,
-    <<"global_index_9">>
-]).
+-define(global_indices, <<"global_index">>).
 -define(all_conflict_label, <<"default">>).
 
 %% How often do we pick the latest generated item / autor, etc
@@ -108,7 +97,7 @@ run(register_user, _, _, State) ->
 
 run(browse_categories, _, _, State) ->
     retry_loop(State, fun(S=#state{coord_state=Coord}, Tx) ->
-        {ok, _, Tx1} = grb_client:read_key_snapshot(Coord, Tx, {random_global_index(), all_categories}, grb_gset),
+        {ok, _, Tx1} = grb_client:read_key_snapshot(Coord, Tx, {?global_indices, all_categories}, grb_gset),
         {commit_red(Coord, Tx1), S}
     end);
 
@@ -120,13 +109,13 @@ run(search_items_in_category, _, _, State) ->
 
 run(browse_regions, _, _, State) ->
     retry_loop(State, fun(S=#state{coord_state=Coord}, Tx) ->
-        {ok, _, Tx1} = grb_client:read_key_snapshot(Coord, Tx, {random_global_index(), all_regions}, grb_gset),
+        {ok, _, Tx1} = grb_client:read_key_snapshot(Coord, Tx, {?global_indices, all_regions}, grb_gset),
         {commit_red(Coord, Tx1), S}
     end);
 
 run(browse_categories_in_region, _, _, State) ->
     retry_loop(State, fun(S=#state{coord_state=Coord}, Tx) ->
-        {ok, _, Tx1} = grb_client:read_key_snapshot(Coord, Tx, {random_global_index(), all_categories}, grb_gset),
+        {ok, _, Tx1} = grb_client:read_key_snapshot(Coord, Tx, {?global_indices, all_categories}, grb_gset),
         {commit_red(Coord, Tx1), S}
     end);
 
@@ -315,7 +304,7 @@ run(select_category_to_sell_item, _, _, State) ->
             {error, _} ->
                 {{error, auth}, S};
              {ok, Tx1} ->
-                 {ok, _, Tx2} = grb_client:read_key_snapshot(Coord, Tx1, {random_global_index(), all_categories}, grb_gset),
+                 {ok, _, Tx2} = grb_client:read_key_snapshot(Coord, Tx1, {?global_indices, all_categories}, grb_gset),
                  {commit_red(Coord, Tx2), S}
         end
     end);
@@ -951,7 +940,3 @@ random_string(N) ->
     lists:foldl(fun(_, Acc) ->
         [lists:nth(rand:uniform(length(Chars)), Chars)] ++ Acc
     end, [], lists:seq(1, N)).
-
--spec random_global_index() -> binary().
-random_global_index() ->
-    lists:nth(rand:uniform(length(?global_indices)), ?global_indices).
