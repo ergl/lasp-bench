@@ -9,9 +9,6 @@
 
 -include("lasp_bench.hrl").
 
--define(REDBLUE_SPECIAL_KEY, <<"redblue_special_key">>).
--define(REDBLUE_SPECIAL_OP, grb_crdt:make_op(grb_lww, <<>>)).
-
 -define(global_indices, <<"global_index">>).
 -define(all_conflict_label, <<"default">>).
 
@@ -362,6 +359,8 @@ run(about_me, _, _, S0=#state{coord_state=Coord}) ->
                 { {UserRegion, users, Nickname, email}, grb_lww },
                 { {UserRegion, users, Nickname, rating}, grb_gcounter }
             ],
+            %% We can read this at once, everything is in the same partition
+            {ok, Req} = grb_client:send_read_partition(Coord, Tx1, UserProfileReads),
 
             UserKey = {UserRegion, users, Nickname},
             SoldItemsIdxKey = {UserRegion, items_seller, UserKey},
@@ -381,8 +380,8 @@ run(about_me, _, _, S0=#state{coord_state=Coord}) ->
                 { CommentIdxKey, ?gset_limit_op(PageSize) }
             ],
 
-            {ok, _UserInfo, Tx2} = grb_client:read_key_snapshots(Coord, Tx1, UserProfileReads),
-            {ok, IdxResults, Tx3} = grb_client:read_key_operations(Coord, Tx2, IndexReadOps),
+            {ok, IdxResults, Tx2} = grb_client:read_key_operations(Coord, Tx1, IndexReadOps),
+            {ok, _UserInfo, Tx3} = grb_client:receive_read_partition(Coord, Tx2, Req),
             #{
                 SoldItemsIdxKey := SoldItemIds,
                 BuyNowsIdxKey := BoughtIds,
@@ -484,8 +483,7 @@ start_blue_transaction(S=#state{coord_state=CoordState, last_cvc=LastVC, blue_re
 -spec start_red_transaction(state()) -> {ok, grb_client:tx()}.
 start_red_transaction(S=#state{coord_state=CoordState, last_cvc=LastVC, red_reuse_cvc=Reuse}) ->
     SVC = if Reuse -> LastVC; true -> grb_vclock:new() end,
-    {ok, Tx} = grb_client:start_transaction(CoordState, next_tx_id(S), SVC),
-    grb_client:add_keyop_to_writeset_unsafe(CoordState, Tx, ?REDBLUE_SPECIAL_KEY, ?REDBLUE_SPECIAL_OP).
+    grb_client:start_transaction(CoordState, next_tx_id(S), SVC).
 
 -spec commit_blue(
     Coord :: grb_client:coordd(),
