@@ -121,7 +121,7 @@ run(readonly_red_barrier, KeyGen, _, State = #state{readonly_ops=N, coord_state=
         {ok, CVC} ->
             ok = perform_uniform_barrier(Coord, CVC),
             {ok, incr_tx_id(State#state{last_cvc=CVC})};
-        Err -> {error, Err, State}
+        Err -> {error, Err, incr_tx_id(State)}
     end;
 
 run(writeonly_red_barrier, KeyGen, ValueGen, State = #state{writeonly_ops=N, coord_state=Coord}) ->
