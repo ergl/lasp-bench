@@ -362,8 +362,6 @@ run(about_me, _, _, S0=#state{coord_state=Coord}) ->
                 { {UserRegion, users, Nickname, email}, grb_lww },
                 { {UserRegion, users, Nickname, rating}, grb_gcounter }
             ],
-            %% We can read this at once, everything is in the same partition
-            {ok, Req} = grb_client:send_read_partition(Coord, Tx1, UserProfileReads),
 
             UserKey = {UserRegion, users, Nickname},
             SoldItemsIdxKey = {UserRegion, items_seller, UserKey},
@@ -383,8 +381,8 @@ run(about_me, _, _, S0=#state{coord_state=Coord}) ->
                 { CommentIdxKey, ?gset_limit_op(PageSize) }
             ],
 
-            {ok, IdxResults, Tx2} = grb_client:read_key_operations(Coord, Tx1, IndexReadOps),
-            {ok, _UserInfo, Tx3} = grb_client:receive_read_partition(Coord, Tx2, Req),
+            {ok, _UserInfo, Tx2} = grb_client:read_key_snapshots(Coord, Tx1, UserProfileReads),
+            {ok, IdxResults, Tx3} = grb_client:read_key_operations(Coord, Tx2, IndexReadOps),
             #{
                 SoldItemsIdxKey := SoldItemIds,
                 BuyNowsIdxKey := BoughtIds,
