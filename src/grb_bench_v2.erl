@@ -107,44 +107,44 @@ run(read_write_blue_barrier, KeyGen, ValueGen, State = #state{rw_reads=RN, rw_up
 %%====================================================================
 
 run(readonly_red, _, _, State = #state{readonly_ops=N, strong_generator=KeyGen}) ->
-    case perform_readonly_red(State, gen_keys(N, KeyGen)) of
-        {ok, CVC} -> {ok, incr_tx_id(State#state{last_cvc=CVC})};
+    case perform_readonly_red(State, gen_keys(N, KeyGen), 0) of
+        {ok, CVC, Retries} -> {ok, ignore, Retries-1, Retries, incr_tx_id(State#state{last_cvc=CVC})};
         Err -> {error, Err, incr_tx_id(State)}
     end;
 
 run(writeonly_red, _, ValueGen, State = #state{writeonly_ops=N, strong_generator=KeyGen}) ->
-    case perform_writeonly_red(State, gen_updates(N, KeyGen, ValueGen)) of
-        {ok, CVC} -> {ok, incr_tx_id(State#state{last_cvc=CVC})};
+    case perform_writeonly_red(State, gen_updates(N, KeyGen, ValueGen), 0) of
+        {ok, CVC, Retries} -> {ok, ignore, Retries - 1, Retries, incr_tx_id(State#state{last_cvc=CVC})};
         Err -> {error, Err, incr_tx_id(State)}
     end;
 
 run(read_write_red, _, ValueGen, State = #state{rw_reads=RN, rw_updates=WN, strong_generator=KeyGen}) ->
-    case perform_read_write_red(State, gen_keys(RN, KeyGen), gen_updates(WN, KeyGen, ValueGen)) of
-        {ok, CVC} -> {ok, incr_tx_id(State#state{last_cvc=CVC})};
+    case perform_read_write_red(State, gen_keys(RN, KeyGen), gen_updates(WN, KeyGen, ValueGen), 0) of
+        {ok, CVC, Retries} -> {ok, ignore, Retries - 1, Retries, incr_tx_id(State#state{last_cvc=CVC})};
         Err -> {error, Err, incr_tx_id(State)}
     end;
 
 run(readonly_red_barrier, _, _, State = #state{readonly_ops=N, coord_state=Coord, strong_generator=KeyGen}) ->
-    case perform_readonly_red(State, gen_keys(N, KeyGen)) of
-        {ok, CVC} ->
+    case perform_readonly_red(State, gen_keys(N, KeyGen), 0) of
+        {ok, CVC, Retries} ->
             ok = perform_uniform_barrier(Coord, CVC),
-            {ok, incr_tx_id(State#state{last_cvc=CVC})};
+            {ok, ignore, Retries - 1, Retries, incr_tx_id(State#state{last_cvc=CVC})};
         Err -> {error, Err, incr_tx_id(State)}
     end;
 
 run(writeonly_red_barrier, _, ValueGen, State = #state{writeonly_ops=N, coord_state=Coord, strong_generator=KeyGen}) ->
-    case perform_writeonly_red(State, gen_updates(N, KeyGen, ValueGen)) of
-        {ok, CVC} ->
+    case perform_writeonly_red(State, gen_updates(N, KeyGen, ValueGen), 0) of
+        {ok, CVC, Retries} ->
             ok = perform_uniform_barrier(Coord, CVC),
-            {ok, incr_tx_id(State#state{last_cvc=CVC})};
+            {ok, ignore, Retries - 1, Retries, incr_tx_id(State#state{last_cvc=CVC})};
         Err -> {error, Err, incr_tx_id(State)}
     end;
 
 run(read_write_red_barrier, _, ValueGen, State = #state{rw_reads=RN, rw_updates=WN, coord_state=Coord, strong_generator=KeyGen}) ->
-    case perform_read_write_red(State, gen_keys(RN, KeyGen), gen_updates(WN, KeyGen, ValueGen)) of
-        {ok, CVC} ->
+    case perform_read_write_red(State, gen_keys(RN, KeyGen), gen_updates(WN, KeyGen, ValueGen), 0) of
+        {ok, CVC, Retries} ->
             ok = perform_uniform_barrier(Coord, CVC),
-            {ok, incr_tx_id(State#state{last_cvc=CVC})};
+            {ok, ignore, Retries - 1, Retries, incr_tx_id(State#state{last_cvc=CVC})};
         Err -> {error, Err, incr_tx_id(State)}
     end.
 
@@ -179,29 +179,29 @@ perform_read_write_blue(S=#state{coord_state=CoordState, crdt_type=Type}, Keys, 
 %% Red operations
 %%====================================================================
 
-perform_readonly_red(S=#state{coord_state=CoordState, crdt_type=Type}, Keys) ->
+perform_readonly_red(S=#state{coord_state=CoordState, crdt_type=Type}, Keys, Attempts) ->
     {ok, Tx} = maybe_start_with_clock(S),
     Tx1 = sequential_read(CoordState, Tx, Keys, Type),
     case grb_client:commit_red(CoordState, Tx1) of
-        {abort, _}=Err -> maybe_retry_readonly(S, Keys, Err);
-        Other -> Other
+        {abort, _}=Err -> maybe_retry_readonly(S, Keys, Err, Attempts + 1);
+        {ok, CVC} -> {ok, CVC, Attempts + 1}
     end.
 
-perform_writeonly_red(S=#state{coord_state=CoordState, crdt_type=Type}, Updates) ->
+perform_writeonly_red(S=#state{coord_state=CoordState, crdt_type=Type}, Updates, Attempts) ->
     {ok, Tx} = maybe_start_with_clock(S),
     Tx1 = sequential_update(CoordState, Tx, Updates, Type),
     case grb_client:commit_red(CoordState, Tx1) of
-        {abort, _}=Err -> maybe_retry_writeonly(S, Updates, Err);
-        Other -> Other
+        {abort, _}=Err -> maybe_retry_writeonly(S, Updates, Err, Attempts + 1);
+        {ok, CVC} -> {ok, CVC, Attempts + 1}
     end.
 
-perform_read_write_red(S=#state{coord_state=CoordState, crdt_type=Type}, Keys, Updates) ->
+perform_read_write_red(S=#state{coord_state=CoordState, crdt_type=Type}, Keys, Updates, Attempts) ->
     {ok, Tx} = maybe_start_with_clock(S),
     Tx1 = sequential_read(CoordState, Tx, Keys, Type),
     Tx2 = sequential_update(CoordState, Tx1, Updates, Type),
     case grb_client:commit_red(CoordState, Tx2) of
-        {abort, _}=Err -> maybe_retry_read_write(S, Keys, Updates, Err);
-        Other -> Other
+        {abort, _}=Err -> maybe_retry_read_write(S, Keys, Updates, Err, Attempts + 1);
+        {ok, CVC} -> {ok, CVC, Attempts + 1}
     end.
 
 %%====================================================================
@@ -237,14 +237,14 @@ maybe_start_with_clock(S=#state{coord_state=CoordState, reuse_cvc=true, last_cvc
 maybe_start_with_clock(S=#state{coord_state=CoordState, reuse_cvc=false}) ->
     grb_client:start_transaction(CoordState, next_tx_id(S)).
 
-maybe_retry_readonly(#state{retry_until_commit=false}, _, Err) -> Err;
-maybe_retry_readonly(S, Keys, _) -> perform_readonly_red(incr_tx_id(S), Keys).
+maybe_retry_readonly(#state{retry_until_commit=false}, _, Err, _At) -> Err;
+maybe_retry_readonly(S, Keys, _, Attempts) -> perform_readonly_red(incr_tx_id(S), Keys, Attempts).
 
-maybe_retry_writeonly(#state{retry_until_commit=false}, _, Err) -> Err;
-maybe_retry_writeonly(S, Updates, _) -> perform_writeonly_red(incr_tx_id(S), Updates).
+maybe_retry_writeonly(#state{retry_until_commit=false}, _, Err, _At) -> Err;
+maybe_retry_writeonly(S, Updates, _, Attempts) -> perform_writeonly_red(incr_tx_id(S), Updates, Attempts).
 
-maybe_retry_read_write(#state{retry_until_commit=false}, _, _, Err) -> Err;
-maybe_retry_read_write(S, Keys, Updates, _) -> perform_read_write_red(incr_tx_id(S), Keys, Updates).
+maybe_retry_read_write(#state{retry_until_commit=false}, _, _, Err, _At) -> Err;
+maybe_retry_read_write(S, Keys, Updates, _, Attempts) -> perform_read_write_red(incr_tx_id(S), Keys, Updates, Attempts).
 
 %% @doc Generate N random keys
 -spec gen_keys(non_neg_integer(), key_gen(binary())) -> [binary()].
