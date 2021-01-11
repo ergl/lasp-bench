@@ -25,6 +25,9 @@
 
     crdt_type :: atom(),
 
+    %% Generator for contention
+    strong_generator :: key_gen(non_neg_integer()),
+
     reuse_cvc :: boolean(),
     last_cvc :: pvc_vclock:vc(),
     retry_until_commit :: boolean()
@@ -40,6 +43,9 @@ new(WorkerId) ->
     ReuseCVC = lasp_bench_config:get(reuse_cvc),
     RetryUntilCommit = lasp_bench_config:get(retry_aborts, true),
 
+    Spec = lasp_bench_config:get(strong_key_generator),
+    ContentionGen = lasp_bench_keygen:new(Spec, WorkerId),
+
     CRDTType = lasp_bench_config:get(crdt_type, grb_lww),
     State = #state{worker_id=WorkerId,
                    coord_state=CoordState,
@@ -52,6 +58,8 @@ new(WorkerId) ->
                    rw_updates=RWUpdates,
 
                    crdt_type=CRDTType,
+
+                   strong_generator=ContentionGen,
 
                    reuse_cvc=ReuseCVC,
                    last_cvc=pvc_vclock:new(),
@@ -98,25 +106,25 @@ run(read_write_blue_barrier, KeyGen, ValueGen, State = #state{rw_reads=RN, rw_up
 %% Red operations
 %%====================================================================
 
-run(readonly_red, KeyGen, _, State = #state{readonly_ops=N}) ->
+run(readonly_red, _, _, State = #state{readonly_ops=N, strong_generator=KeyGen}) ->
     case perform_readonly_red(State, gen_keys(N, KeyGen)) of
         {ok, CVC} -> {ok, incr_tx_id(State#state{last_cvc=CVC})};
         Err -> {error, Err, incr_tx_id(State)}
     end;
 
-run(writeonly_red, KeyGen, ValueGen, State = #state{writeonly_ops=N}) ->
+run(writeonly_red, _, ValueGen, State = #state{writeonly_ops=N, strong_generator=KeyGen}) ->
     case perform_writeonly_red(State, gen_updates(N, KeyGen, ValueGen)) of
         {ok, CVC} -> {ok, incr_tx_id(State#state{last_cvc=CVC})};
         Err -> {error, Err, incr_tx_id(State)}
     end;
 
-run(read_write_red, KeyGen, ValueGen, State = #state{rw_reads=RN, rw_updates=WN}) ->
+run(read_write_red, _, ValueGen, State = #state{rw_reads=RN, rw_updates=WN, strong_generator=KeyGen}) ->
     case perform_read_write_red(State, gen_keys(RN, KeyGen), gen_updates(WN, KeyGen, ValueGen)) of
         {ok, CVC} -> {ok, incr_tx_id(State#state{last_cvc=CVC})};
         Err -> {error, Err, incr_tx_id(State)}
     end;
 
-run(readonly_red_barrier, KeyGen, _, State = #state{readonly_ops=N, coord_state=Coord}) ->
+run(readonly_red_barrier, _, _, State = #state{readonly_ops=N, coord_state=Coord, strong_generator=KeyGen}) ->
     case perform_readonly_red(State, gen_keys(N, KeyGen)) of
         {ok, CVC} ->
             ok = perform_uniform_barrier(Coord, CVC),
@@ -124,7 +132,7 @@ run(readonly_red_barrier, KeyGen, _, State = #state{readonly_ops=N, coord_state=
         Err -> {error, Err, incr_tx_id(State)}
     end;
 
-run(writeonly_red_barrier, KeyGen, ValueGen, State = #state{writeonly_ops=N, coord_state=Coord}) ->
+run(writeonly_red_barrier, _, ValueGen, State = #state{writeonly_ops=N, coord_state=Coord, strong_generator=KeyGen}) ->
     case perform_writeonly_red(State, gen_updates(N, KeyGen, ValueGen)) of
         {ok, CVC} ->
             ok = perform_uniform_barrier(Coord, CVC),
@@ -132,7 +140,7 @@ run(writeonly_red_barrier, KeyGen, ValueGen, State = #state{writeonly_ops=N, coo
         Err -> {error, Err, incr_tx_id(State)}
     end;
 
-run(read_write_red_barrier, KeyGen, ValueGen, State = #state{rw_reads=RN, rw_updates=WN, coord_state=Coord}) ->
+run(read_write_red_barrier, _, ValueGen, State = #state{rw_reads=RN, rw_updates=WN, coord_state=Coord, strong_generator=KeyGen}) ->
     case perform_read_write_red(State, gen_keys(RN, KeyGen), gen_updates(WN, KeyGen, ValueGen)) of
         {ok, CVC} ->
             ok = perform_uniform_barrier(Coord, CVC),

@@ -11,6 +11,7 @@
 
 -export([get_config/1,
          generator/2,
+         contention_generator/2,
          worker_generator/1,
          make_coordinator/1]).
 
@@ -90,6 +91,20 @@ make_coordinator(WorkerId) ->
 -spec worker_generator(non_neg_integer()) -> fun(() -> binary()).
 worker_generator(Id) ->
     fun() -> make_worker_key(get_config(local_ip), Id) end.
+
+-spec contention_generator(non_neg_integer(), map()) -> Gen :: fun(() -> binary()).
+contention_generator(Id, #{contention_ratio := Ratio, ring_size := RingSize, default_generator := GenDesc}) ->
+    InnerGen = lasp_bench_keygen:new(GenDesc, Id),
+    fun() ->
+        Rand = rand:uniform_real(),
+        if
+            Rand =< Ratio ->
+                %% Always fall on the first partition
+                (rand:uniform(1000000) * RingSize);
+            true ->
+                InnerGen()
+        end
+    end.
 
 -spec generator(
     Id :: non_neg_integer(),
