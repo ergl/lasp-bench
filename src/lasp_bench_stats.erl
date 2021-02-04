@@ -186,12 +186,12 @@ handle_call(run, _From, State) ->
 %% distributed mode
 handle_call({op, Op, {error, Reason}, _ElapsedUs}, _From, State) ->
     increment_error_counter(Op),
-    increment_error_counter({Op, Reason}),
+    increment_error_counter({Reason, Op}),
     {reply, ok, State#state { errors_since_last_report = true }};
 
 handle_call({op, Op, {error, Reason, Count}, _ElapsedUs}, _From, State) ->
     increment_error_counter(Op, Count),
-    increment_error_counter({Op, Reason}, Count),
+    increment_error_counter({Reason, Op}, Count),
     {reply, ok, State#state { errors_since_last_report = true }}.
 
 handle_cast({Op, {ok, Units}, ElapsedUs}, State = #state{last_write_time = LWT, report_interval = RI}) ->
@@ -255,11 +255,15 @@ increment_error_counter(Key, Incr) ->
     ets_increment(lasp_bench_errors, Key, Incr).
 
 ets_increment(Tab, Key, Incr) when is_integer(Incr) ->
-    _ = ets:update_counter(Tab, Key, {2, Incr}, {Key, Incr}),
+    _ = ets:update_counter(Tab, Key, {2, Incr}, {Key, 0}),
     ok;
 ets_increment(Tab, Key, Incr) when is_float(Incr) ->
-    _ = ets:select_replace(Tab, [{ {Key, '$1'}, [], [{{Key, {'+', Incr, '$1'}}}]  }]),
+    _ = ets:select_replace(Tab, [{ {Key, '$1'}, [], [{{safe_wrap_key(Key), {'+', Incr, '$1'}}}]  }]),
     ok.
+
+-spec safe_wrap_key(term()) -> term().
+safe_wrap_key(Key) when is_tuple(Key) -> {Key};
+safe_wrap_key(Key) -> Key.
 
 error_counter(Key) ->
     lookup_or_zero(lasp_bench_errors, Key).
@@ -375,12 +379,11 @@ report_total_errors(#state{stats_writer=Module}=State) ->
             F = fun({Key, Count}) ->
                         case lists:member(Key, State#state.ops) of
                             true ->
-                                ok; % per op total
+                                %% generic errors for operations are reported in summary and latencies
+                                ok;
                             false ->
                                 ?INFO("  ~p: ~p\n", [Key, Count]),
-                                Module:report_error({State#state.stats_writer,
-                                                                       State#state.stats_writer_data},
-                                                                      Key, Count)
+                                Module:report_error(State#state.stats_writer_data, Key, Count)
                         end
                 end,
             lists:foreach(F, ErrCounts)

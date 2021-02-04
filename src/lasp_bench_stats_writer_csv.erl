@@ -54,7 +54,7 @@ new(Ops, Measurements) ->
     %% Setup errors file w/counters for each error.  Embedded commas likely
     %% in the error messages so quote the columns.
     {ok, ErrorsFile} = file:open("errors.csv", [raw, binary, write]),
-    file:write(ErrorsFile, <<"\"error\",\"count\"\n">>),
+    file:write(ErrorsFile, <<"\"error\",\"operation\",\"count\"\n">>),
 
     {SummaryFile, ErrorsFile}.
 
@@ -86,11 +86,10 @@ process_summary({SummaryFile, _ErrorsFile},
                               Oks,
                               Errors])).
 
-report_error({_SummaryFile, ErrorsFile},
-             Key, Count) ->
-    file:write(ErrorsFile,
-               io_lib:format("\"~w\",\"~w\"\n",
-                             [Key, Count])).
+report_error({_SummaryFile, ErrorsFile}, {Kind, {Op, _OpTag}}, Count) ->
+    ok = file:write(ErrorsFile, io_lib:format("\"~w\",\"~w\",\"~w\"\n", [Kind, Op, Count]));
+report_error({_SummaryFile, ErrorsFile}, Key, Count) ->
+    ok = file:write(ErrorsFile, io_lib:format("\"~w\",\"~w\",\"~w\"\n", [Key, "N/A", Count])).
 
 report_latency(_, Elapsed, Window, Op={_, read_write_blue_track}, Payload, Errors, Units) ->
     Fds = erlang:get({csv_file, Op}),
