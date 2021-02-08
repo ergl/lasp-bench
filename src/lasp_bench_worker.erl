@@ -197,8 +197,19 @@ worker_idle_loop(State) ->
                     Caller ! driver_ready,
                     InternalState;
 
+                {ok, InternalState, {continue, Continue}} ->
+                    case worker_handle_continue(Continue, InternalState, State) of
+                        {ok, InternalState1} ->
+                            Caller ! driver_ready,
+                            InternalState1;
+
+                        ContinueError ->
+                            Caller ! {driver_failed, ContinueError},
+                            undefined
+                    end;
+
                 Error ->
-                    Caller ! {init_driver_failed, Error},
+                    Caller ! {driver_failed, Error},
                     ?FAIL_MSG("Failed to initialize driver ~p: ~p\n", [Driver, Error]),
                     undefined
             end,
@@ -218,6 +229,30 @@ worker_idle_loop(State) ->
                     ?INFO("Starting ~w ms/req fixed rate worker: ~p on ~p\n", [MeanArrival, self(), node()]),
                     rate_worker_run_loop(State, 1 / MeanArrival)
             end
+    end.
+
+-spec worker_handle_continue(term(), term(), #state{}) -> {ok, term()} | term().
+worker_handle_continue(Continue, DriverState, State = #state{id=Id, driver=Driver}) ->
+    try
+        Driver:handle_continue(Continue, State#state.keygen, State#state.valgen, DriverState)
+    catch
+        throw:R ->
+            {ok, R};
+
+        error:undef = R:StackTrace ->
+            case erlang:function_exported(Driver, handle_continue, 4) of
+                false ->
+                    ?FAIL_MSG("Worker ~p returned {continue, ~p}, but no handle_continue callback was provided~n",
+                              [Id, Continue]),
+                    {'EXIT', error, R, StackTrace};
+
+                true ->
+                    {'EXIT', error, R, StackTrace}
+            end;
+
+        Class:R:StackTrace ->
+            ?FAIL_MSG("Worker ~p failed during handle_continue~n", [Id]),
+            {'EXIT', Class, R, StackTrace}
     end.
 
 -spec worker_next_op(State :: #state{}) -> {ok, NewState :: #state{}} | {error, ExitReason :: term()}.
