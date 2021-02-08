@@ -185,6 +185,16 @@ worker_init(State=#state{driver_ops=Ops}) ->
     %% Trap exits from linked parent process; use this to ensure the driver
     %% gets a chance to cleanup
     process_flag(trap_exit, true),
+    {A1, A2, A3} =
+        case lasp_bench_config:get(rng_seed, undefined) of
+            {X, Y, Z} ->
+                {X, Y, Z};
+
+            undefined ->
+                <<A:32, B:32, C:32>> = crypto:strong_rand_bytes(12),
+                {A, B, C}
+        end,
+    _ = rand:seed(exsss, {A1, A2, A3}),
     worker_idle_loop(State#state{driver_ops=lasp_bench_ops:init_ops(Ops)}).
 
 worker_idle_loop(State) ->
