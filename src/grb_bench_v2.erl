@@ -7,6 +7,8 @@
          run/4,
          terminate/2]).
 
+-export([handle_continue/4]).
+
 -include("lasp_bench.hrl").
 
 -type key_gen(T) :: fun(() -> T).
@@ -43,8 +45,7 @@ new(WorkerId) ->
     ReuseCVC = lasp_bench_config:get(reuse_cvc),
     RetryUntilCommit = lasp_bench_config:get(retry_aborts, true),
 
-    Spec = lasp_bench_config:get(strong_key_generator),
-    ContentionGen = lasp_bench_keygen:new(Spec, WorkerId),
+    Spec = lasp_bench_config:get(strong_key_generator, undefined),
 
     CRDTType = lasp_bench_config:get(crdt_type, grb_lww),
     State = #state{worker_id=WorkerId,
@@ -59,13 +60,21 @@ new(WorkerId) ->
 
                    crdt_type=CRDTType,
 
-                   strong_generator=ContentionGen,
+                   %% No matter, we will overwrite this in handle_continue/4
+                   strong_generator=undefined,
 
                    reuse_cvc=ReuseCVC,
                    last_cvc=pvc_vclock:new(),
                    retry_until_commit=RetryUntilCommit},
 
-    {ok, State}.
+    {ok, State, {continue, Spec}}.
+
+handle_continue(undefined, KeyGen, _, State) ->
+    {ok, State#state{strong_generator=KeyGen}};
+
+handle_continue(StrongKeyGenSpec, _, _, State = #state{worker_id=WorkerId}) ->
+    ContentionGen = lasp_bench_keygen:new(StrongKeyGenSpec, WorkerId),
+    {ok, State#state{strong_generator=ContentionGen}}.
 
 run(uniform_barrier, _, _, State = #state{coord_state=Coord, last_cvc=CVC}) ->
     ok = grb_client:uniform_barrier(Coord, CVC),
