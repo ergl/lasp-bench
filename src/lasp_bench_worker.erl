@@ -190,6 +190,9 @@ worker_init(State=#state{driver_ops=Ops}) ->
             {X, Y, Z} ->
                 {X, Y, Z};
 
+            now ->
+                erlang:timestamp();
+
             undefined ->
                 <<A:32, B:32, C:32>> = crypto:strong_rand_bytes(12),
                 {A, B, C}

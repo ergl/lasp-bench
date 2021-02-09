@@ -54,18 +54,17 @@ list_driver_operations() ->
     end.
 
 make_weighted_ops(Id, Ops0) ->
-    %% Setup RNG seed for worker sub-process to use; incorporate the ID of
-    %% the worker to ensure consistency in load-gen
-    %%
-    %% NOTE: If the worker process dies, this obviously introduces some entroy
-    %% into the equation since you'd be restarting the RNG all over.
-    %%
-    %% The RNG_SEED is static by default for replicability of key size
-    %% and value size generation between test runs.
     {A1, A2, A3} =
-        case lasp_bench_config:get(rng_seed, {42, 23, 12}) of
-            {Aa, Ab, Ac} -> {Aa, Ab, Ac};
-            now -> erlang:timestamp()
+        case lasp_bench_config:get(rng_seed, undefined) of
+            {X, Y, Z} ->
+                {X, Y, Z};
+
+            now ->
+                erlang:timestamp();
+
+            undefined ->
+                <<A:32, B:32, C:32>> = crypto:strong_rand_bytes(12),
+                {A, B, C}
         end,
     RngSeed = {A1+Id, A2+Id, A3+Id},
     F = fun
