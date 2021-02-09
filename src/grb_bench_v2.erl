@@ -199,6 +199,7 @@ perform_readonly_red(S=#state{coord_state=CoordState, crdt_type=Type}, Keys, Att
 perform_writeonly_red(S=#state{coord_state=CoordState, crdt_type=Type}, Updates, Attempts) ->
     {ok, Tx} = maybe_start_with_clock(S),
     Tx1 = sequential_update(CoordState, Tx, Updates, Type),
+    io:format("~p ~p update ~p~n", [S#state.worker_id, S#state.transaction_count, element(1, hd(Updates))]),
     case grb_client:commit_red(CoordState, Tx1) of
         {abort, _}=Err -> maybe_retry_writeonly(S, Updates, Err, Attempts + 1);
         {ok, CVC} -> {ok, CVC, Attempts + 1}
