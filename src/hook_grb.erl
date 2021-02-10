@@ -10,7 +10,7 @@
          stop/0]).
 
 -export([get_config/1,
-         generator/2,
+         conflict_generator/2,
          contention_generator/2,
          worker_generator/1,
          make_coordinator/1]).
@@ -88,11 +88,17 @@ make_coordinator(WorkerId) ->
     RedConnections = get_config(red_conns),
     grb_client:new(ReplicaId, LocalIP, WorkerId, RingInfo, ConnPools, RedConnections).
 
--spec worker_generator(non_neg_integer()) -> fun(() -> binary()).
+%% Use as {key_generator, {function, hook_grb, worker_generator, []}}
+-spec worker_generator(Id :: non_neg_integer()) -> fun(() -> binary()).
 worker_generator(Id) ->
     fun() -> make_worker_key(get_config(local_ip), Id) end.
 
--spec contention_generator(non_neg_integer(), map()) -> Gen :: fun(() -> binary()).
+%% Use as {key_generator, {function, hook_grb, contention_generator, [#{ ... ]}}
+-spec contention_generator(
+    Id :: non_neg_integer(),
+    #{contention_ratio := float(), ring_size := non_neg_integer(), default_generator := term()}
+) -> Gen :: fun(() -> term()).
+
 contention_generator(Id, #{contention_ratio := Ratio, ring_size := RingSize, default_generator := GenDesc}) ->
     InnerGen = lasp_bench_keygen:new(GenDesc, Id),
     fun() ->
@@ -106,36 +112,22 @@ contention_generator(Id, #{contention_ratio := Ratio, ring_size := RingSize, def
         end
     end.
 
--spec generator(
+%% Use as {key_generator, {function, hook_grb, conflict_generator, [#{ ... ]}}
+-spec conflict_generator(
     Id :: non_neg_integer(),
-    Opts :: #{shared_key := any(), conflict_ration := float(), _ => _}
-) -> Gen :: fun(() -> binary()).
+    #{shared_key := any(), conflict_ratio := float(), default_generator := term()}
+) -> Gen :: fun(() -> term()).
 
-generator(Id, Opts=#{shared_key := SharedKey, conflict_ratio := Ratio}) ->
-    GeneratorOpts = maps:get(generator, Opts, undefined),
-    LocalIP = get_config(local_ip),
-    WorkerKey = make_worker_key(LocalIP, Id),
-    case GeneratorOpts of
-        undefined ->
-            fun() ->
-                Rand = rand:uniform_real(),
-                if
-                    Rand =< Ratio -> SharedKey;
-                    true -> WorkerKey
-                end
-            end;
-        GenDesc ->
-            InnerGen = lasp_bench_keygen:new(GenDesc, Id),
-            fun() ->
-                Rand = rand:uniform_real(),
-                if
-                    Rand =< Ratio ->
-                        SharedKey;
-                    true ->
-                        NextKey = InnerGen(),
-                        <<WorkerKey/binary, "_", (integer_to_binary(NextKey))/binary>>
-                end
-            end
+conflict_generator(Id, #{shared_key := SharedKey, conflict_ratio := Ratio, default_generator := GenDesc}) ->
+    InnerGen = lasp_bench_keygen:new(GenDesc, Id),
+    fun() ->
+        Rand = rand:uniform_real(),
+        if
+            Rand =< Ratio ->
+                SharedKey;
+            true ->
+                InnerGen()
+        end
     end.
 
 -spec make_worker_key(inet:ip_address(), non_neg_integer()) -> binary().
