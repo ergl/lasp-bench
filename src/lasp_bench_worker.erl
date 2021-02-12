@@ -314,8 +314,8 @@ worker_next_op_continue({_Label, OpTag}=Next, State) ->
             lasp_bench_stats:op_complete(Next, ok, ElapsedUs),
             {ok, State#state { driver_state = hack_preprocess_driver_state(Next, DriverState) }};
 
-        {ok, _ElapsedT, Retries, Total, DriverState} ->
-            lasp_bench_stats:op_complete(Next, {ok, Total}, ElapsedUs),
+        {ok, _ElapsedT, Retries, _Total, DriverState} ->
+            lasp_bench_stats:op_complete(Next, ok, ElapsedUs),
             if
                 Retries > 0 ->
                     lasp_bench_stats:op_complete(Next, {error, abort, Retries}, ElapsedUs);
