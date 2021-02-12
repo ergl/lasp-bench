@@ -122,23 +122,22 @@ init([]) ->
 
     ok = build_folsom_tables(Ops ++ Measurements),
 
-    StatsWriter = lasp_bench_config:get(stats, csv),
-    {ok, StatsSinkModule} = normalize_name(StatsWriter),
-    _ = (catch StatsSinkModule:module_info()),
-    case code:is_loaded(StatsSinkModule) of
-        {file, _} ->
-            ok;
-        false ->
-            ?WARN("Cannot load module ~p (derived on ~p, from the config value of 'stats' or compiled default)\n",
-                  [StatsSinkModule, StatsWriter])
-    end,
     %% Schedule next write/reset of data
     ReportInterval = timer:seconds(lasp_bench_config:get(report_interval)),
 
-    {ok, #state{ ops = Ops ++ Measurements,
-                 report_interval = ReportInterval,
-                 stats_writer = StatsSinkModule,
-                 stats_writer_data = StatsSinkModule:new(Ops, Measurements)}}.
+    StatSpec = lasp_bench_config:get(stats, csv),
+    case get_stat_writer_module(StatSpec) of
+        {error, Reason} ->
+            ?WARN("Cannot build stat spec ~p, from the config value of 'stats' or compiled default: ~p\n",
+                  [StatSpec, Reason]),
+            {stop, Reason};
+
+        {ok, StatsSinkModule} ->
+            {ok, #state{ops = Ops ++ Measurements,
+                        report_interval = ReportInterval,
+                        stats_writer = StatsSinkModule,
+                        stats_writer_data = StatsSinkModule:new(Ops, Measurements)}}
+    end.
 
 %% @doc Setup a histogram and counter for each operation.
 %%
@@ -396,6 +395,25 @@ consume_report_msgs() ->
     after 0 ->
             ok
     end.
+
+-spec get_stat_writer_module(term()) -> {ok, module()} | {error, Reason :: term()}.
+get_stat_writer_module(Spec) ->
+    case build_stat_module(Spec) of
+        {error, Reason} ->
+            {error, Reason};
+
+        {ok, Module} ->
+            try
+                _ = Module:module_info(),
+                {file, _} = code:is_loaded(Module),
+                {ok, Module}
+            catch _:_ ->
+                {error, {Module, invalid_module}}
+            end
+    end.
+
+build_stat_module({module, Module}) -> {ok, Module};
+build_stat_module(Spec) -> normalize_name(Spec).
 
 % Assuming all stats sink modules are prefixed with lasp_bench_stats_writer_
 normalize_name(StatsSink) when is_atom(StatsSink) ->

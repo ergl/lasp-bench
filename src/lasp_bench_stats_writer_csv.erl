@@ -26,10 +26,11 @@
 %%   writing the following in the benchmark config file will switch
 %%   the stats writer to CSV:
 %%
-%%    {stats, {csv}}.
+%%    {stats, csv}.
 %%.
 
 -module(lasp_bench_stats_writer_csv).
+-behavior(lasp_bench_stats_writer).
 
 -export([new/2,
          terminate/1,
