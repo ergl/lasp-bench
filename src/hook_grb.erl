@@ -10,8 +10,7 @@
          stop/0]).
 
 -export([get_config/1,
-         conflict_generator/2,
-         contention_generator/2,
+         constant_partition_generator/2,
          worker_generator/1,
          make_coordinator/1]).
 
@@ -93,42 +92,15 @@ make_coordinator(WorkerId) ->
 worker_generator(Id) ->
     fun() -> make_worker_key(get_config(local_ip), Id) end.
 
-%% Use as {key_generator, {function, hook_grb, contention_generator, [#{ ... ]}}
--spec contention_generator(
+%% Use as {key_generator, {function, hook_grb, constant_partition_generator, [#{ ... ]}}
+-spec constant_partition_generator(
     Id :: non_neg_integer(),
-    #{contention_ratio := float(), ring_size := non_neg_integer(), default_generator := term()}
+    Opts :: #{ring_size := non_neg_integer(), n_keys => non_neg_integer()}
 ) -> Gen :: fun(() -> term()).
 
-contention_generator(Id, #{contention_ratio := Ratio, ring_size := RingSize, default_generator := GenDesc}) ->
-    InnerGen = lasp_bench_keygen:new(GenDesc, Id),
-    fun() ->
-        Rand = rand:uniform_real(),
-        if
-            Rand =< Ratio ->
-                %% Always fall on the first partition
-                (rand:uniform(1000000) * RingSize);
-            true ->
-                InnerGen()
-        end
-    end.
-
-%% Use as {key_generator, {function, hook_grb, conflict_generator, [#{ ... ]}}
--spec conflict_generator(
-    Id :: non_neg_integer(),
-    #{shared_key := any(), conflict_ratio := float(), default_generator := term()}
-) -> Gen :: fun(() -> term()).
-
-conflict_generator(Id, #{shared_key := SharedKey, conflict_ratio := Ratio, default_generator := GenDesc}) ->
-    InnerGen = lasp_bench_keygen:new(GenDesc, Id),
-    fun() ->
-        Rand = rand:uniform_real(),
-        if
-            Rand =< Ratio ->
-                SharedKey;
-            true ->
-                InnerGen()
-        end
-    end.
+constant_partition_generator(_Id, Opts = #{ring_size := RingSize}) ->
+    Keys = maps:get(n_keys, Opts, 1000000),
+    fun() -> (rand:uniform(Keys) * RingSize) end.
 
 -spec make_worker_key(inet:ip_address(), non_neg_integer()) -> binary().
 make_worker_key(IP, WorkerId) ->
