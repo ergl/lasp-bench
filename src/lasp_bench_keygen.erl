@@ -124,6 +124,29 @@ new({truncated_pareto_int, MaxKey}, Id) ->
     fun() -> erlang:min(MaxKey, Pareto()) end;
 new(uuid_v4, _Id) ->
     fun() -> lasp_bench_uuid:v4() end;
+
+%% Combine two generators, where `Spec1` is chosen with probability `Ratio`, and Spec2 chosen otherwise.
+new({combine, Ratio, Spec1, Spec2}, Id) when is_float(Ratio) ->
+    Gen1 = new(Spec1, Id),
+    Gen2 = new(Spec2, Id),
+    fun() ->
+        Rand = rand:uniform_real(),
+        if
+            Rand =< Ratio -> Gen1();
+            true -> Gen2()
+        end
+    end;
+
+%% Combine two generators, where `Ratio` of workers execute `Spec1`, and the rest `Spec2`.
+new({combine_worker_id, Ratio, Spec1, Spec2}, Id) when is_float(Ratio) ->
+    Gen1 = new(Spec1, Id),
+    Gen2 = new(Spec2, Id),
+    Workers = lasp_bench_config:get(concurrent),
+    if
+        Id =< (Workers * Ratio) -> Gen1;
+        true -> Gen2
+    end;
+
 new({function, Module, Function, Args}, Id)
   when is_atom(Module), is_atom(Function), is_list(Args) ->
     case code:ensure_loaded(Module) of
@@ -188,6 +211,9 @@ new({file_line_bin, Path, DoRepeat}, Id) ->
 %% the last parameter. But, alas, it is added as the first.
 new({valgen, ValGen}, Id) ->
     lasp_bench_valgen:new(ValGen, Id);
+%% Always the same value
+new({constant, Term}, _Id) ->
+    fun() -> Term end;
 new(Bin, _Id) when is_binary(Bin) ->
     fun() -> Bin end;
 new(List, _Id) when is_list(List) ->
