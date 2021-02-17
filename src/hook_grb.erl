@@ -11,6 +11,7 @@
 
 -export([get_config/1,
          constant_partition_generator/2,
+         exclude_partition_generator/2,
          worker_generator/1,
          make_coordinator/1]).
 
@@ -92,7 +93,9 @@ make_coordinator(WorkerId) ->
 worker_generator(Id) ->
     fun() -> make_worker_key(get_config(local_ip), Id) end.
 
-%% Use as {key_generator, {function, hook_grb, constant_partition_generator, [#{ ... ]}}
+%% @doc Always land on the first partition.
+%%
+%%      Use as {key_generator, {function, hook_grb, constant_partition_generator, [#{ ... ]}}
 -spec constant_partition_generator(
     Id :: non_neg_integer(),
     Opts :: #{ring_size := non_neg_integer(), n_keys => non_neg_integer()}
@@ -101,6 +104,29 @@ worker_generator(Id) ->
 constant_partition_generator(_Id, Opts = #{ring_size := RingSize}) ->
     Keys = maps:get(n_keys, Opts, 1000000),
     fun() -> (rand:uniform(Keys) * RingSize) end.
+
+%% @doc Always exclude the first partition.
+%%
+%%      Use as {key_generator, {function, hook_grb, exclude_partition_generator, [#{ ... ]}}
+-spec exclude_partition_generator(
+    Id :: non_neg_integer(),
+    Opts :: #{ring_size := non_neg_integer(), n_keys => non_neg_integer()}
+) -> Gen :: fun(() -> term()).
+
+exclude_partition_generator(_Id, Opts = #{ring_size := RingSize}) ->
+    Keys = maps:get(n_keys, Opts, 1000000),
+    fun() -> loop_rand_until_not_div(Keys, RingSize) end.
+
+-spec loop_rand_until_not_div(non_neg_integer(), non_neg_integer()) -> non_neg_integer().
+loop_rand_until_not_div(Limit, K) ->
+    loop_rand_until_not_div(rand:uniform(Limit), K, Limit).
+
+-spec loop_rand_until_not_div(non_neg_integer(), non_neg_integer(), non_neg_integer()) -> non_neg_integer().
+loop_rand_until_not_div(N, K, _Limit)
+    when (N rem K) =/= 0 ->
+        N;
+loop_rand_until_not_div(_, K, Limit) ->
+    loop_rand_until_not_div(rand:uniform(Limit), K, Limit).
 
 -spec make_worker_key(inet:ip_address(), non_neg_integer()) -> binary().
 make_worker_key(IP, WorkerId) ->
