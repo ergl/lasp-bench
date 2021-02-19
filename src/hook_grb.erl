@@ -96,6 +96,11 @@ worker_generator(Id) ->
 %% @doc Always land on the first partition.
 %%
 %%      Use as {key_generator, {function, hook_grb, constant_partition_generator, [#{ ... ]}}
+%%
+%%      For integer keys, grb maps to partitions by doing (Key rem Partitions).
+%%      If our key is a multiple of Partitions, Key rem Partitions will aways yield 0,
+%%      which maps to the first partition in the ring.
+%%
 -spec constant_partition_generator(
     Id :: non_neg_integer(),
     Opts :: #{ring_size := non_neg_integer(), n_keys => non_neg_integer()}
@@ -108,6 +113,10 @@ constant_partition_generator(_Id, Opts = #{ring_size := RingSize}) ->
 %% @doc Always exclude the first partition.
 %%
 %%      Use as {key_generator, {function, hook_grb, exclude_partition_generator, [#{ ... ]}}
+%%
+%%      If the zero-partition is located at (Key rem Partition) = 0, anything that doesn't map
+%%      to this partition is enough, so we exclude any number N s.t. (N rem Partitions) = 0.
+%%
 -spec exclude_partition_generator(
     Id :: non_neg_integer(),
     Opts :: #{ring_size := non_neg_integer(), n_keys => non_neg_integer()}
