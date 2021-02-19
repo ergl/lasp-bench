@@ -21,7 +21,7 @@
          %% max - Generate as many requests as possible per worker
          %% {rate, Rate} - Exp. distributed Mean reqs/sec
          %%
-         {mode, {rate, 5}},
+         {mode, {rate, 1}},
 
          %%
          %% Default log level
@@ -36,12 +36,12 @@
          %%
          %% Test duration (minutes)
          %%
-         {duration, 5},
+         {duration, 1},
 
          %%
          %% Number of concurrent workers
          %%
-         {concurrent, 3},
+         {concurrent, 1},
 
          %%
          %% Driver module for the current test
@@ -52,8 +52,7 @@
          %% Stats Sink Driver module for the current test
          %% By default:
          %%    csv - csv file
-         %%    riemann - riemann server
-         %% {stats, {csv}},
+         %% {stats, csv},
          %%
          %% Operations (and associated mix). Note that
          %% the driver may not implement every operation.
