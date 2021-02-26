@@ -169,17 +169,17 @@ perform_uniform_barrier(CoordState, CVC) ->
 %%====================================================================
 
 perform_readonly_blue(S=#state{coord_state=CoordState, crdt_type=Type}, Keys) ->
-    {ok, Tx} = maybe_start_with_clock(S),
+    {ok, Tx} = start_transaction(S),
     Tx1 = sequential_read(CoordState, Tx, Keys, Type),
     grb_client:commit(CoordState, Tx1).
 
 perform_writeonly_blue(S=#state{coord_state=CoordState, crdt_type=Type}, Updates) ->
-    {ok, Tx} = maybe_start_with_clock(S),
+    {ok, Tx} = start_transaction(S),
     Tx1 = sequential_update(CoordState, Tx, Updates, Type),
     grb_client:commit(CoordState, Tx1).
 
 perform_read_write_blue(S=#state{coord_state=CoordState, crdt_type=Type}, Keys, Updates) ->
-    {ok, Tx} = maybe_start_with_clock(S),
+    {ok, Tx} = start_transaction(S),
     Tx1 = sequential_read(CoordState, Tx, Keys, Type),
     Tx2 = sequential_update(CoordState, Tx1, Updates, Type),
     grb_client:commit(CoordState, Tx2).
@@ -189,7 +189,7 @@ perform_read_write_blue(S=#state{coord_state=CoordState, crdt_type=Type}, Keys, 
 %%====================================================================
 
 perform_readonly_red(S=#state{coord_state=CoordState, crdt_type=Type}, Keys, Attempts) ->
-    {ok, Tx} = maybe_start_with_clock(S),
+    {ok, Tx} = start_transaction(S),
     Tx1 = sequential_read(CoordState, Tx, Keys, Type),
     case grb_client:commit_red(CoordState, Tx1) of
         {abort, _}=Err -> maybe_retry_readonly(S, Keys, Err, Attempts + 1);
@@ -197,7 +197,7 @@ perform_readonly_red(S=#state{coord_state=CoordState, crdt_type=Type}, Keys, Att
     end.
 
 perform_writeonly_red(S=#state{coord_state=CoordState, crdt_type=Type}, Updates, Attempts) ->
-    {ok, Tx} = maybe_start_with_clock(S),
+    {ok, Tx} = start_transaction(S),
     Tx1 = sequential_update(CoordState, Tx, Updates, Type),
     case grb_client:commit_red(CoordState, Tx1) of
         {abort, _}=Err -> maybe_retry_writeonly(S, Updates, Err, Attempts + 1);
@@ -205,7 +205,7 @@ perform_writeonly_red(S=#state{coord_state=CoordState, crdt_type=Type}, Updates,
     end.
 
 perform_read_write_red(S=#state{coord_state=CoordState, crdt_type=Type}, Keys, Updates, Attempts) ->
-    {ok, Tx} = maybe_start_with_clock(S),
+    {ok, Tx} = start_transaction(S),
     Tx1 = sequential_read(CoordState, Tx, Keys, Type),
     Tx2 = sequential_update(CoordState, Tx1, Updates, Type),
     case grb_client:commit_red(CoordState, Tx2) of
@@ -239,12 +239,14 @@ sequential_update(Coord, Tx, Updates, Type) ->
         Updates
     ).
 
--spec maybe_start_with_clock(#state{}) -> {ok, grb_client:tx()}.
-maybe_start_with_clock(S=#state{coord_state=CoordState, reuse_cvc=true, last_cvc=VC}) ->
-    grb_client:start_transaction(CoordState, next_tx_id(S), VC);
+-spec start_transaction(#state{}) -> {ok, grb_client:tx()}.
+start_transaction(S=#state{coord_state=CoordState, transaction_count=N}) ->
+    grb_client:start_transaction(CoordState, N, get_start_clock(S)).
 
-maybe_start_with_clock(S=#state{coord_state=CoordState, reuse_cvc=false}) ->
-    grb_client:start_transaction(CoordState, next_tx_id(S)).
+
+-spec get_start_clock(#state{}) -> grb_vclock:vc(grb_client:replica_id()).
+get_start_clock(#state{reuse_cvc=true, last_cvc=VC}) -> VC;
+get_start_clock(#state{reuse_cvc=false}) -> grb_vclock:new().
 
 maybe_retry_readonly(#state{retry_until_commit=false}, _, Err, _At) -> Err;
 maybe_retry_readonly(S, Keys, _, Attempts) -> perform_readonly_red(incr_tx_id(S), Keys, Attempts).
@@ -266,9 +268,6 @@ gen_keys(N, K, Acc) -> gen_keys(N - 1, K, [K() | Acc]).
 gen_updates(N, K, V) -> gen_updates(N, K, V, []).
 gen_updates(0, _, _, Acc) -> Acc;
 gen_updates(N, K, V, Acc) -> gen_updates(N - 1, K, V, [{K(), V()} | Acc]).
-
--spec next_tx_id(#state{}) -> non_neg_integer().
-next_tx_id(#state{transaction_count=N}) -> N.
 
 -spec incr_tx_id(#state{}) -> #state{}.
 incr_tx_id(State=#state{transaction_count=N}) ->
