@@ -189,7 +189,7 @@ perform_read_write_blue(S=#state{coord_state=CoordState, crdt_type=Type}, Keys, 
 %%====================================================================
 
 perform_readonly_red(S=#state{coord_state=CoordState, crdt_type=Type}, Keys, Attempts) ->
-    {ok, Tx} = start_transaction(S),
+    {ok, Tx} = start_transaction_with_indexnode(S, Keys),
     Tx1 = sequential_read(CoordState, Tx, Keys, Type),
     case grb_client:commit_red(CoordState, Tx1) of
         {abort, _}=Err -> maybe_retry_readonly(S, Keys, Err, Attempts + 1);
@@ -197,7 +197,7 @@ perform_readonly_red(S=#state{coord_state=CoordState, crdt_type=Type}, Keys, Att
     end.
 
 perform_writeonly_red(S=#state{coord_state=CoordState, crdt_type=Type}, Updates, Attempts) ->
-    {ok, Tx} = start_transaction(S),
+    {ok, Tx} = start_transaction_with_indexnode(S, Updates),
     Tx1 = sequential_update(CoordState, Tx, Updates, Type),
     case grb_client:commit_red(CoordState, Tx1) of
         {abort, _}=Err -> maybe_retry_writeonly(S, Updates, Err, Attempts + 1);
@@ -205,7 +205,7 @@ perform_writeonly_red(S=#state{coord_state=CoordState, crdt_type=Type}, Updates,
     end.
 
 perform_read_write_red(S=#state{coord_state=CoordState, crdt_type=Type}, Keys, Updates, Attempts) ->
-    {ok, Tx} = start_transaction(S),
+    {ok, Tx} = start_transaction_with_indexnode(S, Keys),
     Tx1 = sequential_read(CoordState, Tx, Keys, Type),
     Tx2 = sequential_update(CoordState, Tx1, Updates, Type),
     case grb_client:commit_red(CoordState, Tx2) of
@@ -243,6 +243,16 @@ sequential_update(Coord, Tx, Updates, Type) ->
 start_transaction(S=#state{coord_state=CoordState, transaction_count=N}) ->
     grb_client:start_transaction(CoordState, N, get_start_clock(S)).
 
+-spec start_transaction(#state{}, grb_client:index_node()) -> {ok, grb_client:tx()}.
+start_transaction(S=#state{coord_state=CoordState, transaction_count=N}, IndexNode) ->
+    grb_client:start_transaction(CoordState, N, get_start_clock(S), IndexNode).
+
+-spec start_transaction_with_indexnode(#state{}, [term() | {term(), term()}]) -> {ok, grb_client:tx()}.
+start_transaction_with_indexnode(S=#state{coord_state=CoordState}, [{Key, _} | _]) ->
+    start_transaction(S, grb_client:key_location(CoordState, Key));
+
+start_transaction_with_indexnode(S=#state{coord_state=CoordState}, [Key | _]) ->
+    start_transaction(S, grb_client:key_location(CoordState, Key)).
 
 -spec get_start_clock(#state{}) -> grb_vclock:vc(grb_client:replica_id()).
 get_start_clock(#state{reuse_cvc=true, last_cvc=VC}) -> VC;
