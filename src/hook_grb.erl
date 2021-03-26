@@ -29,6 +29,12 @@ start(HookOpts) ->
     logger:info("Given bootstrap node ~p~n", [BootstrapNode]),
 
     {conn_pool_size, PoolSize} = lists:keyfind(conn_pool_size, 1, HookOpts),
+    RedPoolSize = case lists:keyfind(red_conn_pool_size, 1, HookOpts) of
+        false ->
+            1;
+        {red_conn_pool_size, S} ->
+            S
+    end,
     {connection_port, ConnectionPort} = lists:keyfind(connection_port, 1, HookOpts),
     {conection_opts, ConnModuleOpts} = lists:keyfind(conection_opts, 1, HookOpts),
 
@@ -42,31 +48,47 @@ start(HookOpts) ->
     true = ets:insert(?MODULE, {ring, Ring}),
     true = ets:insert(?MODULE, {nodes, UniqueNodes}),
 
-    {Pools, RedConns} = lists:foldl(fun(NodeIp, {PoolAcc, RedConAcc}) ->
+    {Pools, RedPools} = lists:foldl(fun(NodeIp, {PoolAcc, RedConAcc}) ->
         PoolName = pool_name(NodeIp),
+        RedPoolName = red_pool_name(NodeIp),
+
         %% todo(borja): Add config for socket opts?
         shackle_pool:start(PoolName, pvc_shackle_transport,
                           [{address, NodeIp}, {port, ConnectionPort}, {reconnect, false},
                            {socket_options, [{packet, 4}, binary, {nodelay, true}]},
                            {init_options, ConnModuleOpts}],
                           [{pool_size, PoolSize}]),
-        {ok, RedHandler} = pvc_red_connection:start_connection(NodeIp, ConnectionPort, IdLen),
+
+        shackle_pool:start(RedPoolName, pvc_red_connection,
+                          [{address, NodeIp}, {port, ConnectionPort}, {reconnect, false},
+                           {socket_options, [{packet, 4}, binary, {nodelay, true}]},
+                           {init_options, ConnModuleOpts}],
+                          [{pool_size, RedPoolSize}]),
+
         {
             PoolAcc#{NodeIp => PoolName},
-            RedConAcc#{NodeIp => RedHandler}
+            RedConAcc#{NodeIp => RedPoolName}
         }
     end, {#{}, #{}}, UniqueNodes),
     true = ets:insert(?MODULE, {shackle_pools, Pools}),
-    true = ets:insert(?MODULE, {red_conns, RedConns}),
+    true = ets:insert(?MODULE, {red_shackle_pools, RedPools}),
     ok.
 
 pool_name(NodeIp) ->
     list_to_atom(atom_to_list(NodeIp) ++ "_shackle_pool").
 
+red_pool_name(NodeIp) ->
+    list_to_atom(atom_to_list(NodeIp) ++ "_shackle_red_pool").
+
 stop() ->
     logger:info("Unloading ~p", [?MODULE]),
+
     [{shackle_pools, Pools}] = ets:take(?MODULE, shackle_pools),
     [ shackle_pool:stop(Pool) || {_, Pool} <- maps:to_list(Pools)],
+
+    [{red_shackle_pools, RedPools}] = ets:take(?MODULE, red_shackle_pools),
+    [ shackle_pool:stop(RPool) || {_, RPool} <- maps:to_list(RedPools)],
+
     ets:delete(?MODULE),
     ok = pvc:stop(),
     ok.
@@ -85,8 +107,8 @@ make_coordinator(WorkerId) ->
     RingInfo = get_config(ring),
     LocalIP = get_config(local_ip),
     ConnPools = get_config(shackle_pools),
-    RedConnections = get_config(red_conns),
-    grb_client:new(ReplicaId, LocalIP, WorkerId, RingInfo, ConnPools, RedConnections).
+    RedConnPools = get_config(red_shackle_pools),
+    grb_client:new(ReplicaId, LocalIP, WorkerId, RingInfo, ConnPools, RedConnPools).
 
 %% Use as {key_generator, {function, hook_grb, worker_generator, []}}
 -spec worker_generator(Id :: non_neg_integer()) -> fun(() -> binary()).
