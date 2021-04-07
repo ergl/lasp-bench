@@ -13,7 +13,8 @@
          constant_partition_generator/2,
          exclude_partition_generator/2,
          worker_generator/1,
-         make_coordinator/1]).
+         make_coordinator/1,
+         next_transaction_id/1]).
 
 %% Get ring information from Antidote,
 %% and spawn all the necessary connections
@@ -109,6 +110,16 @@ make_coordinator(WorkerId) ->
     ConnPools = get_config(shackle_pools),
     RedConnPools = get_config(red_shackle_pools),
     grb_client:new(ReplicaId, LocalIP, WorkerId, RingInfo, ConnPools, RedConnPools).
+
+-spec next_transaction_id(non_neg_integer()) -> non_neg_integer().
+next_transaction_id(WorkerId) ->
+    case erlang:get({?MODULE, WorkerId}) of
+        undefined ->
+            erlang:put({?MODULE, WorkerId}, 1),
+            0;
+        N ->
+            erlang:put({?MODULE, WorkerId}, N+1)
+    end.
 
 %% Use as {key_generator, {function, hook_grb, worker_generator, []}}
 -spec worker_generator(Id :: non_neg_integer()) -> fun(() -> binary()).

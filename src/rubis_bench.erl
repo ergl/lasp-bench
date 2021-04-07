@@ -23,7 +23,6 @@
 -record(state, {
     worker_id :: non_neg_integer(),
     local_ip_str :: list(),
-    transaction_count :: non_neg_integer(),
     last_cvc :: pvc_vclock:vc(),
     retry_until_commit :: boolean(),
     retry_on_bad_precondition :: boolean(),
@@ -59,7 +58,6 @@ new(WorkerId) ->
 
     State = #state{worker_id=WorkerId,
                    local_ip_str=inet:ntoa(LocalIp),
-                   transaction_count=0,
                    last_cvc=pvc_vclock:new(),
                    retry_until_commit=RetryUntilCommit,
                    retry_on_bad_precondition=RetryOnBadData,
@@ -76,31 +74,31 @@ run(browse_categories, _, _, S=#state{coord_state=Coord}) ->
     {ok, Tx} = start_blue_transaction(S),
     {ok, _, Tx1} = grb_client:read_key_snapshot(Coord, Tx, {?global_indices, all_categories}, grb_gset),
     CVC = commit_blue(Coord, Tx1),
-    {ok, incr_tx_id(S#state{last_cvc=CVC})};
+    {ok, S#state{last_cvc=CVC}};
 
 run(search_items_in_category, _, _, S=#state{coord_state=Coord}) ->
     %% mostly the same as search_items_in_region
     {ok, Tx} = start_blue_transaction(S),
     CVC = search_items_in_region_category(Coord, Tx, random_region(), random_category(), random_page_size()),
-    {ok, incr_tx_id(S#state{last_cvc=CVC})};
+    {ok, S#state{last_cvc=CVC}};
 
 run(browse_regions, _, _, S=#state{coord_state=Coord}) ->
     {ok, Tx} = start_blue_transaction(S),
     {ok, _, Tx1} = grb_client:read_key_snapshot(Coord, Tx, {?global_indices, all_regions}, grb_gset),
     CVC = commit_blue(Coord, Tx1),
-    {ok, incr_tx_id(S#state{last_cvc=CVC})};
+    {ok, S#state{last_cvc=CVC}};
 
 run(browse_categories_in_region, _, _, S=#state{coord_state=Coord}) ->
     %% same as browse_categories
     {ok, Tx} = start_blue_transaction(S),
     {ok, _, Tx1} = grb_client:read_key_snapshot(Coord, Tx, {?global_indices, all_categories}, grb_gset),
     CVC = commit_blue(Coord, Tx1),
-    {ok, incr_tx_id(S#state{last_cvc=CVC})};
+    {ok, S#state{last_cvc=CVC}};
 
 run(search_items_in_region, _, _, S=#state{coord_state=Coord}) ->
     {ok, Tx} = start_blue_transaction(S),
     CVC = search_items_in_region_category(Coord, Tx, random_region(), random_category(), random_page_size()),
-    {ok, incr_tx_id(S#state{last_cvc=CVC})};
+    {ok, S#state{last_cvc=CVC}};
 
 run(view_item, _, _, S0=#state{coord_state=Coord}) ->
     {Region, ItemId} = random_item(S0),
@@ -115,7 +113,7 @@ run(view_item, _, _, S0=#state{coord_state=Coord}) ->
         {{Region, items, ItemId, closed}, grb_lww}
     ]),
     CVC = commit_blue(Coord, Tx1),
-    {ok, incr_tx_id(S0#state{last_cvc=CVC})};
+    {ok, S0#state{last_cvc=CVC}};
 
 run(view_user_info, _, _, S0=#state{coord_state=Coord}) ->
     {Region, NickName} = random_user(S0),
@@ -149,7 +147,7 @@ run(view_user_info, _, _, S0=#state{coord_state=Coord}) ->
     ),
     {ok, _, Tx3} = grb_client:read_key_snapshots(Coord, Tx2, CommentKeys),
     CVC = commit_blue(Coord, Tx3),
-    {ok, incr_tx_id(S0#state{last_cvc=CVC})};
+    {ok, S0#state{last_cvc=CVC}};
 
 run(view_bid_history, _, _, S0=#state{coord_state=Coord}) ->
     {Region, ItemId} = random_item(S0),
@@ -173,7 +171,7 @@ run(view_bid_history, _, _, S0=#state{coord_state=Coord}) ->
     ),
     {ok, _, Tx3} = grb_client:read_key_snapshots(Coord, Tx2, BidKeys),
     CVC = commit_blue(Coord, Tx3),
-    {ok, incr_tx_id(S0#state{last_cvc=CVC})};
+    {ok, S0#state{last_cvc=CVC}};
 
 run(buy_now, _, _, S0=#state{coord_state=Coord}) ->
     {ItemRegion, ItemId} = random_item(S0),
@@ -194,7 +192,7 @@ run(buy_now, _, _, S0=#state{coord_state=Coord}) ->
              CVC = commit_blue(Coord, Tx2),
              S0#state{last_cvc=CVC}
     end,
-    {ok, incr_tx_id(S1)};
+    {ok, S1};
 
 run(store_buy_now, _, _, S) ->
     store_buy_now_loop(S);
@@ -220,7 +218,7 @@ run(put_bid, _, _, S0=#state{coord_state=Coord}) ->
              CVC = commit_blue(Coord, Tx2),
              S0#state{last_cvc=CVC}
     end,
-    {ok, incr_tx_id(S1)};
+    {ok, S1};
 
 run(store_bid, _, _, S) ->
     store_bid_loop(S);
@@ -243,7 +241,7 @@ run(put_comment, _, _, S0=#state{coord_state=Coord}) ->
              CVC = commit_blue(Coord, Tx2),
              S0#state{last_cvc=CVC}
     end,
-    {ok, incr_tx_id(S1)};
+    {ok, S1};
 
 run(store_comment, _, _, S0=#state{coord_state=Coord}) ->
     {FromRegion, FromNickname} = random_user(S0),
@@ -276,7 +274,7 @@ run(store_comment, _, _, S0=#state{coord_state=Coord}) ->
     {ok, _, Tx1} = grb_client:update_operation(Coord, Tx, CommentKey, grb_crdt:make_op(grb_lww, CommentKey)),
     {ok, Tx2} = grb_client:send_key_operations(Coord, Tx1, Updates),
     CVC = commit_blue(Coord, Tx2),
-    {ok, incr_tx_id(S1#state{last_cvc=CVC})};
+    {ok, S1#state{last_cvc=CVC}};
 
 run(select_category_to_sell_item, _, _, S0=#state{coord_state=Coord}) ->
     %% same as browse_categories, but with auth step
@@ -291,7 +289,7 @@ run(select_category_to_sell_item, _, _, S0=#state{coord_state=Coord}) ->
              CVC = commit_blue(Coord, Tx2),
              S0#state{last_cvc=CVC}
     end,
-    {ok, incr_tx_id(S1)};
+    {ok, S1};
 
 run(register_item, _, _, S0=#state{coord_state=Coord}) ->
     Category = random_category(),
@@ -339,7 +337,7 @@ run(register_item, _, _, S0=#state{coord_state=Coord}) ->
     {ok, _, Tx1} = grb_client:update_operation(Coord, Tx, ItemKey, grb_crdt:make_op(grb_lww, ItemKey)),
     {ok, Tx2} = grb_client:send_key_operations(Coord, Tx1, Updates),
     CVC = commit_blue(Coord, Tx2),
-    {ok, incr_tx_id(S1#state{last_cvc=CVC, last_generated_item={Region, ItemId}})};
+    {ok, S1#state{last_cvc=CVC, last_generated_item={Region, ItemId}}};
 
 run(about_me, _, _, S0=#state{coord_state=Coord}) ->
     {UserRegion, Nickname} = random_user(S0),
@@ -432,7 +430,7 @@ run(about_me, _, _, S0=#state{coord_state=Coord}) ->
             CVC = commit_blue(Coord, Tx4),
             S0#state{last_cvc=CVC}
     end,
-    {ok, incr_tx_id(S1)};
+    {ok, S1};
 
 run(get_auctions_ready_for_close, _, _, S=#state{coord_state=Coord}) ->
     Region = random_region(),
@@ -464,7 +462,7 @@ run(get_auctions_ready_for_close, _, _, S=#state{coord_state=Coord}) ->
     end, Tx1, KeyRequests),
 
     CVC = commit_blue(Coord, Tx2),
-    {ok, incr_tx_id(S#state{last_cvc=CVC})};
+    {ok, S#state{last_cvc=CVC}};
 
 run(close_auction, _, _, S) ->
     close_auction_loop(S).
@@ -479,14 +477,22 @@ terminate(Reason, #state{worker_id=Id}) ->
 %%%===================================================================
 
 -spec start_blue_transaction(state()) -> {ok, grb_client:tx()}.
-start_blue_transaction(S=#state{coord_state=CoordState, last_cvc=LastVC, blue_reuse_cvc=Reuse}) ->
+start_blue_transaction(#state{worker_id=WorkerId,
+                                coord_state=CoordState,
+                                last_cvc=LastVC,
+                                blue_reuse_cvc=Reuse}) ->
+
     SVC = if Reuse -> LastVC; true -> grb_vclock:new() end,
-    grb_client:start_transaction(CoordState, next_tx_id(S), SVC).
+    grb_client:start_transaction(CoordState, hook_grb:next_transaction_id(WorkerId), SVC).
 
 -spec start_red_transaction(state()) -> {ok, grb_client:tx()}.
-start_red_transaction(S=#state{coord_state=CoordState, last_cvc=LastVC, red_reuse_cvc=Reuse}) ->
+start_red_transaction(#state{worker_id=WorkerId,
+                                coord_state=CoordState,
+                                last_cvc=LastVC,
+                                red_reuse_cvc=Reuse}) ->
+
     SVC = if Reuse -> LastVC; true -> grb_vclock:new() end,
-    grb_client:start_transaction(CoordState, next_tx_id(S), SVC).
+    grb_client:start_transaction(CoordState, hook_grb:next_transaction_id(WorkerId), SVC).
 
 -spec commit_blue(
     Coord :: grb_client:coordd(),
@@ -504,13 +510,6 @@ commit_blue(Coord, Tx) ->
 
 commit_red(Coord, Tx, Label) ->
     grb_client:commit_red(Coord, Tx, Label).
-
--spec next_tx_id(#state{}) -> non_neg_integer().
-next_tx_id(#state{transaction_count=N}) -> N.
-
--spec incr_tx_id(#state{}) -> #state{}.
-incr_tx_id(State=#state{transaction_count=N}) ->
-    State#state{transaction_count = N + 1}.
 
 -spec try_auth(Coord :: grb_client:coord(),
               Tx0 ::grb_client:tx(),
@@ -542,20 +541,19 @@ register_user_loop(State=#state{coord_state=Coord, retry_until_commit=RetryAbort
     ElapsedUs = erlang:max(0, timer:now_diff(os:timestamp(), Start)),
     case Res of
         {ok, CVC} ->
-            {ok, ElapsedUs, Aborted0, Total,
-                incr_tx_id(State#state{last_cvc=CVC, last_generated_user={Region, NickName}})};
+            {ok, ElapsedUs, Aborted0, Total, State#state{last_cvc=CVC, last_generated_user={Region, NickName}}};
 
         {error, _} when RetryData ->
-            register_user_loop(incr_tx_id(State), Aborted0, Total);
+            register_user_loop(State, Aborted0, Total);
 
         {abort, _} when RetryAbort ->
-            register_user_loop(incr_tx_id(State), Aborted0 + 1, Total);
+            register_user_loop(State, Aborted0 + 1, Total);
 
         {error, _} ->
-            {ok, ElapsedUs, Aborted0, Total, incr_tx_id(State)};
+            {ok, ElapsedUs, Aborted0, Total, State};
 
         {abort, _}=Abort ->
-            {error, Abort, incr_tx_id(State)}
+            {error, Abort, State}
     end.
 
 -spec register_user(grb_client:coord(), grb_client:tx(), binary(), binary()) -> {ok, _} | {abort, _} | {error, user_taken}.
@@ -600,20 +598,19 @@ store_buy_now_loop(S0=#state{coord_state=Coord, retry_until_commit=RetryAbort,
     ElapsedUs = erlang:max(0, timer:now_diff(os:timestamp(), Start)),
     case Res of
         {ok, CVC} ->
-            {ok, ElapsedUs, Aborted0, Total,
-                incr_tx_id(S1#state{last_cvc=CVC})};
+            {ok, ElapsedUs, Aborted0, Total, S1#state{last_cvc=CVC}};
 
         {error, _} when RetryData ->
-            store_buy_now_loop(incr_tx_id(S1), Aborted0, Total);
+            store_buy_now_loop(S1, Aborted0, Total);
 
         {abort, _} when RetryAbort ->
-            store_buy_now_loop(incr_tx_id(S1), Aborted0 + 1, Total);
+            store_buy_now_loop(S1, Aborted0 + 1, Total);
 
         {error, _} ->
-            {ok, ElapsedUs, Aborted0, Total, incr_tx_id(S1)};
+            {ok, ElapsedUs, Aborted0, Total, S1};
 
         {abort, _}=Abort ->
-            {error, Abort, incr_tx_id(S1)}
+            {error, Abort, S1}
     end.
 
 -spec store_buy_now(grb_client:coord(), grb_client:tx(), _, _, binary(), non_neg_integer()) -> {ok, _} | {abort, _} | {error, bad_quantity}.
@@ -664,20 +661,19 @@ store_bid_loop(S0=#state{coord_state=Coord, retry_until_commit=RetryAbort,
     ElapsedUs = erlang:max(0, timer:now_diff(os:timestamp(), Start)),
     case Res of
         {ok, CVC} ->
-            {ok, ElapsedUs, Aborted0, Total,
-                incr_tx_id(S1#state{last_cvc=CVC})};
+            {ok, ElapsedUs, Aborted0, Total, S1#state{last_cvc=CVC}};
 
         {error, _} when RetryData ->
-            store_bid_loop(incr_tx_id(S1), Aborted0, Total);
+            store_bid_loop(S1, Aborted0, Total);
 
         {abort, _} when RetryAbort ->
-            store_bid_loop(incr_tx_id(S1), Aborted0 + 1, Total);
+            store_bid_loop(S1, Aborted0 + 1, Total);
 
         {error, _} ->
-            {ok, ElapsedUs, Aborted0, Total, incr_tx_id(S1)};
+            {ok, ElapsedUs, Aborted0, Total, S1};
 
         {abort, _}=Abort ->
-            {error, Abort, incr_tx_id(S1)}
+            {error, Abort, S1}
     end.
 
 -spec store_bid(grb_client:coord(), grb_client:tx(), _, _, binary(), non_neg_integer(), non_neg_integer()) -> {ok, _} | {abort, _} | {error, bad_data}.
@@ -739,20 +735,19 @@ close_auction_loop(State=#state{coord_state=Coord, retry_until_commit=RetryAbort
     ElapsedUs = erlang:max(0, timer:now_diff(os:timestamp(), Start)),
     case Res of
         {ok, CVC} ->
-            {ok, ElapsedUs, Aborted0, Total,
-                incr_tx_id(State#state{last_cvc=CVC})};
+            {ok, ElapsedUs, Aborted0, Total, State#state{last_cvc=CVC}};
 
         {error, _} when RetryData ->
-            close_auction_loop(incr_tx_id(State), Aborted0, Total);
+            close_auction_loop(State, Aborted0, Total);
 
         {abort, _} when RetryAbort ->
-            close_auction_loop(incr_tx_id(State), Aborted0 + 1, Total);
+            close_auction_loop(State, Aborted0 + 1, Total);
 
         {error, _} ->
-            {ok, ElapsedUs, Aborted0, Total, incr_tx_id(State)};
+            {ok, ElapsedUs, Aborted0, Total, State};
 
         {abort, _}=Abort ->
-            {error, Abort, incr_tx_id(State)}
+            {error, Abort, State}
     end.
 
 -spec close_auction(grb_client:coord(), grb_client:tx(), {binary(), atom(), binary()}) -> {ok, _} | {abort, _} | {error, atom()}.

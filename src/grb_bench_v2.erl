@@ -16,7 +16,6 @@
 -record(state, {
     worker_id :: non_neg_integer(),
     coord_state :: grb_client:coord(),
-    transaction_count :: non_neg_integer(),
 
     readonly_ops :: non_neg_integer(),
     writeonly_ops :: non_neg_integer(),
@@ -50,7 +49,6 @@ new(WorkerId) ->
     CRDTType = lasp_bench_config:get(crdt_type, grb_lww),
     State = #state{worker_id=WorkerId,
                    coord_state=CoordState,
-                   transaction_count=0,
 
                    readonly_ops=RonlyOps,
                    writeonly_ops=WonlyOps,
@@ -86,30 +84,30 @@ run(uniform_barrier, _, _, State = #state{coord_state=Coord, last_cvc=CVC}) ->
 
 run(readonly_blue, KeyGen, _, State = #state{readonly_ops=N}) ->
     CVC = perform_readonly_blue(State, gen_keys(N, KeyGen)),
-    {ok, incr_tx_id(State#state{last_cvc=CVC})};
+    {ok, State#state{last_cvc=CVC}};
 
 run(writeonly_blue, KeyGen, ValueGen, State = #state{writeonly_ops=N}) ->
     CVC = perform_writeonly_blue(State, gen_updates(N, KeyGen, ValueGen)),
-    {ok, incr_tx_id(State#state{last_cvc=CVC})};
+    {ok, State#state{last_cvc=CVC}};
 
 run(read_write_blue, KeyGen, ValueGen, State = #state{rw_reads=RN, rw_updates=WN}) ->
     CVC = perform_read_write_blue(State, gen_keys(RN, KeyGen), gen_updates(WN, KeyGen, ValueGen)),
-    {ok, incr_tx_id(State#state{last_cvc=CVC})};
+    {ok, State#state{last_cvc=CVC}};
 
 run(readonly_blue_barrier, KeyGen, _, State = #state{readonly_ops=N, coord_state=Coord}) ->
     CVC = perform_readonly_blue(State, gen_keys(N, KeyGen)),
     ok = perform_uniform_barrier(Coord, CVC),
-    {ok, incr_tx_id(State#state{last_cvc=CVC})};
+    {ok, State#state{last_cvc=CVC}};
 
 run(writeonly_blue_barrier, KeyGen, ValueGen, State = #state{writeonly_ops=N, coord_state=Coord}) ->
     CVC = perform_writeonly_blue(State, gen_updates(N, KeyGen, ValueGen)),
     ok = perform_uniform_barrier(Coord, CVC),
-    {ok, incr_tx_id(State#state{last_cvc=CVC})};
+    {ok, State#state{last_cvc=CVC}};
 
 run(read_write_blue_barrier, KeyGen, ValueGen, State = #state{rw_reads=RN, rw_updates=WN, coord_state=Coord}) ->
     CVC = perform_read_write_blue(State, gen_keys(RN, KeyGen), gen_updates(WN, KeyGen, ValueGen)),
     ok = perform_uniform_barrier(Coord, CVC),
-    {ok, incr_tx_id(State#state{last_cvc=CVC})};
+    {ok, State#state{last_cvc=CVC}};
 
 %%====================================================================
 %% Red operations
@@ -117,44 +115,44 @@ run(read_write_blue_barrier, KeyGen, ValueGen, State = #state{rw_reads=RN, rw_up
 
 run(readonly_red, _, _, State = #state{readonly_ops=N, strong_generator=KeyGen}) ->
     case perform_readonly_red(State, gen_keys(N, KeyGen), 0) of
-        {ok, CVC, Retries} -> {ok, ignore, Retries-1, Retries, incr_tx_id(State#state{last_cvc=CVC})};
-        Err -> {error, Err, incr_tx_id(State)}
+        {ok, CVC, Retries} -> {ok, ignore, Retries-1, Retries, State#state{last_cvc=CVC}};
+        Err -> {error, Err, State}
     end;
 
 run(writeonly_red, _, ValueGen, State = #state{writeonly_ops=N, strong_generator=KeyGen}) ->
     case perform_writeonly_red(State, gen_updates(N, KeyGen, ValueGen), 0) of
-        {ok, CVC, Retries} -> {ok, ignore, Retries - 1, Retries, incr_tx_id(State#state{last_cvc=CVC})};
-        Err -> {error, Err, incr_tx_id(State)}
+        {ok, CVC, Retries} -> {ok, ignore, Retries - 1, Retries, State#state{last_cvc=CVC}};
+        Err -> {error, Err, State}
     end;
 
 run(read_write_red, _, ValueGen, State = #state{rw_reads=RN, rw_updates=WN, strong_generator=KeyGen}) ->
     case perform_read_write_red(State, gen_keys(RN, KeyGen), gen_updates(WN, KeyGen, ValueGen), 0) of
-        {ok, CVC, Retries} -> {ok, ignore, Retries - 1, Retries, incr_tx_id(State#state{last_cvc=CVC})};
-        Err -> {error, Err, incr_tx_id(State)}
+        {ok, CVC, Retries} -> {ok, ignore, Retries - 1, Retries, State#state{last_cvc=CVC}};
+        Err -> {error, Err, State}
     end;
 
 run(readonly_red_barrier, _, _, State = #state{readonly_ops=N, coord_state=Coord, strong_generator=KeyGen}) ->
     case perform_readonly_red(State, gen_keys(N, KeyGen), 0) of
         {ok, CVC, Retries} ->
             ok = perform_uniform_barrier(Coord, CVC),
-            {ok, ignore, Retries - 1, Retries, incr_tx_id(State#state{last_cvc=CVC})};
-        Err -> {error, Err, incr_tx_id(State)}
+            {ok, ignore, Retries - 1, Retries, State#state{last_cvc=CVC}};
+        Err -> {error, Err, State}
     end;
 
 run(writeonly_red_barrier, _, ValueGen, State = #state{writeonly_ops=N, coord_state=Coord, strong_generator=KeyGen}) ->
     case perform_writeonly_red(State, gen_updates(N, KeyGen, ValueGen), 0) of
         {ok, CVC, Retries} ->
             ok = perform_uniform_barrier(Coord, CVC),
-            {ok, ignore, Retries - 1, Retries, incr_tx_id(State#state{last_cvc=CVC})};
-        Err -> {error, Err, incr_tx_id(State)}
+            {ok, ignore, Retries - 1, Retries, State#state{last_cvc=CVC}};
+        Err -> {error, Err, State}
     end;
 
 run(read_write_red_barrier, _, ValueGen, State = #state{rw_reads=RN, rw_updates=WN, coord_state=Coord, strong_generator=KeyGen}) ->
     case perform_read_write_red(State, gen_keys(RN, KeyGen), gen_updates(WN, KeyGen, ValueGen), 0) of
         {ok, CVC, Retries} ->
             ok = perform_uniform_barrier(Coord, CVC),
-            {ok, ignore, Retries - 1, Retries, incr_tx_id(State#state{last_cvc=CVC})};
-        Err -> {error, Err, incr_tx_id(State)}
+            {ok, ignore, Retries - 1, Retries, State#state{last_cvc=CVC}};
+        Err -> {error, Err, State}
     end.
 
 terminate(_Reason, _State) ->
@@ -240,12 +238,16 @@ sequential_update(Coord, Tx, Updates, Type) ->
     ).
 
 -spec start_transaction(#state{}) -> {ok, grb_client:tx()}.
-start_transaction(S=#state{coord_state=CoordState, transaction_count=N}) ->
-    grb_client:start_transaction(CoordState, N, get_start_clock(S)).
+start_transaction(S=#state{coord_state=CoordState, worker_id=WorkerId}) ->
+    grb_client:start_transaction(CoordState,
+                                 hook_grb:next_transaction_id(WorkerId),
+                                 get_start_clock(S)).
 
 -spec start_transaction(#state{}, grb_client:index_node()) -> {ok, grb_client:tx()}.
-start_transaction(S=#state{coord_state=CoordState, transaction_count=N}, IndexNode) ->
-    grb_client:start_transaction(CoordState, N, get_start_clock(S), IndexNode).
+start_transaction(S=#state{coord_state=CoordState, worker_id=WorkerId}, IndexNode) ->
+    grb_client:start_transaction(CoordState,
+                                 hook_grb:next_transaction_id(WorkerId),
+                                 get_start_clock(S), IndexNode).
 
 -spec start_transaction_with_indexnode(#state{}, [term() | {term(), term()}]) -> {ok, grb_client:tx()}.
 start_transaction_with_indexnode(S=#state{coord_state=CoordState}, [{Key, _} | _]) ->
@@ -259,13 +261,13 @@ get_start_clock(#state{reuse_cvc=true, last_cvc=VC}) -> VC;
 get_start_clock(#state{reuse_cvc=false}) -> grb_vclock:new().
 
 maybe_retry_readonly(#state{retry_until_commit=false}, _, Err, _At) -> Err;
-maybe_retry_readonly(S, Keys, _, Attempts) -> perform_readonly_red(incr_tx_id(S), Keys, Attempts).
+maybe_retry_readonly(S, Keys, _, Attempts) -> perform_readonly_red(S, Keys, Attempts).
 
 maybe_retry_writeonly(#state{retry_until_commit=false}, _, Err, _At) -> Err;
-maybe_retry_writeonly(S, Updates, _, Attempts) -> perform_writeonly_red(incr_tx_id(S), Updates, Attempts).
+maybe_retry_writeonly(S, Updates, _, Attempts) -> perform_writeonly_red(S, Updates, Attempts).
 
 maybe_retry_read_write(#state{retry_until_commit=false}, _, _, Err, _At) -> Err;
-maybe_retry_read_write(S, Keys, Updates, _, Attempts) -> perform_read_write_red(incr_tx_id(S), Keys, Updates, Attempts).
+maybe_retry_read_write(S, Keys, Updates, _, Attempts) -> perform_read_write_red(S, Keys, Updates, Attempts).
 
 %% @doc Generate N random keys
 -spec gen_keys(non_neg_integer(), key_gen(binary())) -> [binary()].
@@ -278,7 +280,3 @@ gen_keys(N, K, Acc) -> gen_keys(N - 1, K, [K() | Acc]).
 gen_updates(N, K, V) -> gen_updates(N, K, V, []).
 gen_updates(0, _, _, Acc) -> Acc;
 gen_updates(N, K, V, Acc) -> gen_updates(N - 1, K, V, [{K(), V()} | Acc]).
-
--spec incr_tx_id(#state{}) -> #state{}.
-incr_tx_id(State=#state{transaction_count=N}) ->
-    State#state{transaction_count = N + 1}.

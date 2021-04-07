@@ -20,7 +20,6 @@
 -record(state, {
     worker_id :: non_neg_integer(),
     local_ip_str :: list(),
-    transaction_count :: non_neg_integer(),
     last_cvc :: pvc_vclock:vc(),
     retry_until_commit :: boolean(),
     retry_on_bad_precondition :: boolean(),
@@ -54,7 +53,6 @@ new(WorkerId) ->
 
     State = #state{worker_id=WorkerId,
                    local_ip_str=inet:ntoa(LocalIp),
-                   transaction_count=0,
                    last_cvc=pvc_vclock:new(),
                    retry_until_commit=RetryUntilCommit,
                    retry_on_bad_precondition=RetryOnBadData,
@@ -76,20 +74,19 @@ retry_loop(S0=#state{retry_until_commit=RetryCommit,
     ElapsedUs = erlang:max(0, timer:now_diff(os:timestamp(), Start)),
     case Res of
         {ok, CVC} ->
-            {ok, ElapsedUs, Aborted0, Total,
-                incr_tx_id(State#state{last_cvc=CVC})};
+            {ok, ElapsedUs, Aborted0, Total, State#state{last_cvc=CVC}};
 
         {error, _} when RetryData ->
-            retry_loop(incr_tx_id(State), Fun, Aborted0, Total);
+            retry_loop(State, Fun, Aborted0, Total);
 
         {abort, _} when RetryCommit ->
-            retry_loop(incr_tx_id(State), Fun, Aborted0 + 1, Total);
+            retry_loop(State, Fun, Aborted0 + 1, Total);
 
         {error, _} ->
-            {ok, ElapsedUs, Aborted0, Total, incr_tx_id(State)};
+            {ok, ElapsedUs, Aborted0, Total, State};
 
         {abort, _}=Abort ->
-            {error, Abort, incr_tx_id(State)}
+            {error, Abort, State}
     end.
 
 run(register_user, _, _, State) ->
@@ -488,9 +485,15 @@ terminate(Reason, #state{worker_id=Id}) ->
 %%%===================================================================
 
 -spec start_red_transaction(state()) -> {ok, grb_client:tx()}.
-start_red_transaction(S=#state{coord_state=CoordState, last_cvc=LastVC, red_reuse_cvc=Reuse}) ->
+start_red_transaction(#state{worker_id=WorkerId,
+                             coord_state=CoordState,
+                             last_cvc=LastVC,
+                             red_reuse_cvc=Reuse}) ->
+
     SVC = if Reuse -> LastVC; true -> grb_vclock:new() end,
-    grb_client:start_transaction(CoordState, next_tx_id(S), SVC).
+    grb_client:start_transaction(CoordState,
+                                 hook_grb:next_transaction_id(WorkerId),
+                                 SVC).
 
 -spec commit_red(
     Coord :: grb_client:coordd(),
@@ -499,13 +502,6 @@ start_red_transaction(S=#state{coord_state=CoordState, last_cvc=LastVC, red_reus
 
 commit_red(Coord, Tx) ->
     grb_client:commit_red(Coord, Tx, ?all_conflict_label).
-
--spec next_tx_id(#state{}) -> non_neg_integer().
-next_tx_id(#state{transaction_count=N}) -> N.
-
--spec incr_tx_id(#state{}) -> #state{}.
-incr_tx_id(State=#state{transaction_count=N}) ->
-    State#state{transaction_count = N + 1}.
 
 -spec try_auth(Coord :: grb_client:coord(),
               Tx0 ::grb_client:tx(),
@@ -538,19 +534,19 @@ register_user_loop(State=#state{coord_state=Coord, retry_until_commit=RetryAbort
     case Res of
         {ok, CVC} ->
             {ok, ElapsedUs, Aborted0, Total,
-                incr_tx_id(State#state{last_cvc=CVC, last_generated_user={Region, NickName}})};
+                State#state{last_cvc=CVC, last_generated_user={Region, NickName}}};
 
         {error, _} when RetryData ->
-            register_user_loop(incr_tx_id(State), Aborted0, Total);
+            register_user_loop(State, Aborted0, Total);
 
         {abort, _} when RetryAbort ->
-            register_user_loop(incr_tx_id(State), Aborted0 + 1, Total);
+            register_user_loop(State, Aborted0 + 1, Total);
 
         {error, _} ->
-            {ok, ElapsedUs, Aborted0, Total, incr_tx_id(State)};
+            {ok, ElapsedUs, Aborted0, Total, State};
 
         {abort, _}=Abort ->
-            {error, Abort, incr_tx_id(State)}
+            {error, Abort, State}
     end.
 
 -spec register_user(grb_client:coord(), grb_client:tx(), binary(), binary()) -> {ok, _} | {abort, _} | {error, user_taken}.
@@ -596,19 +592,19 @@ store_buy_now_loop(S0=#state{coord_state=Coord, retry_until_commit=RetryAbort,
     case Res of
         {ok, CVC} ->
             {ok, ElapsedUs, Aborted0, Total,
-                incr_tx_id(S1#state{last_cvc=CVC})};
+                S1#state{last_cvc=CVC}};
 
         {error, _} when RetryData ->
-            store_buy_now_loop(incr_tx_id(S1), Aborted0, Total);
+            store_buy_now_loop(S1, Aborted0, Total);
 
         {abort, _} when RetryAbort ->
-            store_buy_now_loop(incr_tx_id(S1), Aborted0 + 1, Total);
+            store_buy_now_loop(S1, Aborted0 + 1, Total);
 
         {error, _} ->
-            {ok, ElapsedUs, Aborted0, Total, incr_tx_id(S1)};
+            {ok, ElapsedUs, Aborted0, Total, S1};
 
         {abort, _}=Abort ->
-            {error, Abort, incr_tx_id(S1)}
+            {error, Abort, S1}
     end.
 
 -spec store_buy_now(grb_client:coord(), grb_client:tx(), _, _, binary(), non_neg_integer()) -> {ok, _} | {abort, _} | {error, bad_quantity}.
@@ -659,20 +655,19 @@ store_bid_loop(S0=#state{coord_state=Coord, retry_until_commit=RetryAbort,
     ElapsedUs = erlang:max(0, timer:now_diff(os:timestamp(), Start)),
     case Res of
         {ok, CVC} ->
-            {ok, ElapsedUs, Aborted0, Total,
-                incr_tx_id(S1#state{last_cvc=CVC})};
+            {ok, ElapsedUs, Aborted0, Total, S1#state{last_cvc=CVC}};
 
         {error, _} when RetryData ->
-            store_bid_loop(incr_tx_id(S1), Aborted0, Total);
+            store_bid_loop(S1, Aborted0, Total);
 
         {abort, _} when RetryAbort ->
-            store_bid_loop(incr_tx_id(S1), Aborted0 + 1, Total);
+            store_bid_loop(S1, Aborted0 + 1, Total);
 
         {error, _} ->
-            {ok, ElapsedUs, Aborted0, Total, incr_tx_id(S1)};
+            {ok, ElapsedUs, Aborted0, Total, S1};
 
         {abort, _}=Abort ->
-            {error, Abort, incr_tx_id(S1)}
+            {error, Abort, S1}
     end.
 
 -spec store_bid(grb_client:coord(), grb_client:tx(), _, _, binary(), non_neg_integer(), non_neg_integer()) -> {ok, _} | {abort, _} | {error, bad_data}.
@@ -734,20 +729,19 @@ close_auction_loop(State=#state{coord_state=Coord, retry_until_commit=RetryAbort
     ElapsedUs = erlang:max(0, timer:now_diff(os:timestamp(), Start)),
     case Res of
         {ok, CVC} ->
-            {ok, ElapsedUs, Aborted0, Total,
-                incr_tx_id(State#state{last_cvc=CVC})};
+            {ok, ElapsedUs, Aborted0, Total, State#state{last_cvc=CVC}};
 
         {error, _} when RetryData ->
-            close_auction_loop(incr_tx_id(State), Aborted0, Total);
+            close_auction_loop(State, Aborted0, Total);
 
         {abort, _} when RetryAbort ->
-            close_auction_loop(incr_tx_id(State), Aborted0 + 1, Total);
+            close_auction_loop(State, Aborted0 + 1, Total);
 
         {error, _} ->
-            {ok, ElapsedUs, Aborted0, Total, incr_tx_id(State)};
+            {ok, ElapsedUs, Aborted0, Total, State};
 
         {abort, _}=Abort ->
-            {error, Abort, incr_tx_id(State)}
+            {error, Abort, State}
     end.
 
 -spec close_auction(grb_client:coord(), grb_client:tx(), {binary(), atom(), binary()}) -> {ok, _} | {abort, _} | {error, atom()}.
