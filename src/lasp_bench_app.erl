@@ -88,6 +88,7 @@ start(_StartType, _StartArgs) ->
     ok = lasp_bench_stats:run(),
     ok = lasp_bench_measurement:run(),
     ok = lasp_bench_worker:run(lasp_bench_sup:workers()),
+    ok = setup_logging(),
     {ok, Pid}.
 
 
@@ -97,6 +98,26 @@ stop(_State) ->
     %% eprof:analyze(total),
     %% eprof:log("bb.eprof"),
     ok.
+
+setup_logging() ->
+    ok = logger:set_primary_config(level, all),
+    logger:remove_handler(default),
+    LogFile = log_filename(),
+    ConfLog =
+        #{
+            level => info,
+            formatter => {logger_formatter, #{single_line => true, max_size => 2048}},
+            config => #{
+                type => wrap,
+                file => LogFile,
+                max_no_bytes => 52428800
+            }
+        },
+    ok = logger:add_handler(my_disk_log, logger_disk_log_h, ConfLog).
+
+log_filename() ->
+    {ok, CWD} = file:get_cwd(),
+    filename:join([CWD, "run.log"]).
 
 %% ===================================================================
 %% Internal functions

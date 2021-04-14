@@ -59,8 +59,9 @@ main(Args) ->
     {ok, _Pid} = lasp_bench_config:start_link(),
     lasp_bench_config:set(test_id, BenchName),
 
-    CustomLoggingLevel = lasp_bench_config:get(log_level, debug),
-    logger:set_application_level(lasp_bench, CustomLoggingLevel),
+    CustomLoggingLevel = lasp_bench_config:get(log_level, all),
+    logger:set_module_level(?MODULE, CustomLoggingLevel),
+    logger:set_module_level(lasp_bench_config, CustomLoggingLevel),
 
     %% Make sure this happens after starting logger or failures wont be shown.
     lasp_bench_config:load(Configs),
