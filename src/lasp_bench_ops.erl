@@ -1,7 +1,7 @@
 -module(lasp_bench_ops).
 
 -callback init(Args :: [Id :: non_neg_integer(), ...]) -> term().
--callback operations() -> [{atom(), atom()}].
+-callback operations(NoIdArgs :: [term()]) -> [{atom(), atom()}].
 -callback next_operation(term()) -> {ok, {atom(), atom()}, term()}
                                   | {ok, {atom(), atom()}, non_neg_integer(), term()}
                                   | {error, atom()}.
@@ -43,8 +43,8 @@ get_driver_operations(Id) ->
 -spec list_driver_operations() -> [{term(), term()}].
 list_driver_operations() ->
     case lasp_bench_config:get(operations, []) of
-        {module, Module, _} ->
-            Module:operations();
+        {module, Module, Args} ->
+            Module:operations(Args);
         L when is_list(L) ->
             F = fun
                     ({OpTag, _Count}) -> {OpTag, OpTag};

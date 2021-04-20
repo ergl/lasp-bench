@@ -116,7 +116,7 @@
 
 %% Ops API
 -export([init/1,
-         operations/0,
+         operations/1,
          next_operation/1,
          terminate/1]).
 
@@ -137,7 +137,7 @@ init([_Id, ArgMap = #{transition_table := FilePath}]) ->
     end,
     new(FilePath, Seed, TransitionLimit, ThinkingTime, Jitter, OverrideTime).
 
-operations() ->
+operations(_) ->
     [{OpTag, OpTag} || OpTag <- (tuple_to_list(?STATE_NAMES) -- ?SHOULD_DISCARD)].
 
 next_operation(S0) ->
