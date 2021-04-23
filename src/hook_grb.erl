@@ -29,15 +29,12 @@ start(HookOpts) ->
     BootstrapPort = list_to_integer(os:getenv(?BOOTSTRAP_PORT, "7878")),
     logger:info("Given bootstrap node ~p~n", [BootstrapNode]),
 
-    {conn_pool_size, PoolSize} = lists:keyfind(conn_pool_size, 1, HookOpts),
-    RedPoolSize = case lists:keyfind(red_conn_pool_size, 1, HookOpts) of
-        false ->
-            1;
-        {red_conn_pool_size, S} ->
-            S
-    end,
-    {connection_port, ConnectionPort} = lists:keyfind(connection_port, 1, HookOpts),
-    {conection_opts, ConnModuleOpts} = lists:keyfind(conection_opts, 1, HookOpts),
+    CausalPoolSize = proplists:get_value(conn_pool_size, HookOpts),
+    StrongPoolSize = proplists:get_value(red_conn_pool_size, HookOpts, 1),
+    ShackleBacklog = proplists:get_value(shackle_backlog, HookOpts, infinity),
+    ShackleRetries = proplists:get_value(shackle_retries, HookOpts, infinity),
+    ConnectionPort = proplists:get_value(connection_port, HookOpts),
+    ConnModuleOpts = proplists:get_value(conection_opts, HookOpts),
 
     BootstrapIp = get_bootstrap_ip(BootstrapNode),
     logger:info("Bootstraping from ~p:~p~n", [BootstrapIp, BootstrapNode]),
@@ -49,26 +46,18 @@ start(HookOpts) ->
     true = ets:insert(?MODULE, {ring, Ring}),
     true = ets:insert(?MODULE, {nodes, UniqueNodes}),
 
+    CausalPoolOpts = [{pool_size, CausalPoolSize}, {backlog_size, ShackleBacklog}, {max_retries, ShackleRetries}],
+    StrongPoolOpts = [{pool_size, StrongPoolSize}, {backlog_size, ShackleBacklog}, {max_retries, ShackleRetries}],
     {Pools, RedPools} = lists:foldl(fun(NodeIp, {PoolAcc, RedConAcc}) ->
-        PoolName = pool_name(NodeIp),
-        RedPoolName = red_pool_name(NodeIp),
-
-        %% todo(borja): Add config for socket opts?
-        shackle_pool:start(PoolName, pvc_shackle_transport,
-                          [{address, NodeIp}, {port, ConnectionPort}, {reconnect, false},
-                           {socket_options, [{packet, 4}, binary, {nodelay, true}]},
-                           {init_options, ConnModuleOpts}],
-                          [{pool_size, PoolSize}]),
-
-        shackle_pool:start(RedPoolName, pvc_red_connection,
-                          [{address, NodeIp}, {port, ConnectionPort}, {reconnect, false},
-                           {socket_options, [{packet, 4}, binary, {nodelay, true}]},
-                           {init_options, ConnModuleOpts}],
-                          [{pool_size, RedPoolSize}]),
-
         {
-            PoolAcc#{NodeIp => PoolName},
-            RedConAcc#{NodeIp => RedPoolName}
+            PoolAcc#{
+                NodeIp => make_shackle_pool(pool_name(NodeIp), NodeIp, ConnectionPort,
+                                            pvc_shackle_transport, ConnModuleOpts, CausalPoolOpts)
+            },
+            RedConAcc#{
+                NodeIp => make_shackle_pool(red_pool_name(NodeIp), NodeIp, ConnectionPort,
+                                            pvc_red_connection, ConnModuleOpts, StrongPoolOpts)
+            }
         }
     end, {#{}, #{}}, UniqueNodes),
     true = ets:insert(?MODULE, {shackle_pools, Pools}),
@@ -80,6 +69,17 @@ pool_name(NodeIp) ->
 
 red_pool_name(NodeIp) ->
     list_to_atom(atom_to_list(NodeIp) ++ "_shackle_red_pool").
+
+make_shackle_pool(Name, Ip, Port, Module, ModuleOpts, PoolOpts) ->
+    ok = shackle_pool:start(Name, Module,
+        [
+            {address, Ip}, {port, Port}, {reconnect, false},
+            %% todo(borja): Add config for socket opts?
+            {socket_options, [{packet, 4}, binary, {nodelay, true}]},
+            {init_options, ModuleOpts}
+        ],
+        PoolOpts),
+    Name.
 
 stop() ->
     logger:info("Unloading ~p", [?MODULE]),
