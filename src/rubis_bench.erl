@@ -770,7 +770,7 @@ close_auction(Coord, Tx, ItemKey={ItemRegion, _, ItemId}) ->
             {ok, Req} = grb_client:send_read_key(Coord, Tx1, BidderKey, grb_lww),
             {ok, Tx2} = grb_client:send_key_operations(Coord, Tx1, [
                 %% Close auction
-                {ItemClosedKey, grb_crdt:make_op(grb_lww, false)},
+                {ItemClosedKey, grb_crdt:make_op(grb_lww, true)},
                 %% Append to user index
                 {{BidderRegion, wins_user, BidderKey}, grb_crdt:make_op(grb_gset, {ItemKey, ItemSeller, MaxBidKey, MaxBidAmount})}
             ]),
