@@ -60,11 +60,12 @@ new(WorkerId) ->
 
     {ok, State}.
 
-retry_loop(State, Fun) ->
-    retry_loop(State, Fun, 0).
+retry_loop(State, Fun, Operation) ->
+    retry_loop(Operation, State, Fun, 0).
 
-retry_loop(S0=#state{retry_until_commit=RetryCommit,
-                     retry_on_bad_precondition=RetryData}, Fun, Aborted0) ->
+retry_loop(Operation,
+           S0=#state{retry_until_commit=RetryCommit,
+                     retry_on_bad_precondition=RetryData}, Fun, _Aborted0) ->
 
     Start = os:timestamp(),
     {ok, Tx} = start_red_transaction(S0),
@@ -72,16 +73,19 @@ retry_loop(S0=#state{retry_until_commit=RetryCommit,
     ElapsedUs = erlang:max(0, timer:now_diff(os:timestamp(), Start)),
     case Res of
         {ok, CVC} ->
-            {ok, ElapsedUs, Aborted0, State#state{last_cvc=CVC}};
+            {ok, ElapsedUs, 0, State#state{last_cvc=CVC}};
 
         {error, _} when RetryData ->
-            retry_loop(State, Fun, Aborted0);
+            lasp_bench_stats:op_complete({Operation, Operation}, {error, precondition}, ignore),
+            retry_loop(Operation, State, Fun, 0);
 
         {abort, _} when RetryCommit ->
-            retry_loop(State, Fun, Aborted0 + 1);
+            lasp_bench_stats:op_complete({Operation, Operation}, {error, abort}, ignore),
+            retry_loop(Operation, State, Fun, 0);
 
         {error, _} ->
-            {ok, ElapsedUs, Aborted0, State};
+            lasp_bench_stats:op_complete({Operation, Operation}, {error, precondition}, ignore),
+            {ok, ElapsedUs, 0, State};
 
         {abort, _}=Abort ->
             {error, Abort, State}
@@ -94,31 +98,31 @@ run(browse_categories, _, _, State) ->
     retry_loop(State, fun(S=#state{coord_state=Coord}, Tx) ->
         {ok, _, Tx1} = grb_client:read_key_snapshot(Coord, Tx, {hook_rubis:random_global_index(Coord), all_categories}, grb_gset),
         {commit_red(Coord, Tx1), S}
-    end);
+    end, browse_categories);
 
 run(search_items_in_category, _, _, State) ->
     retry_loop(State, fun(S=#state{coord_state=Coord}, Tx) ->
         Res = search_items_in_region_category(Coord, Tx, random_region(), random_category(), random_page_size()),
         {Res, S}
-    end);
+    end, search_items_in_category);
 
 run(browse_regions, _, _, State) ->
     retry_loop(State, fun(S=#state{coord_state=Coord}, Tx) ->
         {ok, _, Tx1} = grb_client:read_key_snapshot(Coord, Tx, {hook_rubis:random_global_index(Coord), all_regions}, grb_gset),
         {commit_red(Coord, Tx1), S}
-    end);
+    end, browse_regions);
 
 run(browse_categories_in_region, _, _, State) ->
     retry_loop(State, fun(S=#state{coord_state=Coord}, Tx) ->
         {ok, _, Tx1} = grb_client:read_key_snapshot(Coord, Tx, {hook_rubis:random_global_index(Coord), all_categories}, grb_gset),
         {commit_red(Coord, Tx1), S}
-    end);
+    end, browse_categories_in_region);
 
 run(search_items_in_region, _, _, State) ->
     retry_loop(State, fun(S=#state{coord_state=Coord}, Tx) ->
         Res = search_items_in_region_category(Coord, Tx, random_region(), random_category(), random_page_size()),
         {Res, S}
-    end);
+    end, search_items_in_region);
 
 run(view_item, _, _, State) ->
     retry_loop(State, fun(S=#state{coord_state=Coord}, Tx) ->
@@ -133,7 +137,7 @@ run(view_item, _, _, State) ->
             {{Region, items, ItemId, closed}, grb_lww}
         ]),
         {commit_red(Coord, Tx1), S}
-    end);
+    end, view_item);
 
 run(view_user_info, _, _, State) ->
     retry_loop(State, fun(S=#state{coord_state=Coord}, Tx) ->
@@ -166,7 +170,7 @@ run(view_user_info, _, _, State) ->
         ),
         {ok, _, Tx3} = grb_client:read_key_snapshots(Coord, Tx2, CommentKeys),
         {commit_red(Coord, Tx3), S}
-    end);
+    end, view_user_info);
 
 run(view_bid_history, _, _, State) ->
     retry_loop(State, fun(S=#state{coord_state=Coord}, Tx) ->
@@ -190,7 +194,7 @@ run(view_bid_history, _, _, State) ->
         ),
         {ok, _, Tx3} = grb_client:read_key_snapshots(Coord, Tx2, BidKeys),
         {commit_red(Coord, Tx3), S}
-    end);
+    end, view_bid_history);
 
 run(buy_now, _, _, State) ->
     retry_loop(State, fun(S=#state{coord_state=Coord}, Tx) ->
@@ -209,7 +213,7 @@ run(buy_now, _, _, State) ->
                 {ok, _, Tx2} = grb_client:read_key_snapshots(Coord, Tx1, ItemKeys),
                 {commit_red(Coord, Tx2), S}
         end
-    end);
+    end, buy_now);
 
 run(store_buy_now, _, _, S) ->
     store_buy_now_loop(S);
@@ -233,7 +237,7 @@ run(put_bid, _, _, State) ->
                  {ok, _, Tx2} = grb_client:read_key_snapshots(Coord, Tx1, ItemKeys),
                  {commit_red(Coord, Tx2), S}
         end
-    end);
+    end, put_bid);
 
 run(store_bid, _, _, S) ->
     store_bid_loop(S);
@@ -255,7 +259,7 @@ run(put_comment, _, _, State) ->
                  {ok, _, Tx2} = grb_client:read_key_snapshots(Coord, Tx1, Keys),
                  {commit_red(Coord, Tx2), S}
         end
-    end);
+    end, put_comment);
 
 run(store_comment, _, _, State) ->
     retry_loop(State, fun(S=#state{coord_state=Coord}, Tx) ->
@@ -289,7 +293,7 @@ run(store_comment, _, _, State) ->
         {ok, _, Tx1} = grb_client:update_operation(Coord, Tx, CommentKey, grb_crdt:make_op(grb_lww, CommentKey)),
         {ok, Tx2} = grb_client:send_key_operations(Coord, Tx1, Updates),
         {commit_red(Coord, Tx2), S1}
-    end);
+    end, store_comment);
 
 run(select_category_to_sell_item, _, _, State) ->
     retry_loop(State, fun(S=#state{coord_state=Coord}, Tx) ->
@@ -302,7 +306,7 @@ run(select_category_to_sell_item, _, _, State) ->
                  {ok, _, Tx2} = grb_client:read_key_snapshot(Coord, Tx1, {hook_rubis:random_global_index(Coord), all_categories}, grb_gset),
                  {commit_red(Coord, Tx2), S}
         end
-    end);
+    end, select_category_to_sell_item);
 
 run(register_item, _, _, State) ->
     retry_loop(State, fun(S=#state{coord_state=Coord}, Tx) ->
@@ -350,7 +354,7 @@ run(register_item, _, _, State) ->
         {ok, _, Tx1} = grb_client:update_operation(Coord, Tx, ItemKey, grb_crdt:make_op(grb_lww, ItemKey)),
         {ok, Tx2} = grb_client:send_key_operations(Coord, Tx1, Updates),
         {commit_red(Coord, Tx2), S1#state{last_generated_item={Region, ItemId}}}
-    end);
+    end, register_item);
 
 run(about_me, _, _, State) ->
     retry_loop(State, fun(S=#state{coord_state=Coord}, Tx) ->
@@ -436,7 +440,7 @@ run(about_me, _, _, State) ->
 
                 {commit_red(Coord, Tx4), S}
         end
-    end);
+    end, about_me);
 
 run(get_auctions_ready_for_close, _, _, State) ->
     retry_loop(State, fun(S=#state{coord_state=Coord}, Tx) ->
@@ -468,7 +472,7 @@ run(get_auctions_ready_for_close, _, _, State) ->
         end, Tx1, KeyRequests),
 
         {commit_red(Coord, Tx2), S}
-    end);
+    end, get_auctions_ready_for_close);
 
 run(close_auction, _, _, S) ->
     close_auction_loop(S).
@@ -531,7 +535,7 @@ register_user_loop(State) ->
     register_user_loop(State, 0).
 
 register_user_loop(State=#state{coord_state=Coord, retry_until_commit=RetryAbort,
-                                retry_on_bad_precondition=RetryData}, Aborted0) ->
+                                retry_on_bad_precondition=RetryData}, _Aborted0) ->
     Start = os:timestamp(),
     Region = random_region(),
     NickName = gen_new_nickname(),
@@ -540,17 +544,20 @@ register_user_loop(State=#state{coord_state=Coord, retry_until_commit=RetryAbort
     ElapsedUs = erlang:max(0, timer:now_diff(os:timestamp(), Start)),
     case Res of
         {ok, CVC} ->
-            {ok, ElapsedUs, Aborted0,
+            {ok, ElapsedUs, 0,
                 State#state{last_cvc=CVC, last_generated_user={Region, NickName}}};
 
         {error, _} when RetryData ->
-            register_user_loop(State, Aborted0);
+            lasp_bench_stats:op_complete({register_user, register_user}, {error, precondition}, ignore),
+            register_user_loop(State, 0);
 
         {abort, _} when RetryAbort ->
-            register_user_loop(State, Aborted0 + 1);
+            lasp_bench_stats:op_complete({register_user, register_user}, {error, abort}, ignore),
+            register_user_loop(State, 0);
 
         {error, _} ->
-            {ok, ElapsedUs, Aborted0, State};
+            lasp_bench_stats:op_complete({register_user, register_user}, {error, precondition}, ignore),
+            {ok, ElapsedUs, 0, State};
 
         {abort, _}=Abort ->
             {error, Abort, State}
@@ -585,7 +592,7 @@ store_buy_now_loop(State) ->
     store_buy_now_loop(State, 0).
 
 store_buy_now_loop(S0=#state{coord_state=Coord, retry_until_commit=RetryAbort,
-                             retry_on_bad_precondition=RetryData}, Aborted0) ->
+                             retry_on_bad_precondition=RetryData}, _Aborted0) ->
 
     Start = os:timestamp(),
     {ItemRegion, ItemId} = random_item(S0),
@@ -597,17 +604,20 @@ store_buy_now_loop(S0=#state{coord_state=Coord, retry_until_commit=RetryAbort,
     ElapsedUs = erlang:max(0, timer:now_diff(os:timestamp(), Start)),
     case Res of
         {ok, CVC} ->
-            {ok, ElapsedUs, Aborted0,
+            {ok, ElapsedUs, 0,
                 S1#state{last_cvc=CVC}};
 
         {error, _} when RetryData ->
-            store_buy_now_loop(S1, Aborted0);
+            lasp_bench_stats:op_complete({store_buy_now, store_buy_now}, {error, precondition}, ignore),
+            store_buy_now_loop(S1, 0);
 
         {abort, _} when RetryAbort ->
-            store_buy_now_loop(S1, Aborted0 + 1);
+            lasp_bench_stats:op_complete({store_buy_now, store_buy_now}, {error, abort}, ignore),
+            store_buy_now_loop(S1, 0);
 
         {error, _} ->
-            {ok, ElapsedUs, Aborted0, S1};
+            lasp_bench_stats:op_complete({store_buy_now, store_buy_now}, {error, precondition}, ignore),
+            {ok, ElapsedUs, 0, S1};
 
         {abort, _}=Abort ->
             {error, Abort, S1}
@@ -647,7 +657,7 @@ store_bid_loop(State) ->
     store_bid_loop(State, 0).
 
 store_bid_loop(S0=#state{coord_state=Coord, retry_until_commit=RetryAbort,
-                         retry_on_bad_precondition=RetryData}, Aborted0) ->
+                         retry_on_bad_precondition=RetryData}, _Aborted0) ->
 
     Start = os:timestamp(),
     {ItemRegion, ItemId} = random_item(S0),
@@ -660,16 +670,19 @@ store_bid_loop(S0=#state{coord_state=Coord, retry_until_commit=RetryAbort,
     ElapsedUs = erlang:max(0, timer:now_diff(os:timestamp(), Start)),
     case Res of
         {ok, CVC} ->
-            {ok, ElapsedUs, Aborted0, S1#state{last_cvc=CVC}};
+            {ok, ElapsedUs, 0, S1#state{last_cvc=CVC}};
 
         {error, _} when RetryData ->
-            store_bid_loop(S1, Aborted0);
+            lasp_bench_stats:op_complete({store_bid, store_bid}, {error, precondition}, ignore),
+            store_bid_loop(S1, 0);
 
         {abort, _} when RetryAbort ->
-            store_bid_loop(S1, Aborted0 + 1);
+            lasp_bench_stats:op_complete({store_bid, store_bid}, {error, abort}, ignore),
+            store_bid_loop(S1, 0);
 
         {error, _} ->
-            {ok, ElapsedUs, Aborted0, S1};
+            lasp_bench_stats:op_complete({store_bid, store_bid}, {error, precondition}, ignore),
+            {ok, ElapsedUs, 0, S1};
 
         {abort, _}=Abort ->
             {error, Abort, S1}
@@ -724,7 +737,7 @@ close_auction_loop(State) ->
     close_auction_loop(State, 0).
 
 close_auction_loop(State=#state{coord_state=Coord, retry_until_commit=RetryAbort,
-                                retry_on_bad_precondition=RetryData}, Aborted0) ->
+                                retry_on_bad_precondition=RetryData}, _Aborted0) ->
 
     Start = os:timestamp(),
     {ItemRegion, Itemid} = random_item(State),
@@ -733,16 +746,19 @@ close_auction_loop(State=#state{coord_state=Coord, retry_until_commit=RetryAbort
     ElapsedUs = erlang:max(0, timer:now_diff(os:timestamp(), Start)),
     case Res of
         {ok, CVC} ->
-            {ok, ElapsedUs, Aborted0, State#state{last_cvc=CVC}};
+            {ok, ElapsedUs, 0, State#state{last_cvc=CVC}};
 
         {error, _} when RetryData ->
-            close_auction_loop(State, Aborted0);
+            lasp_bench_stats:op_complete({close_auction, close_auction}, {error, precondition}, ignore),
+            close_auction_loop(State, 0);
 
         {abort, _} when RetryAbort ->
-            close_auction_loop(State, Aborted0 + 1);
+            lasp_bench_stats:op_complete({close_auction, close_auction}, {error, abort}, ignore),
+            close_auction_loop(State, 0);
 
         {error, _} ->
-            {ok, ElapsedUs, Aborted0, State};
+            lasp_bench_stats:op_complete({close_auction, close_auction}, {error, precondition}, ignore),
+            {ok, ElapsedUs, 0, State};
 
         {abort, _}=Abort ->
             {error, Abort, State}
