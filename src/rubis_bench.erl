@@ -525,13 +525,12 @@ try_auth(Coord, Tx0, Region, NickName, Password) ->
             {error, Tx1}
     end.
 
--spec register_user_loop(state()) -> {ok, integer(), integer(), integer(), state()} | {error, term(), state()}.
+-spec register_user_loop(state()) -> {ok, integer(), integer(), state()} | {error, term(), state()}.
 register_user_loop(State) ->
-    register_user_loop(State, 0, 0).
+    register_user_loop(State, 0).
 
 register_user_loop(State=#state{coord_state=Coord, retry_until_commit=RetryAbort,
-                                retry_on_bad_precondition=RetryData}, Aborted0, Total0) ->
-    Total = Total0 + 1,
+                                retry_on_bad_precondition=RetryData}, Aborted0) ->
     Start = os:timestamp(),
     Region = random_region(),
     NickName = gen_new_nickname(),
@@ -540,16 +539,16 @@ register_user_loop(State=#state{coord_state=Coord, retry_until_commit=RetryAbort
     ElapsedUs = erlang:max(0, timer:now_diff(os:timestamp(), Start)),
     case Res of
         {ok, CVC} ->
-            {ok, ElapsedUs, Aborted0, Total, State#state{last_cvc=CVC, last_generated_user={Region, NickName}}};
+            {ok, ElapsedUs, Aborted0, State#state{last_cvc=CVC, last_generated_user={Region, NickName}}};
 
         {error, _} when RetryData ->
-            register_user_loop(State, Aborted0, Total);
+            register_user_loop(State, Aborted0);
 
         {abort, _} when RetryAbort ->
-            register_user_loop(State, Aborted0 + 1, Total);
+            register_user_loop(State, Aborted0 + 1);
 
         {error, _} ->
-            {ok, ElapsedUs, Aborted0, Total, State};
+            {ok, ElapsedUs, Aborted0, State};
 
         {abort, _}=Abort ->
             {error, Abort, State}
@@ -579,14 +578,13 @@ register_user(Coord, Tx, Region, Nickname) ->
             {error, user_taken}
     end.
 
--spec store_buy_now_loop(state()) -> {ok, integer(), integer(), integer(), state()} | {error, term(), state()}.
+-spec store_buy_now_loop(state()) -> {ok, integer(), integer(), state()} | {error, term(), state()}.
 store_buy_now_loop(State) ->
-    store_buy_now_loop(State, 0, 0).
+    store_buy_now_loop(State, 0).
 
 store_buy_now_loop(S0=#state{coord_state=Coord, retry_until_commit=RetryAbort,
-                             retry_on_bad_precondition=RetryData}, Aborted0, Total0) ->
+                             retry_on_bad_precondition=RetryData}, Aborted0) ->
 
-    Total = Total0 + 1,
     Start = os:timestamp(),
     {ItemRegion, ItemId} = random_item(S0),
     {UserRegion, NickName} = random_user(S0),
@@ -597,16 +595,16 @@ store_buy_now_loop(S0=#state{coord_state=Coord, retry_until_commit=RetryAbort,
     ElapsedUs = erlang:max(0, timer:now_diff(os:timestamp(), Start)),
     case Res of
         {ok, CVC} ->
-            {ok, ElapsedUs, Aborted0, Total, S1#state{last_cvc=CVC}};
+            {ok, ElapsedUs, Aborted0, S1#state{last_cvc=CVC}};
 
         {error, _} when RetryData ->
-            store_buy_now_loop(S1, Aborted0, Total);
+            store_buy_now_loop(S1, Aborted0);
 
         {abort, _} when RetryAbort ->
-            store_buy_now_loop(S1, Aborted0 + 1, Total);
+            store_buy_now_loop(S1, Aborted0 + 1);
 
         {error, _} ->
-            {ok, ElapsedUs, Aborted0, Total, S1};
+            {ok, ElapsedUs, Aborted0, S1};
 
         {abort, _}=Abort ->
             {error, Abort, S1}
@@ -641,14 +639,13 @@ store_buy_now(Coord, Tx, ItemKey={ItemRegion, items, ItemId}, UserKey={UserRegio
             commit_red(Coord, Tx3, ?store_buy_now_label)
     end.
 
--spec store_bid_loop(state()) -> {ok, integer(), integer(), integer(), state()} | {error, term(), state()}.
+-spec store_bid_loop(state()) -> {ok, integer(), integer(), state()} | {error, term(), state()}.
 store_bid_loop(State) ->
-    store_bid_loop(State, 0, 0).
+    store_bid_loop(State, 0).
 
 store_bid_loop(S0=#state{coord_state=Coord, retry_until_commit=RetryAbort,
-                         retry_on_bad_precondition=RetryData}, Aborted0, Total0) ->
+                         retry_on_bad_precondition=RetryData}, Aborted0) ->
 
-    Total = Total0 + 1,
     Start = os:timestamp(),
     {ItemRegion, ItemId} = random_item(S0),
     {UserRegion, NickName} = random_user(S0),
@@ -660,16 +657,16 @@ store_bid_loop(S0=#state{coord_state=Coord, retry_until_commit=RetryAbort,
     ElapsedUs = erlang:max(0, timer:now_diff(os:timestamp(), Start)),
     case Res of
         {ok, CVC} ->
-            {ok, ElapsedUs, Aborted0, Total, S1#state{last_cvc=CVC}};
+            {ok, ElapsedUs, Aborted0, S1#state{last_cvc=CVC}};
 
         {error, _} when RetryData ->
-            store_bid_loop(S1, Aborted0, Total);
+            store_bid_loop(S1, Aborted0);
 
         {abort, _} when RetryAbort ->
-            store_bid_loop(S1, Aborted0 + 1, Total);
+            store_bid_loop(S1, Aborted0 + 1);
 
         {error, _} ->
-            {ok, ElapsedUs, Aborted0, Total, S1};
+            {ok, ElapsedUs, Aborted0, S1};
 
         {abort, _}=Abort ->
             {error, Abort, S1}
@@ -719,14 +716,13 @@ store_bid(Coord, Tx, ItemKey={ItemRegion, items, ItemId}, UserKey={UserRegion, _
             commit_red(Coord, Tx3, ?place_bid_label)
     end.
 
--spec close_auction_loop(state()) -> {ok, integer(), integer(), integer(), state()} | {error, term(), state()}.
+-spec close_auction_loop(state()) -> {ok, integer(), integer(), state()} | {error, term(), state()}.
 close_auction_loop(State) ->
-    close_auction_loop(State, 0, 0).
+    close_auction_loop(State, 0).
 
 close_auction_loop(State=#state{coord_state=Coord, retry_until_commit=RetryAbort,
-                                retry_on_bad_precondition=RetryData}, Aborted0, Total0) ->
+                                retry_on_bad_precondition=RetryData}, Aborted0) ->
 
-    Total = Total0 + 1,
     Start = os:timestamp(),
     {ItemRegion, Itemid} = random_item(State),
     {ok, Tx} = start_red_transaction(State),
@@ -734,16 +730,16 @@ close_auction_loop(State=#state{coord_state=Coord, retry_until_commit=RetryAbort
     ElapsedUs = erlang:max(0, timer:now_diff(os:timestamp(), Start)),
     case Res of
         {ok, CVC} ->
-            {ok, ElapsedUs, Aborted0, Total, State#state{last_cvc=CVC}};
+            {ok, ElapsedUs, Aborted0, State#state{last_cvc=CVC}};
 
         {error, _} when RetryData ->
-            close_auction_loop(State, Aborted0, Total);
+            close_auction_loop(State, Aborted0);
 
         {abort, _} when RetryAbort ->
-            close_auction_loop(State, Aborted0 + 1, Total);
+            close_auction_loop(State, Aborted0 + 1);
 
         {error, _} ->
-            {ok, ElapsedUs, Aborted0, Total, State};
+            {ok, ElapsedUs, Aborted0, State};
 
         {abort, _}=Abort ->
             {error, Abort, State}

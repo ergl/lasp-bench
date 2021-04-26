@@ -115,19 +115,19 @@ run(read_write_blue_barrier, KeyGen, ValueGen, State = #state{rw_reads=RN, rw_up
 
 run(readonly_red, _, _, State = #state{readonly_ops=N, strong_generator=KeyGen}) ->
     case perform_readonly_red(State, gen_keys(N, KeyGen), 0) of
-        {ok, CVC, Retries} -> {ok, ignore, Retries-1, Retries, State#state{last_cvc=CVC}};
+        {ok, CVC, Retries} -> {ok, ignore, Retries - 1, State#state{last_cvc=CVC}};
         Err -> {error, Err, State}
     end;
 
 run(writeonly_red, _, ValueGen, State = #state{writeonly_ops=N, strong_generator=KeyGen}) ->
     case perform_writeonly_red(State, gen_updates(N, KeyGen, ValueGen), 0) of
-        {ok, CVC, Retries} -> {ok, ignore, Retries - 1, Retries, State#state{last_cvc=CVC}};
+        {ok, CVC, Retries} -> {ok, ignore, Retries - 1, State#state{last_cvc=CVC}};
         Err -> {error, Err, State}
     end;
 
 run(read_write_red, _, ValueGen, State = #state{rw_reads=RN, rw_updates=WN, strong_generator=KeyGen}) ->
     case perform_read_write_red(State, gen_keys(RN, KeyGen), gen_updates(WN, KeyGen, ValueGen), 0) of
-        {ok, CVC, Retries} -> {ok, ignore, Retries - 1, Retries, State#state{last_cvc=CVC}};
+        {ok, CVC, Retries} -> {ok, ignore, Retries - 1, State#state{last_cvc=CVC}};
         Err -> {error, Err, State}
     end;
 
@@ -135,7 +135,7 @@ run(readonly_red_barrier, _, _, State = #state{readonly_ops=N, coord_state=Coord
     case perform_readonly_red(State, gen_keys(N, KeyGen), 0) of
         {ok, CVC, Retries} ->
             ok = perform_uniform_barrier(Coord, CVC),
-            {ok, ignore, Retries - 1, Retries, State#state{last_cvc=CVC}};
+            {ok, ignore, Retries - 1, State#state{last_cvc=CVC}};
         Err -> {error, Err, State}
     end;
 
@@ -143,7 +143,7 @@ run(writeonly_red_barrier, _, ValueGen, State = #state{writeonly_ops=N, coord_st
     case perform_writeonly_red(State, gen_updates(N, KeyGen, ValueGen), 0) of
         {ok, CVC, Retries} ->
             ok = perform_uniform_barrier(Coord, CVC),
-            {ok, ignore, Retries - 1, Retries, State#state{last_cvc=CVC}};
+            {ok, ignore, Retries - 1, State#state{last_cvc=CVC}};
         Err -> {error, Err, State}
     end;
 
@@ -151,7 +151,7 @@ run(read_write_red_barrier, _, ValueGen, State = #state{rw_reads=RN, rw_updates=
     case perform_read_write_red(State, gen_keys(RN, KeyGen), gen_updates(WN, KeyGen, ValueGen), 0) of
         {ok, CVC, Retries} ->
             ok = perform_uniform_barrier(Coord, CVC),
-            {ok, ignore, Retries - 1, Retries, State#state{last_cvc=CVC}};
+            {ok, ignore, Retries - 1, State#state{last_cvc=CVC}};
         Err -> {error, Err, State}
     end.
 
