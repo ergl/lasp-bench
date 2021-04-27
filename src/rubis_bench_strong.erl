@@ -496,7 +496,7 @@ start_red_transaction(#state{worker_id=WorkerId,
     {ok, Tx} = grb_client:start_transaction(CoordState,
                                             hook_grb:next_transaction_id(WorkerId),
                                             SVC),
-    hook_rubis:trace_msg("[~b] started ~w: ~w~n", [WorkerId, element(2, Tx), element(3, Tx)]),
+    hook_grb:trace_msg("[~b] started ~w: ~w~n", [WorkerId, element(2, Tx), element(3, Tx)]),
     {ok, Tx}.
 
 -spec commit_red(
@@ -508,10 +508,10 @@ commit_red(Coord, Tx) ->
     WorkerId = element(7, Coord), %% hack
     case grb_client:commit_red(Coord, Tx, ?all_conflict_label) of
         {ok, CVC} ->
-            hook_rubis:trace_msg("[~b] committed ~w: ~w~n", [WorkerId, element(2, Tx), CVC]),
+            hook_grb:trace_msg("[~b] committed ~w: ~w~n", [WorkerId, element(2, Tx), CVC]),
             {ok, CVC};
         {abort, _}=Err ->
-            hook_rubis:trace_msg("[~b] aborted ~w: ~w~n", [WorkerId, element(2, Tx), Err]),
+            hook_grb:trace_msg("[~b] aborted ~w: ~w~n", [WorkerId, element(2, Tx), Err]),
             Err
     end.
 

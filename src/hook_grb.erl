@@ -16,6 +16,8 @@
          make_coordinator/1,
          next_transaction_id/1]).
 
+-export([trace_msg/2]).
+
 %% Get ring information from Antidote,
 %% and spawn all the necessary connections
 start(HookOpts) ->
@@ -62,6 +64,12 @@ start(HookOpts) ->
     end, {#{}, #{}}, UniqueNodes),
     true = ets:insert(?MODULE, {shackle_pools, Pools}),
     true = ets:insert(?MODULE, {red_shackle_pools, RedPools}),
+
+    ok = case proplists:get_value(tx_trace_log_path, HookOpts, undefined) of
+        undefined -> ok;
+        TraceLogPath -> ok = create_trace_log_file(TraceLogPath)
+    end,
+
     ok.
 
 pool_name(NodeIp) ->
@@ -92,6 +100,7 @@ stop() ->
 
     ets:delete(?MODULE),
     ok = pvc:stop(),
+    ok = close_trace_log_file(),
     ok.
 
 %% If node name is given, and we're on Emulab, parse /etc/hosts to get node IP
@@ -173,3 +182,75 @@ loop_rand_until_not_div(_, K, Limit) ->
 -spec make_worker_key(inet:ip_address(), non_neg_integer()) -> binary().
 make_worker_key(IP, WorkerId) ->
     <<(list_to_binary(inet:ntoa(IP)))/binary, "_",  (integer_to_binary(WorkerId, 36))/binary>>.
+
+-spec trace_msg(Fmt :: string(), Args :: [term()]) -> ok.
+trace_msg(Fmt, Args) ->
+    case get_trace_log_pid() of
+        {error, no_log} ->
+            ok;
+        {ok, Pid} ->
+            Pid ! {trace_msg, append_time_ts(io_lib:format(Fmt, Args))}
+    end,
+    ok.
+
+-spec create_trace_log_file(Path :: string()) -> ok | {error, term()}.
+create_trace_log_file(TraceLogPath) ->
+    Self = self(),
+    Ref = erlang:make_ref(),
+    Pid = erlang:spawn(fun() -> init_file_loop(Self, Ref, TraceLogPath) end),
+    receive
+        {ok, Ref} ->
+            persistent_term:put({?MODULE, log_file_pid}, Pid);
+        {error, Ref, Reason} ->
+            {error, Reason}
+    end.
+
+-spec get_trace_log_pid() -> {ok, pid()} | {error, no_log}.
+get_trace_log_pid() ->
+    case persistent_term:get({?MODULE, log_file_pid}, undefined) of
+        undefined ->
+            {error, no_log};
+        Pid ->
+            {ok, Pid}
+    end.
+
+-spec close_trace_log_file() -> ok.
+close_trace_log_file() ->
+    case get_trace_log_pid() of
+        {error, no_log} ->
+            ok;
+
+        {ok, Pid} ->
+            Ref = make_ref(),
+            Pid ! {close_file, Ref, self()},
+            receive {ok, Ref} -> ok end
+    end.
+
+init_file_loop(ParentPid, ParentRef, Path) ->
+    case file:open(Path, [write, raw, delayed_write]) of
+        {ok, IODev} ->
+            ParentPid ! {ok, ParentRef},
+            file_pid_loop(IODev);
+        {error, Reason} ->
+            ParentPid ! {error, ParentRef, Reason}
+    end.
+
+file_pid_loop(IODev) ->
+    receive
+        {trace_msg, Bin} ->
+            ok = file:write(IODev, Bin),
+            file_pid_loop(IODev);
+
+        {close_file, Ref, From} ->
+            ok = file:sync(IODev),
+            ok = file:close(IODev),
+            From ! {ok, Ref};
+
+       _ ->
+           file_pid_loop(IODev)
+    end.
+
+append_time_ts(Str) ->
+    Ts = {_, _, Micros} = os:timestamp(),
+    {_, {Hour, Min, Sec}} = calendar:now_to_datetime(Ts),
+    io_lib:format("~2w:~2..0w:~2..0w.~6..0w ~s", [Hour, Min, Sec, Micros, Str]).

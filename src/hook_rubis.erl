@@ -11,8 +11,6 @@
          make_coordinator/1,
          random_global_index/1]).
 
--export([trace_msg/2]).
-
 start(Args) ->
     logger:info("~p:~p(~p)", [?MODULE, ?FUNCTION_NAME, Args]),
 
@@ -42,28 +40,9 @@ start(Args) ->
         || {K, V} <- maps:to_list(maps:without([regions, categories, user_total], RubisPropsMap))
     ],
 
-    ok = case proplists:get_value(tx_trace_log_path, Args, undefined) of
-        undefined ->
-            ok;
-        TraceLogPath ->
-            Self = self(),
-            Ref = erlang:make_ref(),
-            Pid = erlang:spawn(fun() -> init_file_loop(Self, Ref, TraceLogPath) end),
-            receive
-                {ok, Ref} ->
-                    persistent_term:put({?MODULE, log_file_pid}, Pid);
-                {error, Ref, Reason} ->
-                    %% crash
-                    {error, Reason}
-            end
-    end,
-
     hook_grb:start(Args).
 
 stop() ->
-    Ref = make_ref(),
-    get_file_pid() ! {close_file, Ref, self()},
-    receive {ok, Ref} -> ok end,
     hook_grb:stop().
 
 get_config(Key) ->
@@ -79,40 +58,3 @@ make_coordinator(Id) ->
 random_global_index(Coordinator) ->
     {rand:uniform(grb_client:ring_size(Coordinator)), global_index}.
 
-trace_msg(Fmt, Args) ->
-    Pid = get_file_pid(),
-    Pid ! {trace_msg, append_time_ts(io_lib:format(Fmt, Args))},
-    ok.
-
--spec get_file_pid() -> pid().
-get_file_pid() ->
-    persistent_term:get({?MODULE, log_file_pid}).
-
-init_file_loop(ParentPid, ParentRef, Path) ->
-    case file:open(Path, [write, raw, delayed_write]) of
-        {ok, IODev} ->
-            ParentPid ! {ok, ParentRef},
-            file_pid_loop(IODev);
-        {error, Reason} ->
-            ParentPid ! {error, ParentRef, Reason}
-    end.
-
-file_pid_loop(IODev) ->
-    receive
-        {trace_msg, Bin} ->
-            ok = file:write(IODev, Bin),
-            file_pid_loop(IODev);
-
-        {close_file, Ref, From} ->
-            ok = file:sync(IODev),
-            ok = file:close(IODev),
-            From ! {ok, Ref};
-
-       _ ->
-           file_pid_loop(IODev)
-    end.
-
-append_time_ts(Str) ->
-    Ts = {_, _, Micros} = os:timestamp(),
-    {_, {Hour, Min, Sec}} = calendar:now_to_datetime(Ts),
-    io_lib:format("~2w:~2..0w:~2..0w.~6..0w ~s", [Hour, Min, Sec, Micros, Str]).
