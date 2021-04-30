@@ -8,6 +8,7 @@
          terminate/2]).
 
 -include("lasp_bench.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 -define(all_conflict_label, <<"default">>).
 
@@ -490,9 +491,11 @@ start_red_transaction(#state{worker_id=WorkerId,
                              red_reuse_cvc=Reuse}) ->
 
     SVC = if Reuse -> LastVC; true -> grb_vclock:new() end,
-    grb_client:start_transaction(CoordState,
-                                 hook_grb:next_transaction_id(WorkerId),
-                                 SVC).
+    {ok, Tx} = grb_client:start_transaction(CoordState,
+                                            hook_grb:next_transaction_id(WorkerId),
+                                            SVC),
+    ?LOG_INFO("[~b] started ~w: ~w", [WorkerId, element(2, Tx), element(3, Tx)]),
+    {ok, Tx}.
 
 -spec commit_red(
     Coord :: grb_client:coordd(),
@@ -500,7 +503,15 @@ start_red_transaction(#state{worker_id=WorkerId,
 ) -> {ok, CVC :: grb_client:rvc()} | {abort, Reason :: term()}.
 
 commit_red(Coord, Tx) ->
-    grb_client:commit_red(Coord, Tx, ?all_conflict_label).
+    WorkerId = element(7, Coord), %% hack
+    case grb_client:commit_red(Coord, Tx, ?all_conflict_label) of
+        {ok, CVC} ->
+            ?LOG_INFO("[~b] committed ~w: ~w",[WorkerId, element(2, Tx), CVC]),
+            {ok, CVC};
+        {abort, _}=Err ->
+            ?LOG_INFO("[~b] failed ~w: ~w",[WorkerId, element(2, Tx), Err]),
+            Err
+    end.
 
 -spec try_auth(Coord :: grb_client:coord(),
               Tx0 ::grb_client:tx(),
