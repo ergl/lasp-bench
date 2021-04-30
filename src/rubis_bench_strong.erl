@@ -8,7 +8,6 @@
          terminate/2]).
 
 -include("lasp_bench.hrl").
--include_lib("kernel/include/logger.hrl").
 
 -define(all_conflict_label, <<"default">>).
 
@@ -494,7 +493,7 @@ start_red_transaction(#state{worker_id=WorkerId,
     {ok, Tx} = grb_client:start_transaction(CoordState,
                                             hook_grb:next_transaction_id(WorkerId),
                                             SVC),
-    ?LOG_INFO("[~b] started ~w: ~w", [WorkerId, element(2, Tx), element(3, Tx)]),
+    hook_rubis:trace_msg("[~b] started ~w: ~w~n", [WorkerId, element(2, Tx), element(3, Tx)]),
     {ok, Tx}.
 
 -spec commit_red(
@@ -506,10 +505,10 @@ commit_red(Coord, Tx) ->
     WorkerId = element(7, Coord), %% hack
     case grb_client:commit_red(Coord, Tx, ?all_conflict_label) of
         {ok, CVC} ->
-            ?LOG_INFO("[~b] committed ~w: ~w",[WorkerId, element(2, Tx), CVC]),
+            hook_rubis:trace_msg("[~b] committed ~w: ~w~n", [WorkerId, element(2, Tx), CVC]),
             {ok, CVC};
         {abort, _}=Err ->
-            ?LOG_INFO("[~b] failed ~w: ~w",[WorkerId, element(2, Tx), Err]),
+            hook_rubis:trace_msg("[~b] aborted ~w: ~w~n", [WorkerId, element(2, Tx), Err]),
             Err
     end.
 

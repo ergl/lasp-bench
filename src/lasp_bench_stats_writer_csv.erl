@@ -124,7 +124,7 @@ report_latency({_SummaryFile, _ErrorsFile}, Elapsed, Window, Op, Stats, Errors, 
     Line = get_line_from_stats(Op, Elapsed, Window, Stats, Errors, Units),
     file:write(erlang:get({csv_file, Op}), Line).
 
-get_line_from_stats(Op, Elapsed, Window, Stats, Errors, Units) ->
+get_line_from_stats(_Op, Elapsed, Window, Stats, Errors, Units) ->
     case proplists:get_value(n, Stats) > 0 of
         true ->
             P = proplists:get_value(percentile, Stats),
@@ -141,7 +141,6 @@ get_line_from_stats(Op, Elapsed, Window, Stats, Errors, Units) ->
                            proplists:get_value(max, Stats),
                            Errors]);
         false ->
-            ?DEBUG("No data for op: ~p\n", [Op]),
             io_lib:format("~w, ~w, 0, 0, 0, 0, 0, 0, 0, 0, ~w\n", [Elapsed, Window, Errors])
     end.
 
