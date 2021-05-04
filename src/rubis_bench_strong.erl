@@ -60,12 +60,9 @@ new(WorkerId) ->
 
     {ok, State}.
 
-retry_loop(State, Fun, Operation) ->
-    retry_loop(Operation, State, Fun, 0).
-
-retry_loop(Operation,
-           S0=#state{retry_until_commit=RetryCommit,
-                     retry_on_bad_precondition=RetryData}, Fun, _Aborted0) ->
+retry_loop(S0, Fun, Operation) ->
+    #state{retry_until_commit=RetryCommit,
+           retry_on_bad_precondition=RetryData} = S0,
 
     Start = os:timestamp(),
     {ok, Tx} = start_red_transaction(S0),
@@ -73,19 +70,19 @@ retry_loop(Operation,
     ElapsedUs = erlang:max(0, timer:now_diff(os:timestamp(), Start)),
     case Res of
         {ok, CVC} ->
-            {ok, ElapsedUs, 0, State#state{last_cvc=CVC}};
+            {ok, ElapsedUs, State#state{last_cvc=CVC}};
 
         {error, _} when RetryData ->
             lasp_bench_stats:op_complete({Operation, Operation}, {error, precondition}, ignore),
-            retry_loop(Operation, State, Fun, 0);
+            retry_loop(State, Fun, Operation);
 
         {abort, _} when RetryCommit ->
             lasp_bench_stats:op_complete({Operation, Operation}, {error, abort}, ignore),
-            retry_loop(Operation, State, Fun, 0);
+            retry_loop(State, Fun, Operation);
 
         {error, _} ->
             lasp_bench_stats:op_complete({Operation, Operation}, {error, precondition}, ignore),
-            {ok, ElapsedUs, 0, State};
+            {ok, ElapsedUs, State};
 
         {abort, _}=Abort ->
             {error, Abort, State}
@@ -521,11 +518,9 @@ try_auth(Coord, Tx0, Region, NickName, Password) ->
     end.
 
 -spec register_user_loop(state()) -> {ok, integer(), integer(), state()} | {error, term(), state()}.
-register_user_loop(State) ->
-    register_user_loop(State, 0).
-
 register_user_loop(State=#state{coord_state=Coord, retry_until_commit=RetryAbort,
-                                retry_on_bad_precondition=RetryData}, _Aborted0) ->
+                                retry_on_bad_precondition=RetryData}) ->
+
     Start = os:timestamp(),
     Region = random_region(),
     NickName = gen_new_nickname(),
@@ -534,20 +529,19 @@ register_user_loop(State=#state{coord_state=Coord, retry_until_commit=RetryAbort
     ElapsedUs = erlang:max(0, timer:now_diff(os:timestamp(), Start)),
     case Res of
         {ok, CVC} ->
-            {ok, ElapsedUs, 0,
-                State#state{last_cvc=CVC, last_generated_user={Region, NickName}}};
+            {ok, ElapsedUs, State#state{last_cvc=CVC, last_generated_user={Region, NickName}}};
 
         {error, _} when RetryData ->
             lasp_bench_stats:op_complete({register_user, register_user}, {error, precondition}, ignore),
-            register_user_loop(State, 0);
+            register_user_loop(State);
 
         {abort, _} when RetryAbort ->
             lasp_bench_stats:op_complete({register_user, register_user}, {error, abort}, ignore),
-            register_user_loop(State, 0);
+            register_user_loop(State);
 
         {error, _} ->
             lasp_bench_stats:op_complete({register_user, register_user}, {error, precondition}, ignore),
-            {ok, ElapsedUs, 0, State};
+            {ok, ElapsedUs, State};
 
         {abort, _}=Abort ->
             {error, Abort, State}
@@ -578,11 +572,8 @@ register_user(Coord, Tx, Region, Nickname) ->
     end.
 
 -spec store_buy_now_loop(state()) -> {ok, integer(), integer(), state()} | {error, term(), state()}.
-store_buy_now_loop(State) ->
-    store_buy_now_loop(State, 0).
-
 store_buy_now_loop(S0=#state{coord_state=Coord, retry_until_commit=RetryAbort,
-                             retry_on_bad_precondition=RetryData}, _Aborted0) ->
+                             retry_on_bad_precondition=RetryData}) ->
 
     Start = os:timestamp(),
     {ItemRegion, ItemId} = random_item(S0),
@@ -594,20 +585,19 @@ store_buy_now_loop(S0=#state{coord_state=Coord, retry_until_commit=RetryAbort,
     ElapsedUs = erlang:max(0, timer:now_diff(os:timestamp(), Start)),
     case Res of
         {ok, CVC} ->
-            {ok, ElapsedUs, 0,
-                S1#state{last_cvc=CVC}};
+            {ok, ElapsedUs, S1#state{last_cvc=CVC}};
 
         {error, _} when RetryData ->
             lasp_bench_stats:op_complete({store_buy_now, store_buy_now}, {error, precondition}, ignore),
-            store_buy_now_loop(S1, 0);
+            store_buy_now_loop(S1);
 
         {abort, _} when RetryAbort ->
             lasp_bench_stats:op_complete({store_buy_now, store_buy_now}, {error, abort}, ignore),
-            store_buy_now_loop(S1, 0);
+            store_buy_now_loop(S1);
 
         {error, _} ->
             lasp_bench_stats:op_complete({store_buy_now, store_buy_now}, {error, precondition}, ignore),
-            {ok, ElapsedUs, 0, S1};
+            {ok, ElapsedUs, S1};
 
         {abort, _}=Abort ->
             {error, Abort, S1}
@@ -643,11 +633,8 @@ store_buy_now(Coord, Tx, ItemKey={ItemRegion, items, ItemId}, UserKey={UserRegio
     end.
 
 -spec store_bid_loop(state()) -> {ok, integer(), integer(), state()} | {error, term(), state()}.
-store_bid_loop(State) ->
-    store_bid_loop(State, 0).
-
 store_bid_loop(S0=#state{coord_state=Coord, retry_until_commit=RetryAbort,
-                         retry_on_bad_precondition=RetryData}, _Aborted0) ->
+                         retry_on_bad_precondition=RetryData}) ->
 
     Start = os:timestamp(),
     {ItemRegion, ItemId} = random_item(S0),
@@ -660,19 +647,19 @@ store_bid_loop(S0=#state{coord_state=Coord, retry_until_commit=RetryAbort,
     ElapsedUs = erlang:max(0, timer:now_diff(os:timestamp(), Start)),
     case Res of
         {ok, CVC} ->
-            {ok, ElapsedUs, 0, S1#state{last_cvc=CVC}};
+            {ok, ElapsedUs, S1#state{last_cvc=CVC}};
 
         {error, _} when RetryData ->
             lasp_bench_stats:op_complete({store_bid, store_bid}, {error, precondition}, ignore),
-            store_bid_loop(S1, 0);
+            store_bid_loop(S1);
 
         {abort, _} when RetryAbort ->
             lasp_bench_stats:op_complete({store_bid, store_bid}, {error, abort}, ignore),
-            store_bid_loop(S1, 0);
+            store_bid_loop(S1);
 
         {error, _} ->
             lasp_bench_stats:op_complete({store_bid, store_bid}, {error, precondition}, ignore),
-            {ok, ElapsedUs, 0, S1};
+            {ok, ElapsedUs, S1};
 
         {abort, _}=Abort ->
             {error, Abort, S1}
@@ -723,11 +710,8 @@ store_bid(Coord, Tx, ItemKey={ItemRegion, items, ItemId}, UserKey={UserRegion, _
     end.
 
 -spec close_auction_loop(state()) -> {ok, integer(), integer(), state()} | {error, term(), state()}.
-close_auction_loop(State) ->
-    close_auction_loop(State, 0).
-
 close_auction_loop(State=#state{coord_state=Coord, retry_until_commit=RetryAbort,
-                                retry_on_bad_precondition=RetryData}, _Aborted0) ->
+                                retry_on_bad_precondition=RetryData}) ->
 
     Start = os:timestamp(),
     {ItemRegion, Itemid} = random_item(State),
@@ -736,19 +720,19 @@ close_auction_loop(State=#state{coord_state=Coord, retry_until_commit=RetryAbort
     ElapsedUs = erlang:max(0, timer:now_diff(os:timestamp(), Start)),
     case Res of
         {ok, CVC} ->
-            {ok, ElapsedUs, 0, State#state{last_cvc=CVC}};
+            {ok, ElapsedUs, State#state{last_cvc=CVC}};
 
         {error, _} when RetryData ->
             lasp_bench_stats:op_complete({close_auction, close_auction}, {error, precondition}, ignore),
-            close_auction_loop(State, 0);
+            close_auction_loop(State);
 
         {abort, _} when RetryAbort ->
             lasp_bench_stats:op_complete({close_auction, close_auction}, {error, abort}, ignore),
-            close_auction_loop(State, 0);
+            close_auction_loop(State);
 
         {error, _} ->
             lasp_bench_stats:op_complete({close_auction, close_auction}, {error, precondition}, ignore),
-            {ok, ElapsedUs, 0, State};
+            {ok, ElapsedUs, State};
 
         {abort, _}=Abort ->
             {error, Abort, State}
