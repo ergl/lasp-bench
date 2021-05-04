@@ -508,9 +508,11 @@ register_user_loop(State=#state{coord_state=Coord,
     ElapsedUs = erlang:max(0, timer:now_diff(os:timestamp(), Start)),
     case Res of
         {error, _} when RetryData ->
+            lasp_bench_stats:op_complete({register_user, register_user}, {error, precondition}, ignore),
             register_user_loop(State);
 
         {error, _} ->
+            lasp_bench_stats:op_complete({register_user, register_user}, {error, precondition}, ignore),
             {ok, ElapsedUs, State};
 
         CVC ->
@@ -555,9 +557,11 @@ store_buy_now_loop(S0=#state{coord_state=Coord,
     ElapsedUs = erlang:max(0, timer:now_diff(os:timestamp(), Start)),
     case Res of
         {error, _} when RetryData ->
+            lasp_bench_stats:op_complete({store_buy_now, store_buy_now}, {error, precondition}, ignore),
             store_buy_now_loop(S1);
 
         {error, _} ->
+            lasp_bench_stats:op_complete({store_buy_now, store_buy_now}, {error, precondition}, ignore),
             {ok, ElapsedUs, S1};
 
         CVC ->
@@ -608,9 +612,11 @@ store_bid_loop(S0=#state{coord_state=Coord,
     ElapsedUs = erlang:max(0, timer:now_diff(os:timestamp(), Start)),
     case Res of
         {error, _} when RetryData ->
+            lasp_bench_stats:op_complete({store_bid, store_bid}, {error, precondition}, ignore),
             store_bid_loop(S1);
 
         {error, _} ->
+            lasp_bench_stats:op_complete({store_bid, store_bid}, {error, precondition}, ignore),
             {ok, ElapsedUs, S1};
 
         CVC ->
@@ -672,9 +678,11 @@ close_auction_loop(State=#state{coord_state=Coord,
     ElapsedUs = erlang:max(0, timer:now_diff(os:timestamp(), Start)),
     case Res of
         {error, _} when RetryData ->
+            lasp_bench_stats:op_complete({close_auction, close_auction}, {error, precondition}, ignore),
             close_auction_loop(State);
 
         {error, _} ->
+            lasp_bench_stats:op_complete({close_auction, close_auction}, {error, precondition}, ignore),
             {ok, ElapsedUs, State};
 
         CVC ->
