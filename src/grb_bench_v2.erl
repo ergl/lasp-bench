@@ -260,19 +260,19 @@ start_transaction_with_indexnode(S=#state{coord_state=CoordState}, [Key | _]) ->
 get_start_clock(#state{reuse_cvc=true, last_cvc=VC}) -> VC;
 get_start_clock(#state{reuse_cvc=false}) -> grb_vclock:new().
 
-maybe_retry_readonly(#state{retry_until_commit=false}, _, Err, _At) -> Err;
-maybe_retry_readonly(S, Keys, _, Attempts) ->
-    lasp_bench_stats:op_complete({readonly_red, readonly_red}, {error, abort}, ignore),
+maybe_retry_readonly(#state{retry_until_commit=false}, _, {abort, ErrKind}, _At) -> ErrKind;
+maybe_retry_readonly(S, Keys, {abort, ErrKind}, Attempts) ->
+    lasp_bench_stats:op_complete({readonly_red, readonly_red}, {error, ErrKind}, ignore),
     perform_readonly_red(S, Keys, Attempts).
 
-maybe_retry_writeonly(#state{retry_until_commit=false}, _, Err, _At) -> Err;
-maybe_retry_writeonly(S, Updates, _, Attempts) ->
-    lasp_bench_stats:op_complete({writeonly_red, writeonly_red}, {error, abort}, ignore),
+maybe_retry_writeonly(#state{retry_until_commit=false}, _, {abort, ErrKind}, _At) -> ErrKind;
+maybe_retry_writeonly(S, Updates, {abort, ErrKind}, Attempts) ->
+    lasp_bench_stats:op_complete({writeonly_red, writeonly_red}, {error, ErrKind}, ignore),
     perform_writeonly_red(S, Updates, Attempts).
 
-maybe_retry_read_write(#state{retry_until_commit=false}, _, _, Err, _At) -> Err;
-maybe_retry_read_write(S, Keys, Updates, _, Attempts) ->
-    lasp_bench_stats:op_complete({read_write_red, read_write_red}, {error, abort}, ignore),
+maybe_retry_read_write(#state{retry_until_commit=false}, _, _, {abort, ErrKind}, _At) -> ErrKind;
+maybe_retry_read_write(S, Keys, Updates, {abort, ErrKind}, Attempts) ->
+    lasp_bench_stats:op_complete({read_write_red, read_write_red}, {error, ErrKind}, ignore),
     perform_read_write_red(S, Keys, Updates, Attempts).
 
 %% @doc Generate N random keys
