@@ -10,7 +10,7 @@
   1},
  {<<"pvc">>,
   {git,"https://github.com/ergl/pvc.git",
-       {ref,"b365bce2266f42c888c9b1ccc2817916bb576ea2"}},
+       {ref,"9fe3e3eef544a013985501eb0ee05cf766c16602"}},
   0},
  {<<"pvc_proto">>,
   {git,"https://github.com/ergl/pvc_proto.git",
